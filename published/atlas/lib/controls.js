@@ -1,0 +1,366 @@
+/**
+ * Contrôles couche — filtres / animation (temps, range, catégorie).
+ * ControlDeclarative — interop Scene Manifest V0.2 / interactive_map.
+ */
+import {
+  normalizePropertyValue,
+  parsePropertyNumber,
+  resolveFeaturePropertyKey,
+  resolveGristFieldName,
+} from './declarative-style.js?v=20260729m';
+
+export function layerFieldNames(layer) {
+  if (layer._fields?.length) {
+    return layer._fields.map((f) => f.name).filter(Boolean);
+  }
+  const p = layer.geojson?.features?.[0]?.properties || {};
+  return Object.keys(p).filter((k) => !k.startsWith('_') && k !== 'geometry_json');
+}
+
+export function controlFieldType(layer, field) {
+  const propKey = resolveFeaturePropertyKey(layer, field);
+  const vals = [];
+  for (const f of (layer.geojson?.features || [])) {
+    const v = f.properties?.[propKey];
+    if (v == null || v === '') continue;
+    vals.push(normalizePropertyValue(v));
+    if (vals.length >= 50) break;
+  }
+  if (!vals.length) return null;
+  const dateRe = /^\d{4}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/;
+  if (vals.every((v) => dateRe.test(String(v).trim()) && !Number.isNaN(Date.parse(v)))) return 'time';
+  if (vals.every((v) => v !== '' && !Number.isNaN(Number(v)))) return 'range';
+  if (new Set(vals.map(String)).size <= 20) return 'select';
+  return null;
+}
+
+export function controlUniqueValues(layer, field, max = 40) {
+  const propKey = resolveFeaturePropertyKey(layer, field);
+  const counts = new Map();
+  for (const f of (layer.geojson?.features || [])) {
+    const key = normalizePropertyValue(f.properties?.[propKey]);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, max);
+}
+
+/** Valeurs distinctes sur les features actuellement visibles (filtres contrôles appliqués). */
+export function filteredUniqueValues(layer, field, max = 40) {
+  const gj = filteredGeoJSON(layer);
+  const propKey = resolveFeaturePropertyKey(layer, field);
+  const counts = new Map();
+  for (const f of (gj?.features || [])) {
+    const key = normalizePropertyValue(f.properties?.[propKey]);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, max);
+}
+
+export function controlBounds(layer, type, field) {
+  if (type === 'select') {
+    return { values: controlUniqueValues(layer, field, 40).map((v) => v.value) };
+  }
+  const propKey = resolveFeaturePropertyKey(layer, field);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const f of (layer.geojson?.features || [])) {
+    const raw = f.properties?.[propKey];
+    if (raw == null || raw === '') continue;
+    const s = normalizePropertyValue(raw);
+    const n = type === 'time' ? Date.parse(s) : Number(s);
+    if (!Number.isNaN(n)) { lo = Math.min(lo, n); hi = Math.max(hi, n); }
+  }
+  if (lo === Infinity) return { dataMin: 0, dataMax: 1, min: 0, max: 1 };
+  return { dataMin: lo, dataMax: hi, min: lo, max: hi };
+}
+
+/** Ensemble des valeurs cochées (minuscules) pour un select. */
+export function selectValuesLowerSet(c) {
+  return new Set((c.values || []).map((v) => String(v).toLowerCase()));
+}
+
+/** Case cochée dans l'UI ? */
+export function isSelectValueChecked(c, value) {
+  if (!Array.isArray(c.values)) {
+    return true;
+  }
+  if (!c.values.length) return false;
+  return selectValuesLowerSet(c).has(String(value).toLowerCase());
+}
+
+/**
+ * Valeurs sélectionnées normalisées sur les labels réels des features (capture récit).
+ */
+export function captureSelectControlValues(layer, c) {
+  if (!Array.isArray(c.values) || !c.values.length) return [];
+  const allowed = selectValuesLowerSet(c);
+  return controlUniqueValues(layer, c.field, 40)
+    .filter((v) => allowed.has(String(v.value).toLowerCase()))
+    .map((v) => v.value);
+}
+
+/**
+ * Restaure une sélection sauvegardée (accepte labels Grist ou values manifest).
+ */
+export function normalizeSelectValuesForLayer(layer, field, savedValues) {
+  if (!Array.isArray(savedValues) || !savedValues.length) return [];
+  const allowed = new Set(savedValues.map((v) => String(v).toLowerCase()));
+  return controlUniqueValues(layer, field, 40)
+    .filter((v) => allowed.has(String(v.value).toLowerCase()))
+    .map((v) => v.value);
+}
+
+/** Répare select pollué par import manifest (options confondues avec sélection). */
+export function repairSelectControlFromManifest(layer, c) {
+  if (c.type !== 'select' || c._selectionTouched || !c.options?.length) return;
+  if (!Array.isArray(c.values) || !c.values.length) return;
+  const opt = new Set(c.options.map((v) => String(v).toLowerCase()));
+  const allOptsSelected = c.values.length === c.options.length
+    && c.values.every((v) => opt.has(String(v).toLowerCase()));
+  if (allOptsSelected) {
+    delete c.values;
+  }
+}
+
+export function buildControlPredicate(layer) {
+  const ctrls = (layer.controls || []).filter((c) => c.active);
+  if (!ctrls.length) return null;
+  return (f) => {
+    const p = f.properties || {};
+    for (const c of ctrls) {
+      const propKey = resolveFeaturePropertyKey(layer, c.field);
+      const raw = p[propKey];
+      if (c.type === 'select') {
+        const key = normalizePropertyValue(raw);
+        if (!c.active) continue;
+        if (!c._selectionTouched && !Array.isArray(c.values)) continue;
+        if (Array.isArray(c.values) && !c.values.length) return false;
+        if (!Array.isArray(c.values)) continue;
+        if (!selectValuesLowerSet(c).has(String(key).toLowerCase())) return false;
+      } else {
+        if (raw == null || raw === '') continue;
+        const s = normalizePropertyValue(raw);
+        const n = c.type === 'time' ? Date.parse(s) : parsePropertyNumber(s);
+        if (Number.isNaN(n)) continue;
+        if (n < c.min || n > c.max) return false;
+      }
+    }
+    return true;
+  };
+}
+
+export function filteredGeoJSON(layer) {
+  const pred = layer._filterPredicate || buildControlPredicate(layer);
+  if (!pred || !layer.geojson) return layer.geojson;
+  return {
+    type: 'FeatureCollection',
+    features: (layer.geojson.features || []).filter(pred),
+  };
+}
+
+export function fmtControlValue(c, n) {
+  return c.type === 'time' ? new Date(n).toLocaleDateString('fr-FR') : (Math.round(n * 100) / 100);
+}
+
+/** ControlDeclarative[] ← état Atlas layer.controls. */
+export function controlDeclarativesFromAtlasLayer(layer) {
+  return (layer.controls || []).map((c) => ({
+    field: resolveGristFieldName(layer._fields, c.field) || c.field,
+    type: c.type,
+    label: c.label || c.field,
+    min: c.min,
+    max: c.max,
+    values: c.options
+      || (c.type === 'select'
+        ? controlUniqueValues(layer, c.field, 40).map((v) => v.value)
+        : c.values),
+    active: !!c.active,
+    dataMin: c.dataMin,
+    dataMax: c.dataMax,
+    mode: c.mode,
+  }));
+}
+
+/**
+ * ControlDeclarative[] → layer.controls (manifest ou prefs).
+ * @param {{ activateDefaults?: boolean }} [opts]
+ */
+export function applyControlDeclarativesToLayer(layer, declarations, opts = {}) {
+  if (!declarations?.length) return;
+  layer.controls = layer.controls || [];
+  for (const decl of declarations) {
+    const field = resolveGristFieldName(layer._fields, decl.field) || decl.field;
+    const type = decl.type || controlFieldType(layer, field);
+    if (!type) continue;
+    let c = layer.controls.find((x) => x.field === field);
+    if (!c) {
+      c = { field, type, active: false };
+      if (type === 'select') {
+        /* sélection initialisée à l'activation utilisateur, pas à l'import manifest */
+      } else {
+        Object.assign(c, controlBounds(layer, type, field));
+      }
+      layer.controls.push(c);
+    }
+    if (decl.label) c.label = decl.label;
+    if (decl.dataMin != null) c.dataMin = decl.dataMin;
+    if (decl.dataMax != null) c.dataMax = decl.dataMax;
+    if (decl.min != null) c.min = decl.min;
+    if (decl.max != null) c.max = decl.max;
+    if (decl.values) c.options = decl.values;
+    if (decl.mode) c.mode = decl.mode;
+    if (decl.active || opts.activateDefaults) c.active = true;
+    repairSelectControlFromManifest(layer, c);
+  }
+}
+
+/** Contrôle à inclure dans une étape Récit (sélection explicite, pas options manifest). */
+export function shouldCaptureControl(layer, c) {
+  if (!c?.active) return false;
+  if (c.type === 'select') {
+    if (c._selectionTouched) return true;
+    if (!Array.isArray(c.values) || !c.values.length) return false;
+    const all = controlUniqueValues(layer, c.field, 40).map((v) => v.value);
+    if (!all.length) return false;
+    const sel = selectValuesLowerSet(c);
+    const allSelected = all.every((v) => sel.has(String(v).toLowerCase()));
+    return !allSelected;
+  }
+  if (c.type === 'range' || c.type === 'time') {
+    if (c.min == null || c.max == null) return false;
+    if (c.dataMin != null && c.dataMax != null) {
+      if (c.type === 'time') {
+        const span = c.dataMax - c.dataMin;
+        if (span > 86400000 && c.min <= 1 && c.max <= 1) return false;
+      }
+      if (c.min === c.dataMin && c.max === c.dataMax) return false;
+    }
+    return true;
+  }
+  return true;
+}
+
+/** Répare un filtre select actif qui masquerait toute la couche (prefs corrompues). */
+export function sanitizeBrokenSelectFilters(layer) {
+  for (const c of (layer.controls || [])) {
+    if (c.type !== 'select' || !c.active) continue;
+    if (c._selectionTouched && Array.isArray(c.values) && !c.values.length) {
+      c.active = false;
+      delete c._selectionTouched;
+      delete c.values;
+    }
+  }
+}
+
+/** Restaure les contrôles d'une étape Récit sur une couche. */
+export function applyStoryControlsToLayer(layer, stepControls) {
+  layer.controls = layer.controls || [];
+  const stepFields = new Set((stepControls || []).map((c) => c.field));
+
+  for (const sc of (stepControls || [])) {
+    let c = layer.controls.find((x) => x.field === sc.field);
+    if (!c) {
+      c = { field: sc.field, type: sc.type, active: false };
+      if (sc.type !== 'select') Object.assign(c, controlBounds(layer, sc.type, sc.field));
+      layer.controls.push(c);
+    }
+    c.active = true;
+    if (sc.type === 'select') {
+      const restored = normalizeSelectValuesForLayer(layer, sc.field, sc.values);
+      c.values = restored.length ? restored : (Array.isArray(sc.values) ? [...sc.values] : []);
+      c._selectionTouched = true;
+    } else {
+      if (sc.min != null) c.min = sc.min;
+      if (sc.max != null) c.max = sc.max;
+      if (sc.values) c.values = sc.values;
+    }
+  }
+  layer.controls.forEach((c) => { if (!stepFields.has(c.field)) c.active = false; });
+}
+
+/** Marque les sélections partielles avant capture récit (fiabilise l'enregistrement). */
+export function markStoryCaptureControls(layers) {
+  for (const layer of (layers || [])) {
+    for (const c of (layer.controls || [])) {
+      if (shouldCaptureControl(layer, c)) c._selectionTouched = true;
+    }
+  }
+}
+
+/**
+ * Restaure layer.controls depuis Atlas_LayerPrefs (sélection utilisateur, pas options manifest).
+ */
+export function applyControlsFromPrefs(layer, declarations) {
+  if (!declarations?.length) return;
+  layer.controls = layer.controls || [];
+  for (const decl of declarations) {
+    const field = resolveGristFieldName(layer._fields, decl.field) || decl.field;
+    const type = decl.type || controlFieldType(layer, field);
+    if (!type) continue;
+    let c = layer.controls.find((x) => x.field === field);
+    if (!c) {
+      c = { field, type, active: false };
+      if (type !== 'select') Object.assign(c, controlBounds(layer, type, field));
+      layer.controls.push(c);
+    }
+    if (decl.label) c.label = decl.label;
+    if (decl.options) c.options = decl.options;
+    if (decl.dataMin != null) c.dataMin = decl.dataMin;
+    if (decl.dataMax != null) c.dataMax = decl.dataMax;
+    if (decl.min != null) c.min = decl.min;
+    if (decl.max != null) c.max = decl.max;
+    if (decl.mode) c.mode = decl.mode;
+    if (decl.active != null) c.active = !!decl.active;
+
+    if (type === 'select') {
+      if (Array.isArray(decl.selection)) {
+        c.values = normalizeSelectValuesForLayer(layer, field, decl.selection);
+        c._selectionTouched = true;
+      } else if (decl._selectionTouched && Array.isArray(decl.values)) {
+        c.values = normalizeSelectValuesForLayer(layer, field, decl.values);
+        c._selectionTouched = true;
+      } else if (Array.isArray(decl.values) && decl.values.length) {
+        // Legacy Atlas_LayerPrefs (avant v20260729e) : values = options manifest, pas sélection
+        c.options = decl.options || decl.values;
+        delete c.values;
+        delete c._selectionTouched;
+      } else {
+        delete c.values;
+        delete c._selectionTouched;
+      }
+      if (c.active && c._selectionTouched && Array.isArray(c.values) && !c.values.length) {
+        /* sélection vide explicite */
+      } else if (c.active && !c._selectionTouched && !Array.isArray(c.values)) {
+        /* actif sans sélection → pas de filtre catégorie (toutes les features) */
+      }
+    }
+
+    repairSelectControlFromManifest(layer, c);
+  }
+}
+
+/** Payload prefs — exporte sélection réelle (pas confondre avec options manifest). */
+export function controlsPrefsPayload(layer) {
+  return (layer.controls || []).map((c) => ({
+    field: resolveGristFieldName(layer._fields, c.field) || c.field,
+    type: c.type,
+    label: c.label || c.field,
+    active: !!c.active,
+    min: c.min,
+    max: c.max,
+    dataMin: c.dataMin,
+    dataMax: c.dataMax,
+    mode: c.mode,
+    options: c.options,
+    selection: c.type === 'select' && Array.isArray(c.values) ? [...c.values] : undefined,
+    _selectionTouched: !!c._selectionTouched,
+  }));
+}

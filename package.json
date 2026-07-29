@@ -9,6 +9,8 @@
     "manifest": "node scripts/generate-manifest.js",
     "models": "node scripts/generate-models.js",
     "promote": "node scripts/promote.js",
+    "promote:atlas": "node scripts/promote-atlas.js",
+    "promote:grist-forms": "node scripts/promote-grist-forms.js",
     "build:taskflow": "node scripts/build-taskflow.js",
     "check:taskflow": "node scripts/build-taskflow.js --check",
     "serve:dev": "node scripts/serve-dev.js",
@@ -27,5 +29,8 @@
     "no-code"
   ],
   "author": "nicO1asFr",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.10"
+  }
 }

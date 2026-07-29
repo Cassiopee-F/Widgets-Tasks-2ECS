@@ -11,8 +11,8 @@ import {
   loadLatestSceneManifest,
   loadQgisWidgetConfig,
   loadSceneManifestLayers,
-} from './lib/scene-loader.js?v=1.0.0';
-import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.0.0';
+} from './lib/scene-loader.js?v=20260729o';
+import { boundsFromGeoJSON } from './lib/grist-rows.js?v=20260729p';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -21,7 +21,7 @@ import {
   saveFeaturesToSource,
   startScenePolling,
   refreshLayerFromTable,
-} from './lib/grist-sync.js?v=1.0.0';
+} from './lib/grist-sync.js?v=20260729p';
 import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
@@ -30,13 +30,13 @@ import {
   normalizePropertyValue,
   parsePropertyNumber,
   resolveFeaturePropertyKey,
-} from './lib/declarative-style.js?v=1.0.0';
+} from './lib/declarative-style.js?v=20260729m';
 import {
   scanGeoTables,
   detectGeometryColumn,
   tableToGeoJSON,
   isLinkedTableLayer,
-} from './lib/geo-tables.js?v=1.0.0';
+} from './lib/geo-tables.js?v=20260729m';
 import {
   layerFieldNames,
   controlFieldType,
@@ -51,21 +51,21 @@ import {
   repairSelectControlFromManifest,
   applyStoryControlsToLayer,
   sanitizeBrokenSelectFilters,
-} from './lib/controls.js?v=1.0.0';
+} from './lib/controls.js?v=20260729m';
 import {
   captureStoryState,
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=1.0.0';
+} from './lib/story.js?v=20260729m';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
-} from './lib/manifest-binding.js?v=1.0.0';
+} from './lib/manifest-binding.js?v=20260729m';
 import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
-} from './lib/viewport.js?v=1.0.0';
+} from './lib/viewport.js?v=20260729q';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
