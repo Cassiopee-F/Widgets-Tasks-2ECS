@@ -13,6 +13,22 @@ résultat.
 
 ## Architecture
 
+Fichiers widget :
+
+| Fichier | Rôle |
+|---------|------|
+| `index.html` | **v1.1 stable** — Leaflet ; publié dans `published/qgis2grist/` |
+| `index_v2.html` | **v2 dev** — MapLibre + Scene Manifest |
+| `lib/qml-to-declarative.js` | QML → StyleDeclarative (F1) |
+| `lib/scene-manifest.js` | Build Scene Manifest V0.2 (F2) |
+| `lib/maplibre-bridge.js` | Runtime carto MapLibre (D3) |
+| `lib/provenance.js` | Source Strate lite + provenance import (D8) |
+| `tests/qml-to-declarative.test.js` | Tests unitaires |
+| `tests/provenance.test.js` | Tests provenance D8 |
+
+Spec binding v2 : `docs/BINDING-QGIS-GRIST-CEREMA-v2.md`.
+**Gate v2** : `docs/CADRAGE-v2.md` — D1–D10 actés (2026-07-26) ; Phases 1–2 autorisées.
+
 ### Machine d'états
 
 ```
@@ -108,6 +124,8 @@ classification, `fill_color` n'est pas recalculé. À documenter pour l'utilisat
 
 ## État actuel
 
+### v1.1 (`index.html`) — stable
+
 Fait :
 - Parsers qgis2web HTML/ZIP, QGZ/QGS, GPKG (avec sql.js + WKB pur JS), GeoJSON.
 - Reprojection EPSG:3857 native, autres CRS via proj4js on-demand.
@@ -125,8 +143,15 @@ Fait :
   (avec `<value key= value=>`) n'est pas parsé — ValueMap dégradé en Text.
 - **Polling 5 s sans backoff** : sur grosse table c'est coûteux. Pas de pause
   quand l'onglet est en arrière-plan.
-- **`adaptHtmlForGrist` / `renderAsWidget`** : ~360 lignes mortes, à supprimer
-  ou réintégrer.
+- **`adaptHtmlForGrist` / `renderAsWidget` / storage local** : supprimés en v2 Phase 1 (`index_v2.html`).
+
+### v2 (`index_v2.html`) — Phases 2–3 ✅
+
+- **MapLibre GL JS**, Scene Manifest, config v3
+- **Provenance D8** : `meta.sources[]`, `meta.provenance`, `source_info` (config + manifest)
+- Restauration provenance depuis config ou table `SceneManifest`
+
+Phases suivantes : import `.grist` (Phase 4), tests manuels §8.
 
 ## Points d'attention
 
@@ -162,16 +187,34 @@ valeurs hors-`choices` (elles sont marquées invalides en UI mais persistées).
 - `WkbReader` : parser WKB/EWKB/ISO Z·M·ZM pur JS, ~50 lignes.
 - `topoSortByRefs(layers)` : tri topologique générique sur graphes de Refs.
 
+## Documentation binding (v2)
+
+- Spec : `docs/BINDING-QGIS-GRIST-CEREMA-v2.md`
+- **Cadrage (gate)** : `docs/CADRAGE-v2.md` — D1–D10 actés ; Phases 1–2 autorisées
+- v1 : `index.html` (Leaflet) · v2 : `index_v2.html` (MapLibre — Phase 2)
+
+## Publication
+
+```bash
+npm run promote:qgis2grist   # → published/qgis2grist/v2/ + package.json dual
+npm run manifest
+```
+
+| Widget ID | URL | Contenu |
+|-----------|-----|---------|
+| `qgis2grist` | `…/qgis2grist/` | **v1** Leaflet (stable) |
+| `qgis2grist-v2` | `…/qgis2grist/v2/` | **v2** MapLibre + Scene Manifest + terrain |
+
+`terrain.html` + deps `grist_forms` vendorisées sous `v2/vendor/grist_forms/`.
+
 ## Tests manuels
 
-Pas de suite automatisée. Pour valider une modif, tester avec :
-1. Un export `qgis2web` ZIP simple (couche unique Polygon).
-2. Un projet `.qgz` QField avec relations 1-N et ValueMap.
-3. Un GeoPackage standalone avec `gpkg_data_columns` et `gpkg_data_column_constraints`.
-4. Un projet BigQgisMCP (HTML inondation avec slider).
+Fixtures : `tests/fixtures/web/qfield_bees.zip`, flood HTML.
+Automatisés (échantillon) : `node --test projects/qgis2grist/tests/`
 
 Vérifier dans Grist :
 - Labels humains présents sur les colonnes.
 - `Choice` avec choix valides pour ValueMap.
 - `Ref:Parent` cliquable sur les FK (le widget Grist doit afficher la ligne parent).
 - Restauration après reload du widget.
+- **v2** : table `SceneManifest`, toast Atlas-ready, pack terrain.

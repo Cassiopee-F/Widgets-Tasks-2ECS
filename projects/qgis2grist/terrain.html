@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<title>Mode terrain — QField Grist</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"/>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="lib/qml-to-declarative.js?v=20260729t"></script>
+<script src="lib/maplibre-bridge.js?v=20260729t"></script>
+<script src="../grist_forms/shared/grist-bridge.js"></script>
+<script src="../grist_forms/shared/types.js"></script>
+<script src="../grist_forms/shared/attachments.js"></script>
+<script src="../grist_forms/shared/session-context.js"></script>
+<script src="../grist_forms/runtime/engine.js"></script>
+<link rel="stylesheet" href="../grist_forms/shared/dsfr-like.css"/>
+<style>
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-h: 56px;
+  --primary: #3e5de7;
+  --bg: #f8fafc;
+  --surface: #fff;
+  --text: #1e293b;
+  --muted: #64748b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  touch-action: manipulation;
+}
+#terrain-loading {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; padding: 24px; text-align: center; color: var(--muted);
+}
+/* display:flex bat [hidden] du UA — forcer le masquage */
+#terrain-loading[hidden],
+#terrain-app[hidden],
+.terrain-panel[hidden] {
+  display: none !important;
+}
+#terrain-app {
+  display: flex; flex-direction: column;
+  height: 100%; height: 100dvh;
+}
+.terrain-header {
+  flex-shrink: 0;
+  padding: 10px 14px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid #e2e8f0;
+}
+.terrain-header h1 {
+  font-size: 1rem; font-weight: 700; color: var(--primary);
+}
+.terrain-header p { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.terrain-form-bar {
+  margin-top: 8px;
+}
+.terrain-form-bar select {
+  width: 100%; font-size: 16px; padding: 10px 12px;
+  border: 1px solid #cbd5e1; border-radius: 8px;
+  background: #fff;
+}
+.terrain-main {
+  flex: 1; min-height: 0; position: relative;
+}
+.terrain-panel {
+  position: absolute; inset: 0;
+  overflow: auto; -webkit-overflow-scrolling: touch;
+}
+#terrain-map { width: 100%; height: 100%; }
+#panel-form { padding: 12px 12px calc(var(--nav-h) + var(--safe-bottom) + 12px); }
+.terrain-empty { padding: 24px; color: var(--muted); text-align: center; }
+.terrain-nav {
+  flex-shrink: 0;
+  display: flex;
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--surface);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+}
+.terrain-tab {
+  flex: 1;
+  border: none; background: transparent;
+  font-size: 0.8rem; font-weight: 600;
+  color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; cursor: pointer;
+  min-height: 48px;
+}
+.terrain-tab.active { color: var(--primary); }
+.terrain-tab svg { width: 22px; height: 22px; }
+.terrain-toast {
+  position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px);
+  padding: 12px 14px; border-radius: 10px;
+  background: #1e293b; color: #fff; font-size: 0.85rem;
+  z-index: 999; text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.terrain-toast.ok { background: #059669; }
+.terrain-toast.error { background: #dc2626; }
+/* FormEngine mobile — grossir zones tactiles */
+#panel-form .fr-input, #panel-form .fr-select, #panel-form .fr-btn {
+  min-height: 48px; font-size: 16px;
+}
+#panel-form .fr-btn { width: 100%; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div id="terrain-loading">Chargement mode terrain…</div>
+<div id="terrain-app" hidden>
+  <header class="terrain-header">
+    <h1 id="terrain-title">Terrain</h1>
+    <p>Carte + saisie — comme QField dans Grist</p>
+    <div class="terrain-form-bar">
+      <select id="terrain-form-select" aria-label="Couche à saisir"></select>
+    </div>
+  </header>
+  <main class="terrain-main">
+    <div id="panel-map" class="terrain-panel">
+      <div id="terrain-map"></div>
+    </div>
+    <div id="panel-form" class="terrain-panel" hidden>
+      <div id="terrain-form-root"></div>
+    </div>
+  </main>
+  <nav class="terrain-nav" aria-label="Navigation terrain">
+    <button type="button" class="terrain-tab active" data-tab="map" aria-label="Carte">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+      Carte
+    </button>
+    <button type="button" class="terrain-tab" data-tab="form" aria-label="Saisir">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Saisir
+    </button>
+  </nav>
+</div>
+<div id="terrain-toast" class="terrain-toast" hidden></div>
+<script src="lib/terrain-app.js?v=20260729u"></script>
+</body>
+</html>
