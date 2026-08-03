@@ -1,0 +1,77 @@
+{
+  "version": "0.2.2",
+  "classification": "cerema_internal",
+  "title": "CRESO / SEVI — Cagliari (Atlas prêt)",
+  "subtitle": "Grille 200 m · Sites INTERREG · OSM",
+  "layers": [
+    {
+      "id": "Grille_analyse_200m_3",
+      "name": "Grille d'analyse 200 m",
+      "source": { "type": "grist", "table": "Grille_analyse_200m_3" },
+      "geometry_type": "polygon",
+      "profile": "A",
+      "visibility": { "minZoom": null, "maxZoom": null, "defaultVisible": true },
+      "fetch": { "mode": "full" },
+      "limits": { "maxFeaturesInView": 10000 },
+      "style": {
+        "declarative": {
+          "kind": "graduated",
+          "field": "score_enjeu",
+          "method": "linear",
+          "stops": [
+            { "lower": 0, "upper": 0.05, "color": "#fff7bc", "opacity": 0.55 },
+            { "lower": 0.05, "upper": 0.15, "color": "#fec44f", "opacity": 0.65 },
+            { "lower": 0.15, "upper": 0.35, "color": "#fe9929", "opacity": 0.75 },
+            { "lower": 0.35, "upper": 0.6, "color": "#ec7014", "opacity": 0.8 },
+            { "lower": 0.6, "upper": 2, "color": "#993404", "opacity": 0.85 }
+          ]
+        }
+      },
+      "controls": [
+        { "field": "score_enjeu", "type": "range", "variant": "range_max", "label": "Score enjeu (maxi)", "min": 0, "max": 1, "active": true },
+        { "field": "nb_bat", "type": "range", "variant": "range_max", "label": "Bâtiments (maxi)", "min": 0, "max": 50, "active": true }
+      ]
+    },
+    {
+      "id": "Sites_etude_INTERREG_3",
+      "name": "Sites d'étude INTERREG",
+      "source": { "type": "grist", "table": "Sites_etude_INTERREG_3" },
+      "geometry_type": "point",
+      "profile": "A",
+      "visibility": { "minZoom": null, "maxZoom": null, "defaultVisible": true },
+      "fetch": { "mode": "full" },
+      "limits": { "maxFeaturesInView": 10000 },
+      "style": {
+        "declarative": {
+          "kind": "categorized",
+          "field": "Case_study",
+          "stops": [
+            { "value": "Cagliari 1", "color": "#ef4444" },
+            { "value": "Cagliari 2", "color": "#f97316" },
+            { "value": "INTERREG", "color": "#1a9850" }
+          ]
+        }
+      },
+      "controls": [
+        { "field": "Case_study", "type": "select", "variant": "select_single", "label": "Site", "active": true }
+      ]
+    },
+    {
+      "id": "Routes_3",
+      "name": "Routes",
+      "source": { "type": "grist", "table": "Routes_3" },
+      "geometry_type": "line",
+      "profile": "A",
+      "visibility": { "minZoom": 11, "maxZoom": null, "defaultVisible": false },
+      "fetch": { "mode": "full" },
+      "limits": { "maxFeaturesInView": 10000 },
+      "style": { "declarative": { "kind": "single", "color": "#10b981", "opacity": 0.85 } },
+      "controls": []
+    }
+  ],
+  "meta": {
+    "source_file": "atlas-fix-sevi-cagliari",
+    "widget": "atlas-bootstrap",
+    "note": "Sans Batiments_3 (~39k) pour éviter freeze navigateur. Activer Routes via pastille. Sites: utiliser latitude2/longitude2."
+  }
+}

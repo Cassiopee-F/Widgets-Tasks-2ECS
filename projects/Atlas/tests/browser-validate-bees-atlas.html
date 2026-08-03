@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Atlas — validation bees données Grist (navigateur)</title>
+  <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #status { padding: 10px 14px; background: #1e293b; color: #e2e8f0; font-size: 14px; }
+    #status.ok { background: #14532d; }
+    #status.fail { background: #7f1d1d; }
+    #map { height: calc(100vh - 44px); }
+  </style>
+</head>
+<body>
+  <div id="status">Chargement pipeline Atlas + données Grist bees…</div>
+  <div id="map"></div>
+  <script type="module">
+    import { loadSceneManifestLayers } from '../lib/scene-loader.js?v=20260729b';
+
+    const status = document.getElementById('status');
+    const errors = [];
+
+    function assert(cond, msg) {
+      if (!cond) errors.push(msg);
+    }
+
+    const APIARY_COLORS = {
+      'European honey bee': '#de7300',
+      'Buckfast bee': '#2da4ff',
+      'Carniolan honey bee': '#9d3796',
+    };
+
+    const manifest = await fetch('./fixtures/scene-manifest-bees-grist.json?v=20260729b').then((r) => r.json());
+    const apiaryRaw = await fetch('./fixtures/grist-apiary-sample.json?v=20260729b').then((r) => r.json());
+    const fieldsRaw = await fetch('./fixtures/grist-fields-sample.json?v=20260729b').then((r) => r.json());
+
+    const { _source: _a, ...apiaryCol } = apiaryRaw;
+    const { _source: _f, ...fieldsCol } = fieldsRaw;
+
+    const docApi = {
+      listTables: async () => ['Apiary', 'Fields'],
+      fetchTable: async (name) => {
+        if (name === 'Apiary') return apiaryCol;
+        if (name === 'Fields') return fieldsCol;
+        throw new Error(name);
+      },
+    };
+
+    const { layers, bounds } = await loadSceneManifestLayers(docApi, manifest, null);
+    const apiary = layers.find((l) => l.sourceTable === 'Apiary');
+    const fields = layers.find((l) => l.sourceTable === 'Fields');
+
+    assert(layers.length === 2, `2 couches attendues, got ${layers.length}`);
+    assert(apiary.geojson.features.length === 35, '35 ruchers');
+
+    const apiaryColors = new Set();
+    for (const f of apiary.geojson.features) {
+      const sp = f.properties.bee_species;
+      const exp = APIARY_COLORS[sp];
+      assert(exp, `espèce ${sp}`);
+      assert(f.properties._fill_color === exp, `${sp} → ${exp} (got ${f.properties._fill_color})`);
+      apiaryColors.add(f.properties._fill_color);
+    }
+    assert(apiaryColors.size === 3, '3 couleurs Apiary');
+
+    const fieldColors = new Set(fields.geojson.features.map((f) => f.properties._fill_color));
+    assert(fieldColors.size === 3, '3 couleurs Fields (Lavender, Dandelions, Grass)');
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      bounds: bounds.flat(),
+      fitBoundsOptions: { padding: 40 },
+    });
+
+    map.on('load', () => {
+      map.addSource('apiary', { type: 'geojson', data: apiary.geojson });
+      map.addLayer({
+        id: 'apiary',
+        type: 'circle',
+        source: 'apiary',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': ['coalesce', ['get', '_fill_color'], '#999'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      map.addSource('fields', { type: 'geojson', data: fields.geojson });
+      map.addLayer({
+        id: 'fields',
+        type: 'fill',
+        source: 'fields',
+        paint: {
+          'fill-color': ['coalesce', ['get', '_fill_color'], '#ccc'],
+          'fill-opacity': 0.55,
+          'fill-outline-color': '#333',
+        },
+      });
+
+      if (errors.length) {
+        status.className = 'fail';
+        status.textContent = 'ÉCHEC : ' + errors.join(' · ');
+      } else {
+        status.className = 'ok';
+        status.textContent = 'OK — bees Grist : 35 ruchers (3 couleurs Choice) + 4 parcelles Fields';
+      }
+      window.__ATLAS_BEES_GRIST_TEST__ = { ok: !errors.length, errors, apiaryColors: [...apiaryColors] };
+    });
+  </script>
+</body>
+</html>

@@ -140,17 +140,39 @@ export function buildControlPredicate(layer) {
       const raw = p[propKey];
       if (c.type === 'select') {
         const key = normalizePropertyValue(raw);
+        const variant = c.variant || 'select_multi';
         if (!c.active) continue;
         if (!c._selectionTouched && !Array.isArray(c.values)) continue;
         if (Array.isArray(c.values) && !c.values.length) return false;
         if (!Array.isArray(c.values)) continue;
+        if (variant === 'select_single' && c.values.length > 1) {
+          c.values = [c.values[0]];
+        }
         if (!selectValuesLowerSet(c).has(String(key).toLowerCase())) return false;
       } else {
-        if (raw == null || raw === '') continue;
+        // `requireValue` : une entité dépourvue de la donnée filtrée est écartée
+        // au lieu d'être laissée passer. Indispensable quand l'attribut n'est
+        // renseigné que sur une partie des objets — sinon les entités muettes
+        // dominent la carte thématique. Absent par défaut : les filtres
+        // existants gardent leur tolérance.
+        if (raw == null || raw === '') {
+          if (c.requireValue) return false;
+          continue;
+        }
         const s = normalizePropertyValue(raw);
         const n = c.type === 'time' ? Date.parse(s) : parsePropertyNumber(s);
-        if (Number.isNaN(n)) continue;
-        if (n < c.min || n > c.max) return false;
+        if (Number.isNaN(n)) {
+          if (c.requireValue) return false;
+          continue;
+        }
+        const variant = c.variant || (c.type === 'time' ? 'time_lte' : 'range_between');
+        if (variant === 'time_lte' || variant === 'range_max') {
+          if (n > c.max) return false;
+        } else if (variant === 'range_min') {
+          if (n < c.min) return false;
+        } else if (n < c.min || n > c.max) {
+          return false;
+        }
       }
     }
     return true;
@@ -185,6 +207,7 @@ export function controlDeclarativesFromAtlasLayer(layer) {
     active: !!c.active,
     dataMin: c.dataMin,
     dataMax: c.dataMax,
+    variant: c.variant,
     mode: c.mode,
   }));
 }
@@ -217,6 +240,7 @@ export function applyControlDeclarativesToLayer(layer, declarations, opts = {}) 
     if (decl.max != null) c.max = decl.max;
     if (decl.values) c.options = decl.values;
     if (decl.mode) c.mode = decl.mode;
+    if (decl.variant) c.variant = decl.variant;
     if (decl.active || opts.activateDefaults) c.active = true;
     repairSelectControlFromManifest(layer, c);
   }
@@ -273,6 +297,9 @@ export function applyStoryControlsToLayer(layer, stepControls) {
       layer.controls.push(c);
     }
     c.active = true;
+    // Exigence de valeur portée par l'étape : sans elle, une vue thématique
+    // laisse passer les entités dépourvues de l'attribut filtré.
+    if (sc.requireValue != null) c.requireValue = !!sc.requireValue;
     if (sc.type === 'select') {
       const restored = normalizeSelectValuesForLayer(layer, sc.field, sc.values);
       c.values = restored.length ? restored : (Array.isArray(sc.values) ? [...sc.values] : []);

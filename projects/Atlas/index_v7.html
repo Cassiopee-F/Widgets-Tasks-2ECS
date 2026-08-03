@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Atlas v7 — Maquette 3D Territoriale</title>
 
     <!-- MapLibre GL JS (remplace Mapbox) -->
@@ -242,36 +242,115 @@
             display: flex; align-items: center; justify-content: flex-end;
             max-width: calc(100% - 98px);
         }
-        .map-controls-dock .dock-fab {
+        .dock-fabs {
             display: none;
+            flex-direction: row; align-items: center; gap: 8px;
+            overflow-x: auto; max-width: 100%;
+            scrollbar-width: none;
+        }
+        .dock-fabs::-webkit-scrollbar { display: none; }
+        .map-controls-dock.collapsed .dock-fabs { display: flex; }
+        .map-controls-dock:not(.collapsed) .dock-fabs { display: none; }
+        .map-controls-dock.collapsed .dock-panel { display: none; }
+
+        .map-controls-dock .dock-fab {
+            display: flex;
             width: 54px; height: 54px; border-radius: 50%;
             background: var(--surface); border: 1px solid var(--hairline);
             box-shadow: 0 2px 6px rgba(0,0,0,0.04);
             align-items: center; justify-content: center; cursor: pointer;
             padding: 0; flex-shrink: 0;
+            transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
         }
         .map-controls-dock .dock-fab:hover { border-color: var(--hairline-strong); }
+        .map-controls-dock .dock-fab.active {
+            border-color: rgba(196,69,54,0.4);
+            box-shadow: 0 3px 10px rgba(196,69,54,0.16);
+            transform: translateY(-1px);
+        }
         .map-controls-dock .dock-fab .sun-dot {
             position: static; transform: none; pointer-events: none;
             width: 18px; height: 18px; border-radius: 9px;
         }
-        .map-controls-dock.collapsed .dock-fab { display: flex; }
-        .map-controls-dock.collapsed .dock-panel { display: none; }
+        .map-controls-dock .dock-fab .dock-fab-ic { font-size: 17px; line-height: 1; }
 
         .map-controls-dock .dock-panel {
             display: flex; align-items: center; gap: 10px;
             background: var(--surface); border-radius: 27px;
             border: 1px solid var(--hairline);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            box-shadow: 0 8px 20px rgba(30,20,10,0.08);
             height: 54px;
             padding: 0 8px 0 14px;
             max-width: 100%;
             overflow: hidden;
             box-sizing: border-box;
         }
-        .dock-slots {
-            display: flex; align-items: center; gap: 10px;
+        .map-controls-dock .dock-panel.dock-panel-tall {
+            height: auto; max-height: min(40vh, 200px);
+            border-radius: 16px; align-items: flex-start;
+            padding-top: 10px; padding-bottom: 10px;
+        }
+        .dock-slot-host {
+            display: flex; align-items: center;
             flex: 1; min-width: 0; overflow: hidden;
+        }
+        .dock-slot-data {
+            width: 100%; min-width: 180px; max-width: 340px;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .dock-slot-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 0 2px;
+        }
+        .dock-slot-title {
+            font-size: 11.5px; font-weight: 600; color: var(--ink);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .dock-slot-tag {
+            font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--accent); background: rgba(196,69,54,0.08);
+            border: 1px solid rgba(196,69,54,0.2);
+            border-radius: 999px; padding: 2px 7px; flex-shrink: 0;
+        }
+        .dock-slot-body {
+            background: rgba(244,239,227,0.52);
+            border: 1px solid var(--hairline);
+            border-radius: 10px;
+            padding: 8px 10px;
+        }
+        .dock-slot-data .cats { max-height: 132px; overflow-y: auto; margin-top: 0 !important; }
+        .dock-slot-data .rng { width: 100%; max-width: 260px; margin-top: 2px; }
+        .dock-slot-data .range-info {
+            font-size: 11px; color: #7B705F; margin: 0 0 5px 0 !important;
+        }
+        .dock-slot-data .cat-row { border-radius: 8px; padding: 4px 6px; }
+        .dock-slot-data .cat-row:hover { background: rgba(0,0,0,0.03); }
+        .dock-slot-data .cat-count { opacity: 0.86; }
+        .dock-seg {
+            display: flex; border: 1px solid var(--hairline);
+            border-radius: 10px; overflow: hidden;
+        }
+        .dock-seg-btn {
+            padding: 6px 14px; border: none; background: transparent;
+            font-size: 12px; cursor: pointer; color: var(--muted);
+        }
+        .dock-seg-btn.active { background: var(--ink); color: var(--bg); }
+        .dock-slot-basemap .dock-chips {
+            display: flex; gap: 6px; flex-wrap: nowrap;
+            overflow-x: auto; max-width: min(calc(100vw - 140px), 400px);
+            scrollbar-width: none;
+        }
+        .dock-slot-basemap .dock-chips::-webkit-scrollbar { display: none; }
+        .dock-chip {
+            display: flex; align-items: center; gap: 4px;
+            padding: 4px 10px; border-radius: 12px;
+            border: 1px solid var(--hairline); background: transparent;
+            font-size: 11px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+        }
+        .dock-chip:hover { border-color: var(--hairline-strong); }
+        .dock-chip.active {
+            border-color: var(--accent);
+            background: rgba(196, 69, 54, 0.08); color: var(--accent);
         }
         .dock-collapse {
             flex-shrink: 0;
@@ -279,8 +358,12 @@
             border: 1px solid var(--hairline); background: transparent;
             color: var(--muted); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
+            transition: transform 0.14s ease, border-color 0.14s ease, color 0.14s ease;
         }
-        .dock-collapse:hover { color: var(--ink); border-color: var(--hairline-strong); }
+        .dock-collapse:hover {
+            color: var(--ink); border-color: var(--hairline-strong); transform: translateY(-1px);
+            background: rgba(0,0,0,0.03);
+        }
 
         /* Slot soleil — une ligne, contenu contenu (pas de scroll) */
         .dock-slot-sun {
@@ -322,6 +405,7 @@
             background: transparent; border: none; cursor: pointer; color: var(--muted);
             font-size: 11px; display: flex; align-items: center; gap: 4px;
             padding: 4px 6px; border-radius: 8px; white-space: nowrap; flex-shrink: 0;
+            transition: background-color 0.14s ease, color 0.14s ease;
         }
         .shadow-toggle:hover { background: rgba(0,0,0,0.03); }
         .shadow-toggle.on { color: var(--accent); }
@@ -398,6 +482,45 @@
             text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
         }
         .field-meta { margin-top: 6px; font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
+
+        .control-variant-row {
+            display: flex; align-items: center; gap: 8px; margin-top: 8px;
+        }
+        .control-variant-label {
+            font-size: 10.5px; font-weight: 600; color: var(--muted);
+            text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
+        }
+        .control-variant-select {
+            flex: 1; min-width: 0; padding: 5px 8px !important; font-size: 11.5px !important;
+        }
+        .control-variant-hint {
+            margin: 6px 0 0; padding: 0;
+            font-size: 11px; line-height: 1.45; color: var(--muted);
+        }
+        .control-variant-matrix {
+            margin-bottom: 10px; border: 1px solid var(--hairline);
+            border-radius: 8px; background: var(--surface-muted); overflow: hidden;
+        }
+        .control-variant-matrix summary {
+            padding: 8px 10px; font-size: 11px; font-weight: 600;
+            color: var(--accent2); cursor: pointer; list-style: none;
+        }
+        .control-variant-matrix summary::-webkit-details-marker { display: none; }
+        .control-variant-matrix summary::before { content: '▸ '; }
+        .control-variant-matrix[open] summary::before { content: '▾ '; }
+        .control-variant-matrix-body {
+            padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px;
+            border-top: 1px solid var(--hairline);
+        }
+        .cvm-group {
+            display: flex; flex-direction: column; gap: 3px;
+            font-size: 10.5px; color: var(--text); line-height: 1.4;
+        }
+        .cvm-group .cvm-k {
+            font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.07em; color: var(--muted); margin-top: 4px;
+        }
+        .cvm-group .cvm-k:first-child { margin-top: 6px; }
 
         .input {
             width: 100%; padding: 10px 12px; background: var(--surface);
@@ -600,6 +723,178 @@
         .dual .input-label, .triple .input-label { font-size: 10px; color: var(--muted); display: block; margin-bottom: 3px; }
         .triple { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
         .input-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
+
+        .view-mode-badge {
+            display: inline-flex; align-items: center;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; padding: 3px 8px; border-radius: 6px;
+            background: rgba(196, 69, 54, 0.12); color: var(--accent);
+            margin-left: 8px;
+        }
+        .view-mode-badge[hidden] { display: none !important; }
+        body.view-mode .header-actions #btn-load,
+        body.view-mode .header-actions #btn-save,
+        body.view-mode .header-actions #btn-export,
+        body.view-mode .header-actions .avatar { display: none !important; }
+        body.view-mode .dirty-dot,
+        body.view-mode.dirty .dirty-dot { display: none !important; }
+        body.view-mode #map-hud { display: none !important; }
+        body.view-mode .rail-item[data-module="lieu"],
+        body.view-mode .rail-item[data-module="soleil"],
+        body.view-mode .rail-item[data-module="vues"],
+        body.view-mode .rail-item[data-module="controles"],
+        body.view-mode .rail-item[data-module="reglages"],
+        body.view-mode .rail-item[data-module="couches"] { display: none !important; }
+        body.view-mode .rail-item[data-module="recit"] { display: none !important; }
+        /* Lecture : carte pleine largeur — récit via FAB uniquement */
+        body.view-mode { --rail-w: 0px; }
+        body.view-mode .rail { display: none !important; }
+        body.view-mode .module-panel,
+        body.view-mode .module-panel.open { display: none !important; }
+        body.view-mode #map-controls-dock:not(.has-pills) { display: none !important; }
+        body.view-mode #map-controls-dock.has-pills { display: flex !important; }
+        body.story-presenting #map-controls-dock { display: none !important; }
+        body.view-mode .selection-bar,
+        body.view-mode .selection-bar.open { display: none !important; }
+        body.view-mode .inspector { display: none !important; }
+        body.view-mode #mobile-nav { display: none !important; }
+        .legend-row.legend-clickable { cursor: pointer; border-radius: 6px; margin: 0 -4px; padding: 3px 4px; }
+        .legend-row.legend-clickable:hover { background: rgba(196, 69, 54, 0.08); }
+        .legend-row.legend-clickable.legend-focused {
+            background: rgba(196, 69, 54, 0.14);
+            outline: 1px solid rgba(196, 69, 54, 0.35);
+        }
+        body.view-mode .legend-head .t::after {
+            content: " · clic pour cibler";
+            font-family: var(--sans, inherit); font-style: normal; font-weight: 500;
+            font-size: 10px; color: var(--muted); letter-spacing: 0;
+        }
+        .maplibregl-popup.atlas-view-popup .maplibregl-popup-content {
+            padding: 10px 12px; border-radius: 10px;
+            font-family: inherit; box-shadow: 0 8px 28px rgba(30,20,10,0.16);
+        }
+        .atlas-popup-title {
+            font-size: 13px; font-weight: 700; margin-bottom: 8px;
+            color: var(--ink, #1e140a);
+        }
+        .atlas-popup-row {
+            display: flex; justify-content: space-between; gap: 12px;
+            font-size: 12px; padding: 3px 0; border-top: 1px solid rgba(0,0,0,0.06);
+        }
+        .atlas-popup-row .k { color: var(--muted, #8a7a68); flex-shrink: 0; }
+        .atlas-popup-row .v { text-align: right; word-break: break-word; color: var(--ink, #1e140a); }
+        .atlas-popup-empty { font-size: 12px; color: var(--muted, #8a7a68); }
+        #viewer-controls {
+            display: none;
+            position: absolute; left: 12px; top: 12px; z-index: 25;
+            max-width: min(320px, calc(100% - 24px)); max-height: 45%;
+            overflow: hidden;
+            background: var(--surface); border: 1px solid var(--hairline);
+            border-radius: 12px; box-shadow: 0 8px 28px rgba(30,20,10,0.12);
+        }
+        body.view-mode #viewer-controls.has-controls { display: block; }
+        #viewer-controls .vc-toggle {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            width: 100%; border: none; background: none; cursor: pointer;
+            padding: 10px 12px; font-family: inherit; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+        }
+        #viewer-controls .vc-toggle .vc-chevron { transition: transform 0.15s ease; }
+        #viewer-controls:not(.collapsed) .vc-toggle .vc-chevron { transform: rotate(180deg); }
+        #viewer-controls .vc-body {
+            padding: 0 12px 10px; max-height: min(40vh, 320px);
+            overflow: auto; -webkit-overflow-scrolling: touch;
+        }
+        #viewer-controls.collapsed .vc-body { display: none; }
+        #viewer-controls h3 {
+            margin: 0 0 8px; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+        }
+        #viewer-story-fab {
+            display: none;
+            position: absolute; right: 12px; bottom: 12px; z-index: 26;
+            align-items: center; gap: 6px;
+            padding: 10px 14px; border-radius: 999px;
+            border: 1px solid var(--hairline); background: var(--surface);
+            box-shadow: 0 8px 24px rgba(30,20,10,0.14);
+            font-family: inherit; font-size: 13px; font-weight: 600;
+            color: var(--ink); cursor: pointer;
+        }
+        body.view-mode.view-has-story.mobile-layout #viewer-story-fab { display: inline-flex; }
+
+        #mobile-nav {
+            display: none;
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+            height: calc(56px + env(safe-area-inset-bottom, 0px));
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            background: var(--surface); border-top: 1px solid var(--hairline);
+            box-shadow: 0 -4px 20px rgba(30, 20, 10, 0.08);
+        }
+        #mobile-nav button {
+            flex: 1; border: none; background: none; font-family: inherit;
+            font-size: 11px; font-weight: 600; color: var(--muted);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 2px; cursor: pointer; min-height: 48px;
+        }
+        #mobile-nav button.active { color: var(--accent); }
+
+        @media (max-width: 720px) {
+            :root { --rail-w: 0px; --inspector-w: 100%; }
+            body.mobile-layout .rail { display: none; }
+            body.mobile-layout #mobile-nav { display: flex; }
+            body.mobile-layout .app-header .cmdk { display: none; }
+            /* Lecture mobile : loupe seule (ouvre la palette) */
+            body.view-mode.mobile-layout .app-header .cmdk {
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 40px; min-width: 40px; padding: 0; flex: 0 0 40px;
+                margin-left: auto;
+            }
+            body.view-mode.mobile-layout .app-header .cmdk > span { display: none; }
+            body.mobile-layout .module-panel {
+                position: fixed; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+                top: auto; max-height: 48vh; width: 100%; z-index: 35;
+                border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,0.18);
+                border: 1px solid var(--hairline); border-bottom: none;
+            }
+            body.mobile-layout .inspector {
+                position: fixed; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+                top: auto; width: 100%; max-height: 55vh; z-index: 36;
+                border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,0.2);
+            }
+            body.mobile-layout .inspector.open { display: flex; }
+            body.mobile-layout .map-controls-dock:not(.collapsed) .dock-panel {
+                max-width: min(100vw - 24px, 320px);
+            }
+            body.mobile-layout .map-controls-dock.collapsed .dock-fabs {
+                max-width: min(calc(100vw - 100px), 240px);
+            }
+            body.mobile-layout .map-frame { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+            body.mobile-layout .legend { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); left: 12px; width: auto; max-width: calc(100% - 24px); }
+            body.mobile-layout .toasts { bottom: calc(70px + env(safe-area-inset-bottom, 0px)); right: 12px; left: 12px; }
+            body.mobile-layout .maplibregl-ctrl-bottom-right { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+            /* Lecture : pas de bottom nav — carte plein écran */
+            body.view-mode.mobile-layout .map-frame { padding-bottom: env(safe-area-inset-bottom, 0px); }
+            body.view-mode.mobile-layout .legend { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+            body.view-mode.mobile-layout .toasts { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+            body.view-mode.mobile-layout .maplibregl-ctrl-bottom-right { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+            body.view-mode.mobile-layout #viewer-controls {
+                left: 8px; right: 8px; top: auto;
+                bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+                max-width: none; max-height: 36vh;
+            }
+            body.view-mode.view-has-story.mobile-layout #viewer-controls {
+                bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+            }
+            body.view-mode.mobile-layout .module-panel {
+                bottom: env(safe-area-inset-bottom, 0px);
+            }
+            body.view-mode.mobile-layout .rail-item[data-module="lieu"],
+            body.view-mode.mobile-layout .rail-item[data-module="soleil"],
+            body.view-mode.mobile-layout .rail-item[data-module="vues"],
+            body.view-mode.mobile-layout .rail-item[data-module="controles"],
+            body.view-mode.mobile-layout .rail-item[data-module="reglages"],
+            body.view-mode.mobile-layout .rail-item[data-module="couches"] { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -614,6 +909,7 @@
                 <span class="brand-name">Atlas</span>
                 <span class="brand-sep">/</span>
                 <span class="brand-project" id="project-name">Nouveau projet</span>
+                <span class="view-mode-badge" id="view-mode-badge" hidden>Lecture</span>
                 <span class="dirty-dot"></span>
             </div>
 
@@ -684,6 +980,8 @@
             <!-- MAP -->
             <div class="map-frame" id="map-frame">
                 <div id="map"></div>
+                <div id="viewer-controls" aria-label="Contrôles de lecture"></div>
+                <button type="button" id="viewer-story-fab" aria-label="Lancer le récit">▶ Récit</button>
                 <div id="night-tint"></div>
 
                 <div class="compass" id="compass" title="Réorienter au Nord">
@@ -708,38 +1006,11 @@
                     <div class="legend-body" id="legend-body"></div>
                 </div>
 
-                <!-- Dock contrôles — collé à la boussole (gap 12px) -->
-                <div class="map-controls-dock" id="map-controls-dock">
-                    <button type="button" class="dock-fab" id="dock-fab" title="Contrôles soleil" aria-label="Ouvrir les contrôles">
-                        <span class="sun-dot" aria-hidden="true"></span>
-                    </button>
+                <!-- Dock pastilles — FABs repliées, une capsule ouverte à la fois -->
+                <div class="map-controls-dock collapsed" id="map-controls-dock">
+                    <div class="dock-fabs" id="dock-fabs" aria-label="Contrôles carte"></div>
                     <div class="dock-panel" id="dock-panel">
-                        <div class="dock-slots">
-                            <div class="dock-slot-sun" id="sun-strip">
-                                <div class="seg-inline">
-                                    <span class="date" id="sun-date">—</span>
-                                    <span class="time" id="sun-time">12:00</span>
-                                </div>
-                                <div class="sun-arc" id="sun-arc">
-                                    <svg width="168" height="34" viewBox="0 0 168 34" aria-hidden="true">
-                                        <path d="M8 24 Q 84 10, 160 24" stroke="#C9C0A8" stroke-width="1.2" fill="none" stroke-dasharray="2 3" />
-                                        <path id="sun-arc-prog" d="M8 24 Q 84 10, 160 24" stroke="#E8A234" stroke-width="1.8" fill="none" stroke-dasharray="0, 1000" />
-                                    </svg>
-                                    <div class="sun-dot" id="sun-dot"></div>
-                                    <span class="hlbl" style="left:2px">06h</span>
-                                    <span class="hlbl" style="right:2px">20h</span>
-                                </div>
-                                <div class="seg-inline">
-                                    <span class="alt-lbl">Hauteur</span>
-                                    <span class="alt-v" id="sun-alt">—</span>
-                                </div>
-                                <div class="vsep"></div>
-                                <button type="button" class="shadow-toggle on" id="shadow-toggle">
-                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2"/></svg>
-                                    <span>Ombres</span>
-                                </button>
-                            </div>
-                        </div>
+                        <div class="dock-slot-host" id="dock-slot-host"></div>
                         <button type="button" class="dock-collapse" id="dock-collapse" title="Replier" aria-label="Replier les contrôles">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                         </button>
@@ -781,6 +1052,21 @@
         </div>
     </div>
 
+    <nav id="mobile-nav" aria-label="Navigation mobile">
+        <button type="button" data-mobile-tab="map" class="active" aria-label="Carte">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+            Carte
+        </button>
+        <button type="button" data-mobile-tab="couches" aria-label="Couches">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            Couches
+        </button>
+        <button type="button" data-mobile-tab="recit" aria-label="Récit">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/></svg>
+            Récit
+        </button>
+    </nav>
+
     <!-- Command palette -->
     <div class="cmd-overlay" id="cmd-overlay">
         <div class="cmd-box">
@@ -797,6 +1083,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260730c"></script>
+    <script type="module" src="./app_v7.js?v=20260730o"></script>
 </body>
 </html>
