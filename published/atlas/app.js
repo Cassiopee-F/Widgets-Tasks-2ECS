@@ -11,8 +11,12 @@ import {
   loadLatestSceneManifest,
   loadQgisWidgetConfig,
   loadSceneManifestLayers,
+  materializeDeferredLayer,
+  boundsFromVisibleLayers,
 } from './lib/scene-loader.js?v=1.0.0';
 import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.0.0';
+import { pointFallbackZoom, centroidCollection } from './lib/point-fallback.js?v=1.0.0';
+import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.0.0';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -66,6 +70,23 @@ import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
 } from './lib/viewport.js?v=1.0.0';
+import {
+  parseAtlasMode,
+  accessIntentFromMode,
+  canWrite,
+  shouldEnableLight3d,
+  parseNo3dParam,
+  probeCanWriteDoc,
+} from './lib/view-mode.js?v=1.0.0';
+import {
+  createDefaultViewerControls,
+  getViewerControl,
+  setViewerExposed as setViewerExposedFn,
+} from './lib/viewer-controls.js?v=1.0.0';
+import {
+  loadScenePrefs,
+  saveScenePrefs,
+} from './lib/scene-prefs.js?v=1.0.0';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
@@ -109,6 +130,10 @@ const CONFIG = {
     /** 'scene-manifest' | 'maquette' | null */
     docMode: null,
     pollIntervalMs: 5000,
+    /** Mode lecture (pas d'écriture Grist) — URL ?mode=view ou droits insuffisants */
+    viewMode: false,
+    /** Réduit / coupe Models3D (mobile lent ou ?no3d=1) */
+    light3d: false,
 };
 
 const STATE = {
@@ -116,6 +141,7 @@ const STATE = {
     location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437, radius: 500 },
     layers: [],
     story: [],
+    viewerControls: createDefaultViewerControls(),
     selectedLayer: null,
     currentModule: null,
     selection: { mode: false, layerId: null, features: [], multiIndex: 0 },
@@ -143,11 +169,13 @@ let _syncPaused = false;
 let _widgetConfig = null;
 /** @type {object|null} */
 let _sceneManifest = null;
-let _inspObjTab = 'Géométrie';
+let _inspObjTab = null; // résolu à l'ouverture selon les onglets disponibles
 let _geoTables = [];
 let _linkChoices = [];
 let _storyIdx = 0;
 let _storyPresenting = false;
+let _openDockPill = null;
+let _sunArcDragging = false;
 let _preStorySnapshot = null;
 let _persistStoryTimer = null;
 let _cameraSaveTimer = null;
@@ -171,6 +199,7 @@ function computeLayersBounds() {
 }
 
 function markDirty() {
+    if (CONFIG.viewMode) return;
     dirty = true;
     _syncPaused = true;
     $('app-header').classList.add('dirty');
@@ -356,14 +385,25 @@ function detectFieldType(layer, field) {
 }
 
 /** Palette séquentielle pour gradué → _fill_color. */
-function sequentialPaletteForSym(sym) {
+function sequentialPaletteForSym(sym, layer) {
+    // Un style déclaratif énonce ses propres couleurs de classes : les ignorer
+    // au profit d'une rampe nommée effacerait la symbologie voulue par le récit
+    // ou par le manifest.
+    const stops = layer?._declarative?.stops;
+    if (stops?.length) {
+        const hex = stops.map((s) => s.color).filter(Boolean);
+        if (hex.length) return hex;
+    }
     const name = sym.colorRamp || sym.palette || 'Viridis';
     return COLOR_PALETTES[name] || COLOR_PALETTES.Viridis;
 }
 
 /** Sync GeoJSON + retourne expression paint couleur (qgis2grist lit _fill_color). */
 function layerPaintColor(layer) {
-    if (layer.source === 'qgis2grist') {
+    // `_fill_color` porte la couleur calculée par le style déclaratif ou par la
+    // symbolisation. Le critère est sa présence, pas l'origine de la couche :
+    // une table Grist stylée par un récit doit se peindre comme un import.
+    if (layer.source === 'qgis2grist' || layer._declarative) {
         const sym = initSymbolization(layer).color;
         const fb = sym.value || sym.defaultColor || layer.color || '#808080';
         return ['coalesce', ['get', '_fill_color'], fb];
@@ -371,8 +411,40 @@ function layerPaintColor(layer) {
     return colorExpression(layer, layer.color);
 }
 
+/**
+ * Opacité de peinture d'une couche.
+ * Une opacité fixée par l'utilisateur l'emporte ; sinon on suit l'opacité
+ * portée par l'entité (issue des stops du style déclaratif), et à défaut le
+ * défaut de la géométrie.
+ */
+function layerPaintOpacity(layer) {
+    const sym = initSymbolization(layer);
+    if (Number.isFinite(sym.opacity)) return sym.opacity;
+    return ['coalesce', ['get', '_fill_opacity'], defaultLayerOpacity(layer)];
+}
+
+/** Persiste les prefs d'une couche qgis2grist (no-op hors Grist / mode lecture). */
+function saveLayerPrefIfSynced(layer) {
+    if (layer?.source !== 'qgis2grist' || !CONFIG.grist.ready) return;
+    saveLayerPref(grist.docApi, layer, { viewMode: CONFIG.viewMode }).catch(() => {});
+}
+
+/** Contour d'une surface : largeur, couleur (suit le remplissage ou fixe). */
+function layerStrokePaint(layer) {
+    const st = initSymbolization(layer).stroke || {};
+    return {
+        width: st.enabled === false ? 0 : (Number.isFinite(st.width) ? st.width : 1.5),
+        color: st.mode === 'fixed' ? (st.color || layer.color) : layerPaintColor(layer),
+    };
+}
+
 function syncLayerSourceData(layer) {
-    if (map?.getSource(layer.id)) map.getSource(layer.id).setData(sourceData(layer));
+    if (!map?.getSource(layer.id)) return;
+    const data = sourceData(layer);
+    map.getSource(layer.id).setData(data);
+    // Les centres suivent le même filtrage que les surfaces.
+    const pts = map.getSource(pointFallbackId(layer));
+    if (pts) pts.setData(centroidCollection(data));
 }
 function getLayerFields(layer) {
     if (layer._fields?.length) {
@@ -435,6 +507,16 @@ function interpolateValue(value, range, outRange, method) {
     return outRange[0] + r * (outRange[1] - outRange[0]);
 }
 
+/** Opacité de rendu par défaut, selon la géométrie et le mode surfacique. */
+function defaultLayerOpacity(layer) {
+    const g = layer.geometryType;
+    if (g === 'Point' || g === 'MultiPoint') return 0.92;
+    if (g === 'Polygon' || g === 'MultiPolygon') {
+        return layer.style?.polygonMode === 'flat' ? 0.55 : 0.85;
+    }
+    return 0.9;
+}
+
 function initSymbolization(layer) {
     if (!layer.style) layer.style = {};
     if (!layer.style.symbolization) {
@@ -445,7 +527,21 @@ function initSymbolization(layer) {
             label: { enabled: false, field: null },
         };
     }
-    return layer.style.symbolization;
+    const sym = layer.style.symbolization;
+    // Réglages d'apparence introduits après coup : complétés ici pour que les
+    // couches déjà enregistrées dans Atlas_LayerPrefs les reçoivent aussi.
+    // `opacity: null` = suivre le défaut de la géométrie (ou l'opacité du style
+    // déclaratif) ; une valeur numérique = choix explicite de l'utilisateur.
+    if (!('opacity' in sym)) sym.opacity = null;
+    if (!sym.stroke) {
+        sym.stroke = { enabled: true, mode: 'follow', color: null, width: 1.5 };
+    }
+    if (!sym.extrusion) sym.extrusion = { base: 0 };
+    if (sym.label) {
+        if (sym.label.size == null) sym.label.size = 12;
+        if (!sym.label.color) sym.label.color = '#2D2820';
+    }
+    return sym;
 }
 
 // ============================================================
@@ -733,6 +829,7 @@ const Models3D = {
     },
 
     async build() {
+        if (this._disabled || CONFIG.light3d) { map?.triggerRepaint(); return; }
         if (!this.scene || !map) return;
         const token = (this._buildToken = (this._buildToken || 0) + 1);
         this.disposeInstances();
@@ -885,6 +982,9 @@ function initMap() {
     map.on('load', onStyleReady);
 
     map.on('move', updateHUD);
+    map.on('pitchend', () => {
+        if (_openDockPill === 'view3d') renderDockSlotHost();
+    });
     map.on('rotate', () => {
         $('compass-svg').style.transform = `rotate(${map.getBearing()}deg)`;
     });
@@ -895,6 +995,14 @@ function initMap() {
         clearTimeout(_cameraSaveTimer);
         _cameraSaveTimer = setTimeout(saveMapCamera, 400);
     });
+
+    try {
+        map.addControl(new maplibregl.GeolocateControl({
+            positionOptions: { enableHighAccuracy: true },
+            trackUserLocation: true,
+            showAccuracyCircle: true,
+        }), 'bottom-right');
+    } catch (e) { console.warn('[Atlas] geolocate', e.message); }
 
     setupInteraction();
 }
@@ -1116,13 +1224,17 @@ function indexFeatures(layer) {
 }
 function sourceData(layer) { return filteredGeoJSON(layer); }
 
+/** Id de la source/couche de repli en points (cf. lib/point-fallback.js). */
+function pointFallbackId(layer) { return layer.id + '-pts'; }
+
 function removeLayerGfx(layer) {
     if (!map) return;
-    ['', '-outline', '-label', '-hit'].forEach((sfx) => {
+    ['', '-outline', '-label', '-hit', '-pts'].forEach((sfx) => {
         const id = layer.id + sfx;
         if (map.getLayer(id)) map.removeLayer(id);
     });
     if (map.getSource(layer.id)) map.removeSource(layer.id);
+    if (map.getSource(pointFallbackId(layer))) map.removeSource(pointFallbackId(layer));
 }
 
 function addLayerToMap(layer) {
@@ -1138,6 +1250,16 @@ function addLayerToMap(layer) {
         const data = sourceData(layer);
         const nFeats = data?.features?.length || 0;
         map.addSource(layer.id, { type: 'geojson', data: data || { type: 'FeatureCollection', features: [] } });
+        // Surfaces menues : source de centres pour le rendu en petite échelle.
+        const isFlatPolygon = (layer.geometryType === 'Polygon' || layer.geometryType === 'MultiPolygon')
+            && layer.style?.polygonMode === 'flat';
+        layer._pointFallbackZoom = isFlatPolygon ? pointFallbackZoom(layer.geojson) : null;
+        // Nombre d'entités au moment de l'évaluation : une couche différée est
+        // vide au montage, il faudra refaire le calcul quand elle se peuplera.
+        layer._pointFallbackAt = layer.geojson?.features?.length || 0;
+        if (layer._pointFallbackZoom != null) {
+            map.addSource(pointFallbackId(layer), { type: 'geojson', data: centroidCollection(data) });
+        }
         initSymbolization(layer);
         applyLayerStyle(layer);
         if (layer.visible === false) applyMapLayerVisibility(layer, false);
@@ -1157,7 +1279,7 @@ function applyLayerStyle(layer) {
     if (!map || !map.getSource(layer.id)) return;
     if (layer.source === 'qgis2grist') {
         const sym = initSymbolization(layer).color;
-        syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(sym));
+        syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(sym, layer));
         syncLayerSourceData(layer);
     }
     const g = layer.geometryType;
@@ -1205,10 +1327,14 @@ function applyPointStyle(layer) {
             const r = getNumericRange(layer, sym.size.field);
             if (r.count) radius = buildNumGraduated(sym.size.field, [r.min, r.max], sym.size.outputRange, sym.size.method);
         }
+        const stroke = layerStrokePaint(layer);
         map.addLayer({ id: layer.id, type: 'circle', source: layer.id, paint: {
             'circle-radius': radius,
             'circle-color': layerPaintColor(layer),
-            'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.92,
+            'circle-stroke-width': stroke.width,
+            'circle-stroke-color': initSymbolization(layer).stroke?.mode === 'fixed'
+                ? stroke.color : '#ffffff',
+            'circle-opacity': layerPaintOpacity(layer),
         }});
     }
     addLabelLayer(layer);
@@ -1224,7 +1350,7 @@ function applyLineStyle(layer) {
     }
     map.addLayer({ id: layer.id, type: 'line', source: layer.id,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': layerPaintColor(layer), 'line-width': width, 'line-opacity': 0.9 } });
+        paint: { 'line-color': layerPaintColor(layer), 'line-width': width, 'line-opacity': layerPaintOpacity(layer) } });
     addLabelLayer(layer);
 }
 
@@ -1238,17 +1364,39 @@ function applyPolygonStyle(layer) {
             const r = getNumericRange(layer, sym.size.field);
             if (r.count) height = buildNumGraduated(sym.size.field, [r.min, r.max], sym.size.outputRange, sym.size.method);
         } else if (layer.heightField) height = ['to-number', ['get', layer.heightField]];
+        const base = Number.isFinite(sym.extrusion?.base) ? sym.extrusion.base : 0;
         map.addLayer({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
             'fill-extrusion-color': layerPaintColor(layer),
             'fill-extrusion-height': height,
-            'fill-extrusion-base': 0,
-            'fill-extrusion-opacity': 0.85,
+            'fill-extrusion-base': base,
+            'fill-extrusion-opacity': Number.isFinite(sym.opacity) ? sym.opacity : 0.85,
         }});
     } else {
-        map.addLayer({ id: layer.id, type: 'fill', source: layer.id, paint: {
-            'fill-color': layerPaintColor(layer), 'fill-opacity': 0.55 } });
-        map.addLayer({ id: layer.id + '-outline', type: 'line', source: layer.id, paint: {
-            'line-color': layer.color, 'line-width': 1.5 } });
+        const stroke = layerStrokePaint(layer);
+        // Repli en points sous le seuil : les surfaces y seraient sous-pixel.
+        const zFallback = layer._pointFallbackZoom;
+        const fill = { id: layer.id, type: 'fill', source: layer.id, paint: {
+            'fill-color': layerPaintColor(layer), 'fill-opacity': layerPaintOpacity(layer) } };
+        if (zFallback != null) fill.minzoom = zFallback;
+        map.addLayer(fill);
+        if (stroke.width > 0) {
+            const outline = { id: layer.id + '-outline', type: 'line', source: layer.id, paint: {
+                'line-color': stroke.color, 'line-width': stroke.width } };
+            if (zFallback != null) outline.minzoom = zFallback;
+            map.addLayer(outline);
+        }
+        if (zFallback != null && map.getSource(pointFallbackId(layer))) {
+            map.addLayer({ id: pointFallbackId(layer), type: 'circle', source: pointFallbackId(layer),
+                maxzoom: zFallback,
+                paint: {
+                    // Au moins MIN_FEATURE_PX à l'écran : en deçà, le repli
+                    // reproduirait l'invisibilité qu'il est censé corriger.
+                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2.2, 10, 4],
+                    'circle-color': layerPaintColor(layer),
+                    'circle-opacity': layerPaintOpacity(layer),
+                    'circle-stroke-width': 0,
+                } });
+        }
     }
     addLabelLayer(layer);
 }
@@ -1257,9 +1405,10 @@ function addLabelLayer(layer) {
     if (map.getLayer(layer.id + '-label')) map.removeLayer(layer.id + '-label');
     const sym = layer.style?.symbolization?.label;
     if (!sym?.enabled || !sym.field) return;
+    const size = Number.isFinite(sym.size) ? sym.size : 12;
     map.addLayer({ id: layer.id + '-label', type: 'symbol', source: layer.id,
-        layout: { 'text-field': ['to-string', ['get', sym.field]], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] },
-        paint: { 'text-color': '#2D2820', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 } });
+        layout: { 'text-field': ['to-string', ['get', sym.field]], 'text-size': size, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] },
+        paint: { 'text-color': sym.color || '#2D2820', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 } });
 }
 
 function prepareLayerFilters(layer) {
@@ -1294,8 +1443,20 @@ function syncLayerToMapState(layer) {
             return;
         }
 
-        const src = map.getSource(layer.id);
-        if (src) src.setData(filteredGeoJSON(layer));
+        // Couche différée qui vient de se peupler : le seuil de repli en points
+        // avait été calculé sur un GeoJSON vide, il faut remonter la couche
+        // pour créer la source de centres.
+        const nFeats = layer.geojson?.features?.length || 0;
+        if (layer._pointFallbackZoom == null && nFeats > (layer._pointFallbackAt || 0)
+            && (layer.geometryType === 'Polygon' || layer.geometryType === 'MultiPolygon')) {
+            // Le mode de rendu n'est pas encore fixé au premier montage d'une
+            // couche différée : c'est addLayerToMap qui tranche. Remonter dès
+            // qu'une surface se peuple, sans présumer du mode.
+            addLayerToMap(layer);
+            return;
+        }
+
+        syncLayerSourceData(layer);
         applyMapLayerVisibility(layer, true);
         // Remount style paint (catégorisé / flat) si le layer existe déjà
         applyLayerStyle(layer);
@@ -1387,7 +1548,10 @@ function scheduleMapLayersSync(afterSync) {
 function applyMapLayerVisibility(layer, visible) {
     if (!map) return;
     const vis = visible ? 'visible' : 'none';
-    ['', '-outline', '-label'].forEach((sfx) => {
+    // Tous les habillages de la couche, sinon ils survivent au masquage : `-pts`
+    // laisserait le repli en points à l'écran, `-hit` garderait la zone de clic
+    // active sur une couche invisible.
+    ['', '-outline', '-label', '-hit', '-pts'].forEach((sfx) => {
         const lid = layer.id + sfx;
         if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', vis);
     });
@@ -1396,6 +1560,10 @@ function applyMapLayerVisibility(layer, visible) {
 
 function setLayerVisibility(layer, visible) {
     layer.visible = visible;
+    // Une couche lourde chargée en différé n'a pas encore de GeoJSON : la rendre
+    // visible sans la matérialiser afficherait du vide. Vaut pour toutes les
+    // origines — pastille, récit, prefs.
+    if (visible && layer._deferredLoad) materializeDeferredLayer(layer);
     applyMapLayerVisibility(layer, visible);
 }
 
@@ -1409,6 +1577,15 @@ function capturePreStorySnapshot() {
         id: l.id,
         visible: l.visible !== false,
         controls: JSON.parse(JSON.stringify(l.controls || [])),
+        // Le récit écrase aussi la symbolisation : sans elle dans le snapshot,
+        // l'utilisateur récupère la scène habillée par la dernière étape.
+        declarative: l._declarative ? JSON.parse(JSON.stringify(l._declarative)) : null,
+        symbolization: l.style?.symbolization
+            ? JSON.parse(JSON.stringify(l.style.symbolization))
+            : null,
+        // Une étape peut basculer la couche en volume : sans mémoriser le rendu
+        // d'origine, la scène resterait extrudée après la présentation.
+        polygonMode: l.style?.polygonMode || null,
     }));
 }
 
@@ -1417,29 +1594,39 @@ function restorePreStorySnapshot() {
     for (const snap of _preStorySnapshot) {
         const l = STATE.layers.find((x) => x.id === snap.id);
         if (!l) continue;
-        l.visible = snap.visible;
+        setLayerVisibility(l, snap.visible);
         l.controls = JSON.parse(JSON.stringify(snap.controls));
         delete l._filterPredicate;
+        if (snap.polygonMode && l.style) l.style.polygonMode = snap.polygonMode;
+        if (snap.symbolization) {
+            if (!l.style) l.style = { mode: 'mapbox' };
+            l.style.symbolization = JSON.parse(JSON.stringify(snap.symbolization));
+        }
+        if (snap.declarative) {
+            l._declarative = JSON.parse(JSON.stringify(snap.declarative));
+            applyDeclarativeToLayer(l, l._declarative);
+        }
     }
     _preStorySnapshot = null;
 }
 
 function applyControls(layer, opts = {}) {
     layer._filterPredicate = buildControlPredicate(layer);
-    const src = map && map.getSource(layer.id);
-    if (src) src.setData(filteredGeoJSON(layer));
+    syncLayerSourceData(layer);
     Models3D.scheduleBuild();
     if (!opts.skipLegend) updateLegend();
+    if (CONFIG.viewMode) refreshViewerControlsHud();
 }
 
 async function persistStory(immediate = false) {
-    if (!CONFIG.grist.ready) return;
+    if (!CONFIG.grist.ready || CONFIG.viewMode) return;
     clearTimeout(_persistStoryTimer);
     const save = async () => {
         try {
-            await saveStoryToGrist(grist.docApi, STATE.story);
+            await saveStoryToGrist(grist.docApi, STATE.story, { viewMode: CONFIG.viewMode });
         } catch (e) {
             console.warn('[Atlas story] save', e.message);
+            enterViewModeOnWriteFail(e);
         }
     };
     if (immediate) return save();
@@ -1455,11 +1642,20 @@ function layerVisibleCount(layer) {
     return filteredGeoJSON(layer)?.features?.length || 0;
 }
 
+/**
+ * Couche visée par une étape de récit.
+ *
+ * La table source prime sur le nom : deux couches distinctes peuvent porter le
+ * même libellé (« Grille d'analyse 200 m » sur deux imports différents), et
+ * piloter la mauvaise appliquerait des styles et des filtres à des données qui
+ * ne sont pas celles de l'étape. Le nom ne sert que de repli, pour les récits
+ * enregistrés avant que sourceTable ne soit systématiquement capturé.
+ */
 function findStoryLayer(ls) {
     if (!ls) return null;
-    return STATE.layers.find((x) => x.id === ls.id)
+    return (ls.sourceTable && STATE.layers.find((x) => x.sourceTable === ls.sourceTable))
+        || STATE.layers.find((x) => x.id === ls.id)
         || STATE.layers.find((x) => x.name === ls.name)
-        || (ls.sourceTable && STATE.layers.find((x) => x.sourceTable === ls.sourceTable))
         || null;
 }
 
@@ -1469,6 +1665,14 @@ function cloneStoryState(s) {
 
 /** Symbo + visibilité + contrôles (sans remontage carte). */
 function applyStoryLayerMeta(l, ls) {
+    // Rendu surfacique : porté par le style, pas par la symbolisation. Une étape
+    // qui le cite peut donc montrer un bâti en volume puis le remettre à plat.
+    // Posé avant l'affichage : le repli en points ne vise que les surfaces à
+    // plat, il doit connaître le mode au moment où la couche se monte.
+    if (ls.polygonMode) {
+        if (!l.style) l.style = { mode: 'mapbox' };
+        l.style.polygonMode = ls.polygonMode;
+    }
     setLayerVisibility(l, ls.visible);
     if (ls.symbolization) {
         if (!l.style) l.style = { mode: 'mapbox' };
@@ -1478,7 +1682,7 @@ function applyStoryLayerMeta(l, ls) {
         } else {
             syncLayerDeclarative(l);
         }
-        syncFeatureColorsFromSymbolization(l, sequentialPaletteForSym(l.style.symbolization.color));
+        syncFeatureColorsFromSymbolization(l, sequentialPaletteForSym(l.style.symbolization.color, l));
     } else if (ls.declarative) {
         l._declarative = ls.declarative;
         applyDeclarativeToLayer(l, ls.declarative);
@@ -1509,11 +1713,23 @@ function applyStoryState(s) {
     if (!s || !map) return;
     _storyPresenting = true;
 
+    const cited = new Set();
     (s.layers || []).forEach((ls) => {
         const l = findStoryLayer(ls);
         if (!l) return;
+        cited.add(l);
         applyStoryLayerMeta(l, ls);
     });
+    // Une étape décrit l'état complet de la scène : une couche qu'elle ne cite
+    // pas doit être masquée, sinon elle traverse le récit dans l'état où
+    // l'utilisateur l'avait laissée. captureStoryState() enregistre toujours
+    // toutes les couches — seuls les récits écrits à la main sont partiels.
+    // L'état d'origine est rétabli en sortie via restorePreStorySnapshot().
+    if ((s.layers || []).length) {
+        STATE.layers.forEach((l) => {
+            if (!cited.has(l) && l.visible !== false) setLayerVisibility(l, false);
+        });
+    }
     (s.layers || []).forEach((ls) => {
         const l = findStoryLayer(ls);
         if (!l) return;
@@ -1521,7 +1737,6 @@ function applyStoryState(s) {
     });
     Models3D.rebuildScene();
     updateLegend();
-
     if (s.projection && s.projection !== STATE.settings.projection) {
         STATE.settings.projection = s.projection;
         applyProjection();
@@ -1556,7 +1771,21 @@ const MODULE_TITLES = {
     symbo: 'Symboliser', soleil: '☀️ Soleil', vues: 'Vue & rendu', reglages: '⚙️ Catalogue 3D',
 };
 
+const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'symbo', 'couches']);
+
 function openModule(name) {
+    if (CONFIG.viewMode && name === 'recit') {
+        if (!(STATE.story?.length)) {
+            showToast('Aucun récit publié', 'info');
+            return;
+        }
+        A.storyPlay(0);
+        return;
+    }
+    if (CONFIG.viewMode && VIEW_AUTHOR_MODULES.has(name)) {
+        showToast('Mode lecture — utilisez la légende pour cibler', 'info');
+        return;
+    }
     STATE.currentModule = name;
     document.querySelectorAll('.rail-item').forEach((b) => b.classList.toggle('active', b.dataset.module === name));
     $('module-title').textContent = (MODULE_TITLES[name] || name).replace(/^[^ ]+ /, (m) => m);
@@ -1646,6 +1875,10 @@ function availableTablesSection() {
 }
 
 function renderLayersPanel(mode) {
+    if (CONFIG.viewMode) {
+        renderLayersPanelLecture();
+        return;
+    }
     $('module-title').textContent = mode === 'symbo' ? 'Symboliser' : 'Couches';
     const body = $('module-body');
     if (STATE.layers.length === 0) {
@@ -1696,45 +1929,452 @@ function renderLayersPanel(mode) {
         </div>`;
 }
 
+/** Liste couches en lecture : légende + zoom, sans paramétrage. */
+function renderLayersPanelLecture() {
+    $('module-title').textContent = 'Légende';
+    const body = $('module-body');
+    const visible = STATE.layers.filter((l) => l.visible !== false);
+    if (!visible.length) {
+        body.innerHTML = `<div class="empty"><div class="ic">🗺️</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
+        return;
+    }
+    body.innerHTML = `
+        <div class="hint">Affichage tel que configuré par l’éditeur.</div>
+        <div class="layer-list">${visible.map((l) => {
+            const is3D = l.style?.mode === 'library' || l.style?.mode === 'custom';
+            return `<div class="layer-item">
+                <span class="layer-swatch" style="background:${l.color}"></span>
+                <div class="layer-info">
+                    <div class="layer-name">${l.name}</div>
+                    <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
+                </div>
+                <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">🎯</button>
+            </div>`;
+        }).join('')}</div>`;
+}
+
+function controlTypeIcon(type) {
+    if (type === 'time') return '🕑';
+    if (type === 'range') return '📊';
+    return '🏷️';
+}
+
+function controlTypeLabel(type) {
+    if (type === 'time') return 'time';
+    if (type === 'range') return 'range';
+    return 'select';
+}
+
+function controlVariantOptions(type) {
+    if (type === 'time') {
+        return [
+            { value: 'time_lte', label: 'Date ≤', hint: 'Cumulatif : tout ce qui est antérieur ou égal à la date choisie. Idéal pour une chronologie « jusqu’à ».' },
+            { value: 'time_between', label: 'Date de/à', hint: 'Fenêtre temporelle stricte entre deux dates. Idéal pour comparer une période précise.' },
+        ];
+    }
+    if (type === 'range') {
+        return [
+            { value: 'range_between', label: 'Plage min/max', hint: 'Intervalle numérique complet (de … à …). Le plus polyvalent.' },
+            { value: 'range_max', label: 'Maximum', hint: 'Seuil haut uniquement (≤ valeur). Utile pour « en dessous de ».' },
+            { value: 'range_min', label: 'Minimum', hint: 'Seuil bas uniquement (≥ valeur). Utile pour « au-dessus de ».' },
+        ];
+    }
+    return [
+        { value: 'select_multi', label: 'Checklist', hint: 'Plusieurs catégories en parallèle. Filtre cumulatif (OU logique).' },
+        { value: 'select_single', label: 'Choix unique', hint: 'Une seule catégorie à la fois. Lecture plus simple sur mobile.' },
+    ];
+}
+
+function defaultControlVariant(type) {
+    if (type === 'time') return 'time_lte';
+    if (type === 'range') return 'range_between';
+    return 'select_multi';
+}
+
+function ensureControlVariant(c, type) {
+    const options = new Set(controlVariantOptions(type || c.type).map((x) => x.value));
+    if (!options.has(c.variant)) c.variant = defaultControlVariant(type || c.type);
+}
+
+function controlVariantHint(type, variant) {
+    const opt = controlVariantOptions(type).find((x) => x.value === variant);
+    return opt?.hint || '';
+}
+
+function controlVariantDockLabel(c) {
+    const v = c.variant || defaultControlVariant(c.type);
+    const map = {
+        time_lte: 'Jusqu’à',
+        time_between: 'Période',
+        range_between: 'Plage',
+        range_max: 'Max',
+        range_min: 'Min',
+        select_multi: 'Filtres',
+        select_single: 'Choix',
+    };
+    return map[v] || dockControlTypeTag(c.type);
+}
+
+function dockControlTypeTag(type) {
+    if (type === 'time') return 'Temps';
+    if (type === 'range') return 'Plage';
+    return 'Catégories';
+}
+
+function dockPillId(layer, field) {
+    return `data:${layer.id}:${field}`;
+}
+
+/** Pastilles dock : env (édition = toujours ; lecture = exposed) + données actives. */
+function listDockPills() {
+    const pills = [];
+    const vcs = STATE.viewerControls || createDefaultViewerControls();
+    const edit = !CONFIG.viewMode;
+
+    if (edit || getViewerControl(vcs, 'sun')?.exposed) {
+        pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
+    }
+    if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
+        pills.push({ id: 'view3d', kind: 'env', icon: '▦', label: '2D / 3D' });
+    }
+    if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
+        pills.push({ id: 'basemap', kind: 'env', icon: '🗺', label: 'Fonds' });
+    }
+    for (const { layer, c } of collectPublishedControls()) {
+        pills.push({
+            id: dockPillId(layer, c.field),
+            kind: 'data',
+            icon: controlTypeIcon(c.type),
+            label: (c.label || c.field).trim() || c.field,
+            layer,
+            control: c,
+        });
+    }
+    return pills;
+}
+
+function basemapChoicesForDock() {
+    const vc = getViewerControl(STATE.viewerControls, 'basemap');
+    if (!CONFIG.viewMode) return Object.keys(BASEMAPS);
+    const allowed = vc?.config?.allowed || [];
+    if (!allowed.length) return Object.keys(BASEMAPS);
+    return allowed.filter((k) => BASEMAPS[k]);
+}
+
+function renderSunDockSlotHtml() {
+    const vc = getViewerControl(STATE.viewerControls, 'sun');
+    const shadowsOn = vc?.config?.shadows !== false && STATE.settings.shadows;
+    return `<div class="dock-slot-sun" id="sun-strip">
+        <div class="seg-inline">
+            <span class="date" id="sun-date">—</span>
+            <span class="time" id="sun-time">12:00</span>
+        </div>
+        <div class="sun-arc" id="sun-arc">
+            <svg width="168" height="34" viewBox="0 0 168 34" aria-hidden="true">
+                <path d="M8 24 Q 84 10, 160 24" stroke="#C9C0A8" stroke-width="1.2" fill="none" stroke-dasharray="2 3" />
+                <path id="sun-arc-prog" d="M8 24 Q 84 10, 160 24" stroke="#E8A234" stroke-width="1.8" fill="none" stroke-dasharray="0, 1000" />
+            </svg>
+            <div class="sun-dot" id="sun-dot"></div>
+            <span class="hlbl" style="left:2px">06h</span>
+            <span class="hlbl" style="right:2px">20h</span>
+        </div>
+        <div class="seg-inline">
+            <span class="alt-lbl">Hauteur</span>
+            <span class="alt-v" id="sun-alt">—</span>
+        </div>
+        <div class="vsep"></div>
+        <button type="button" class="shadow-toggle ${shadowsOn ? 'on' : ''}" id="shadow-toggle">
+            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2"/></svg>
+            <span>Ombres</span>
+        </button>
+    </div>`;
+}
+
+function renderView3dDockSlotHtml() {
+    const pitch = map?.getPitch() || 0;
+    const is3d = pitch > 10;
+    return `<div class="dock-slot-view3d">
+        <div class="dock-seg">
+            <button type="button" class="dock-seg-btn ${!is3d ? 'active' : ''}" onclick="A.setView3d(false)">2D</button>
+            <button type="button" class="dock-seg-btn ${is3d ? 'active' : ''}" onclick="A.setView3d(true)">3D</button>
+        </div>
+    </div>`;
+}
+
+function renderBasemapDockSlotHtml() {
+    const keys = basemapChoicesForDock();
+    const cur = STATE.settings.basemap;
+    return `<div class="dock-slot-basemap">
+        <div class="dock-chips">${keys.map((k) => {
+            const b = BASEMAPS[k];
+            const esc = String(k).replace(/'/g, "\\'");
+            const lbl = String(b.label).replace(/"/g, '&quot;');
+            return `<button type="button" class="dock-chip ${cur === k ? 'active' : ''}" onclick="A.setBasemap('${esc}')" title="${lbl}">${b.icon}<span>${b.label}</span></button>`;
+        }).join('')}</div>
+    </div>`;
+}
+
+function renderDockSlotHost() {
+    const slotHost = $('dock-slot-host');
+    const panel = $('dock-panel');
+    if (!slotHost || !_openDockPill) return;
+    const pill = listDockPills().find((p) => p.id === _openDockPill);
+    if (!pill) {
+        slotHost.innerHTML = '';
+        return;
+    }
+    panel?.classList.toggle('dock-panel-tall', pill.kind === 'data');
+    if (pill.id === 'sun') {
+        slotHost.innerHTML = renderSunDockSlotHtml();
+        updateSunStrip();
+    } else if (pill.id === 'view3d') {
+        slotHost.innerHTML = renderView3dDockSlotHtml();
+    } else if (pill.id === 'basemap') {
+        slotHost.innerHTML = renderBasemapDockSlotHtml();
+    } else if (pill.kind === 'data') {
+        const t = controlVariantDockLabel(pill.control);
+        const label = (pill.label || '').replace(/</g, '&lt;');
+        slotHost.innerHTML = `<div class="dock-slot-data">
+            <div class="dock-slot-head">
+                <span class="dock-slot-title">${label}</span>
+                <span class="dock-slot-tag">${t}</span>
+            </div>
+            <div class="dock-slot-body">${renderControlBody(pill.layer, pill.control)}</div>
+        </div>`;
+    }
+}
+
+/** Dock pastilles — FABs + une capsule ouverte (env + données actives). */
+function refreshControlsDock() {
+    const dock = $('map-controls-dock');
+    const fabsHost = $('dock-fabs');
+    const slotHost = $('dock-slot-host');
+    if (!dock || !fabsHost) return;
+
+    const pills = listDockPills();
+    const hasPills = pills.length > 0;
+    dock.classList.toggle('has-pills', hasPills);
+    if (!hasPills) {
+        fabsHost.innerHTML = '';
+        if (slotHost) slotHost.innerHTML = '';
+        _openDockPill = null;
+        return;
+    }
+
+    if (_openDockPill && !pills.some((p) => p.id === _openDockPill)) {
+        _openDockPill = null;
+        dock.classList.add('collapsed');
+    }
+
+    fabsHost.innerHTML = pills.map((p) => {
+        const lbl = String(p.label).replace(/"/g, '&quot;');
+        const pid = String(p.id).replace(/"/g, '&quot;');
+        const isOpen = _openDockPill === p.id && !dock.classList.contains('collapsed');
+        const ic = p.id === 'sun'
+            ? '<span class="sun-dot" aria-hidden="true"></span>'
+            : `<span class="dock-fab-ic" aria-hidden="true">${p.icon}</span>`;
+        return `<button type="button" class="dock-fab ${isOpen ? 'active' : ''}" data-pill="${pid}" title="${lbl}" aria-label="${lbl}">${ic}</button>`;
+    }).join('');
+
+    fabsHost.querySelectorAll('[data-pill]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.pill;
+            if (_openDockPill === id && !dock.classList.contains('collapsed')) {
+                dock.classList.add('collapsed');
+            } else {
+                _openDockPill = id;
+                dock.classList.remove('collapsed');
+                renderDockSlotHost();
+            }
+        });
+    });
+
+    if (!dock.classList.contains('collapsed') && _openDockPill) {
+        renderDockSlotHost();
+    } else if (slotHost) {
+        slotHost.innerHTML = '';
+        $('dock-panel')?.classList.remove('dock-panel-tall');
+    }
+}
+
+async function syncScenePrefsFromGrist() {
+    if (!CONFIG.grist.ready) return;
+    const prefs = await loadScenePrefs(grist.docApi);
+    STATE.viewerControls = prefs.viewerControls || createDefaultViewerControls();
+}
+
+async function persistScenePrefs() {
+    if (!CONFIG.grist.ready || CONFIG.viewMode) return;
+    if (!assertCanWrite('enregistrer les contrôles scène')) return;
+    try {
+        await saveScenePrefs(grist.docApi, { viewerControls: STATE.viewerControls }, { viewMode: false });
+    } catch (e) {
+        console.warn('[Atlas] saveScenePrefs', e.message);
+    }
+}
+
+function renderEnvControlsSection() {
+    const list = STATE.viewerControls || createDefaultViewerControls();
+    const esc = (s) => String(s).replace(/'/g, "\\'");
+    return list.map((vc) => {
+        const on = !!vc.exposed;
+        let sub = '';
+        if (vc.id === 'sun' && on) {
+            const sh = vc.config?.shadows !== false;
+            sub = `<label class="cat-row" style="margin-top:6px;cursor:pointer">
+                <input type="checkbox" ${sh ? 'checked' : ''} onchange="A.setViewerShadows(this.checked)">
+                <span class="cat-value">Ombres portées</span></label>`;
+        }
+        if (vc.id === 'basemap' && on) {
+            const allowed = new Set(vc.config?.allowed || []);
+            sub = `<div class="option-cards grid2" style="margin-top:8px">${Object.entries(BASEMAPS).map(([k, b]) => `
+                <div class="option-card ${allowed.has(k) ? 'active' : ''}" onclick="A.toggleViewerBasemapAllowed('${esc(k)}')">
+                    <div class="oc-icon">${b.icon}</div><div class="oc-label">${b.label}</div>
+                </div>`).join('')}</div>
+                <div class="hint" style="margin-top:6px">2–3 fonds max pour le dock lecture.</div>`;
+        }
+        return `<div class="section">
+            <div class="toggle-row">
+                <span class="tlabel">${vc.label}</span>
+                <div class="toggle ${on ? 'on' : ''}" onclick="A.setViewerExposed('${vc.id}', ${!on})" title="Visible en lecture"></div>
+            </div>
+            <div style="font-size:10.5px;color:var(--muted);margin-top:-4px">Visible en lecture · pastille carte</div>
+            ${sub}
+        </div>`;
+    }).join('');
+}
+
+function renderDataControlRow(layer, field, type, c) {
+    const esc = (s) => String(s).replace(/'/g, "\\'");
+    const icon = controlTypeIcon(type);
+    const sim = c.mode === 'simulation' ? ' <span class="hint" style="display:inline;padding:2px 6px;margin:0">simulation</span>' : '';
+    const labelVal = (c.label || field).replace(/"/g, '&quot;');
+    const active = !!c.active;
+    ensureControlVariant(c, type);
+    const variants = controlVariantOptions(type);
+    const variantHint = controlVariantHint(type, c.variant);
+    return `<div class="section">
+        <div class="toggle-row">
+            <span class="tlabel">${icon} <input class="input" style="display:inline;width:auto;min-width:120px;padding:2px 6px;font-size:12px;font-weight:600"
+                value="${labelVal}" onchange="A.setControlLabel('${layer.id}','${esc(field)}',this.value)" placeholder="${field}">
+                <span style="font-weight:400;color:var(--muted);font-size:10.5px"> · ${controlTypeLabel(type)}</span>${sim}</span>
+            <div class="toggle ${active ? 'on' : ''}" onclick="A.toggleControl('${layer.id}','${esc(field)}','${type}')" title="Afficher en lecture"></div>
+        </div>
+        <div class="control-variant-row">
+            <label class="control-variant-label" for="ctl-var-${esc(layer.id)}-${esc(field)}">Type de contrôle</label>
+            <select id="ctl-var-${esc(layer.id)}-${esc(field)}" class="input control-variant-select" onchange="A.setControlVariant('${layer.id}','${esc(field)}',this.value)">
+                ${variants.map((v) => `<option value="${v.value}" ${c.variant === v.value ? 'selected' : ''}>${v.label}</option>`).join('')}
+            </select>
+        </div>
+        <p class="control-variant-hint">${variantHint.replace(/</g, '&lt;')}</p>
+        ${active ? renderControlBody(layer, c) : ''}
+    </div>`;
+}
+
 function renderControlBody(layer, c) {
     const esc = (s) => String(s).replace(/'/g, "\\'");
+    ensureControlVariant(c, c.type);
     if (c.type === 'select') {
         const vals = controlUniqueValues(layer, c.field, 30);
-        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="checkbox" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></label>`).join('')}</div>`;
+        const inputType = c.variant === 'select_single' ? 'radio' : 'checkbox';
+        const nameAttr = `ctl-${layer.id}-${c.field}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="${inputType}" name="${nameAttr}" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></label>`).join('')}</div>`;
     }
     const step = c.type === 'time' ? Math.max(86400000, Math.round((c.dataMax - c.dataMin) / 200)) : ((c.dataMax - c.dataMin) / 200 || 1);
     if (c.type === 'time') {
+        if (c.variant === 'time_between') {
+            return `<div class="range-info" style="margin-top:6px"><strong id="ctl-${c.field}-lo">${fmtControlValue(c, c.min)}</strong> → <strong id="ctl-${c.field}-hi">${fmtControlValue(c, c.max)}</strong></div>
+                <input type="range" class="rng" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.min}" oninput="A.setControlBound('${layer.id}','${esc(c.field)}','min', this.value)">
+                <input type="range" class="rng acc" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.max}" oninput="A.setControlBound('${layer.id}','${esc(c.field)}','max', this.value)">
+                <button class="btn btn-soft btn-full" style="margin-top:6px" onclick="A.playTime('${layer.id}','${esc(c.field)}')">▶ Animer dans le temps</button>`;
+        }
         return `<div class="range-info" style="margin-top:6px">≤ <strong id="ctl-${c.field}-v">${fmtControlValue(c, c.max)}</strong></div>
             <input type="range" class="rng acc" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.max}" oninput="A.setControlMax('${layer.id}','${esc(c.field)}', this.value)">
             <button class="btn btn-soft btn-full" style="margin-top:6px" onclick="A.playTime('${layer.id}','${esc(c.field)}')">▶ Animer dans le temps</button>`;
+    }
+    if (c.variant === 'range_max') {
+        return `<div class="range-info" style="margin-top:6px">≤ <strong id="ctl-${c.field}-v">${fmtControlValue(c, c.max)}</strong></div>
+            <input type="range" class="rng acc" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.max}" oninput="A.setControlMax('${layer.id}','${esc(c.field)}', this.value)">`;
+    }
+    if (c.variant === 'range_min') {
+        return `<div class="range-info" style="margin-top:6px">≥ <strong id="ctl-${c.field}-v">${fmtControlValue(c, c.min)}</strong></div>
+            <input type="range" class="rng" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.min}" oninput="A.setControlMin('${layer.id}','${esc(c.field)}', this.value)">`;
     }
     return `<div class="range-info" style="margin-top:6px"><strong id="ctl-${c.field}-lo">${fmtControlValue(c, c.min)}</strong> → <strong id="ctl-${c.field}-hi">${fmtControlValue(c, c.max)}</strong></div>
         <input type="range" class="rng" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.min}" oninput="A.setControlBound('${layer.id}','${esc(c.field)}','min', this.value)">
         <input type="range" class="rng acc" min="${c.dataMin}" max="${c.dataMax}" step="${step}" value="${c.max}" oninput="A.setControlBound('${layer.id}','${esc(c.field)}','max', this.value)">`;
 }
 
+function renderControlVariantMatrix() {
+    return `<details class="control-variant-matrix">
+        <summary>Guide des types de contrôle</summary>
+        <div class="control-variant-matrix-body">
+            <div class="cvm-group"><span class="cvm-k">Date</span>
+                <span><strong>Date ≤</strong> — cumul jusqu’à une date</span>
+                <span><strong>Date de/à</strong> — fenêtre stricte</span>
+            </div>
+            <div class="cvm-group"><span class="cvm-k">Nombre</span>
+                <span><strong>Plage</strong> — intervalle min/max</span>
+                <span><strong>Max / Min</strong> — seuil unique</span>
+            </div>
+            <div class="cvm-group"><span class="cvm-k">Catégorie</span>
+                <span><strong>Checklist</strong> — plusieurs valeurs</span>
+                <span><strong>Choix unique</strong> — une seule valeur</span>
+            </div>
+        </div>
+    </details>`;
+}
+
 function renderControles() {
+    if (CONFIG.viewMode) {
+        showToast('Utilisez les contrôles sur la carte', 'info');
+        closeModulePanel();
+        return;
+    }
     $('module-title').textContent = '🎛️ Contrôles';
     const body = $('module-body');
     const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer) || STATE.layers[0];
+
+    let html = `<div class="hint">Outils de mise en scène — activez les contrôles pour les publier en pastille sur la carte (visible en lecture). Puis capturez une étape de récit.</div>`;
+
+    html += `<div class="section"><div class="section-title">Environnement</div>${renderEnvControlsSection()}</div>`;
+
     if (!layer) {
-        body.innerHTML = `<div class="empty"><div class="ic">🎛️</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
+        body.innerHTML = html + `<div class="empty" style="margin-top:12px"><div class="ic">🎛️</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
         return;
     }
+
     layer.controls = layer.controls || [];
     const fields = layerFieldNames(layer).map((f) => ({ field: f, type: controlFieldType(layer, f) })).filter((x) => x.type);
-    let html = STATE.layers.length > 1
+
+    html += `<div class="section"><div class="section-title">Données</div>`;
+    html += renderControlVariantMatrix();
+    html += STATE.layers.length > 1
         ? `<select class="input" style="margin-bottom:8px" onchange="A.controlLayer(this.value)">${STATE.layers.map((l) => `<option value="${l.id}" ${l.id === layer.id ? 'selected' : ''}>${l.name}</option>`).join('')}</select>`
-        : `<div class="hint">Filtre / anime les objets de <strong>${layer.name}</strong>.</div>`;
+        : `<div class="hint" style="margin-bottom:8px">Couche <strong>${layer.name}</strong></div>`;
+
     if (!fields.length) {
-        body.innerHTML = html + `<div class="hint">Aucun champ filtrable détecté (date, nombre ou catégorie).</div>`;
+        body.innerHTML = html + `<div class="hint">Aucun champ filtrable (date, nombre ou catégorie).</div></div>`;
         return;
     }
-    html += fields.map(({ field, type }) => {
+
+    const activeFields = [];
+    const availFields = [];
+    for (const { field, type } of fields) {
         const c = layer.controls.find((x) => x.field === field) || { field, type, active: false };
-        const icon = type === 'time' ? '🕑' : type === 'range' ? '📊' : '🏷️';
-        return `<div class="section"><div class="toggle-row"><span class="tlabel">${icon} ${field}</span><div class="toggle ${c.active ? 'on' : ''}" onclick="A.toggleControl('${layer.id}','${String(field).replace(/'/g, "\\'")}','${type}')"></div></div>${c.active ? renderControlBody(layer, c) : ''}</div>`;
-    }).join('');
+        if (c.active) activeFields.push({ field, type, c });
+        else availFields.push({ field, type, c });
+    }
+
+    if (activeFields.length) {
+        html += `<div class="section-title" style="margin-top:8px">Actifs</div>`;
+        html += activeFields.map(({ field, type, c }) => renderDataControlRow(layer, field, type, c)).join('');
+    }
+    if (availFields.length) {
+        html += `<div class="section-title" style="margin-top:${activeFields.length ? '12px' : '8px'}">Disponibles</div>`;
+        html += availFields.map(({ field, type, c }) => renderDataControlRow(layer, field, type, c)).join('');
+    }
+    html += '</div>';
     body.innerHTML = html;
 }
 
@@ -1742,6 +2382,24 @@ function renderRecit() {
     $('module-title').textContent = '📖 Récit';
     const body = $('module-body');
     const steps = STATE.story || [];
+    if (CONFIG.viewMode) {
+        if (!steps.length) {
+            body.innerHTML = `<div class="empty"><div class="ic">📖</div><div class="t">Pas de récit</div><div class="h">L’éditeur n’a pas publié d’étapes</div></div>`;
+            return;
+        }
+        body.innerHTML = `
+            <div class="hint">Parcours publié — lecture seule.</div>
+            <div class="section"><button class="btn btn-dark btn-full" onclick="A.storyPlay(0)">▶ Lancer le récit</button></div>
+            <div class="layer-list">${steps.map((s, i) => `
+                <div class="layer-item" onclick="A.storyPlay(${i})" style="cursor:pointer">
+                    <span class="layer-vis on">▶</span>
+                    <div class="layer-info">
+                        <div class="layer-name">${(s.title || ('Étape ' + (i + 1))).replace(/</g, '&lt;')}</div>
+                        <div class="layer-meta">${(s.text || '').slice(0, 80).replace(/</g, '&lt;')}${ (s.text || '').length > 80 ? '…' : ''}</div>
+                    </div>
+                </div>`).join('')}</div>`;
+        return;
+    }
     let html = `<div class="hint">Capture des <strong>étapes</strong> (caméra + couches + filtres + heure) et rejoue-les en présentation.</div>
         <div class="section" style="display:flex;gap:8px">
             <button class="btn btn-primary" style="flex:2" onclick="A.storyCapture()">📸 Capturer l'étape</button>
@@ -1786,6 +2444,8 @@ function enterStoryPresentation(i) {
     if (!STATE.story.length) { showToast('Aucune étape à jouer', 'warning'); return; }
     capturePreStorySnapshot();
     _storyPresenting = true;
+    document.body.classList.add('story-presenting');
+    refreshControlsDock();
     _storyIdx = Math.max(0, Math.min(i || 0, STATE.story.length - 1));
     let ov = document.getElementById('story-present');
     if (!ov) {
@@ -1931,31 +2591,47 @@ function legendCategoryColor(sym, value, index, total) {
     return cat?.color || paletteColor(sym.palette || 'Tableau10', index, total);
 }
 
+/** Focus légende (ciblage lecture) — session only. */
+let _legendFocus = null; // { layerId, field?, value? }
+
+function isLegendFocused(layerId, field, value) {
+    if (!_legendFocus || _legendFocus.layerId !== layerId) return false;
+    if (field == null) return !_legendFocus.field;
+    return _legendFocus.field === field && String(_legendFocus.value) === String(value);
+}
+
 function buildLayerLegendHtml(layer) {
     const sym = initSymbolization(layer).color;
     const total = layerVisibleCount(layer);
+    const lid = escLegend(layer.id);
+    const clickable = CONFIG.viewMode ? ' legend-clickable' : '';
 
     if (sym.mode === 'categorized' && sym.field) {
         syncColorCategoriesFromFeatures(layer);
         const vals = filteredUniqueValues(layer, sym.field, 30);
+        const fieldEsc = escLegend(sym.field);
         if (!vals.length) {
-            return `<div class="legend-group"><div class="legend-row"><span class="swatch" style="background:${layer.color}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">0</span></div></div>`;
+            return `<div class="legend-group"><div class="legend-row${clickable}" data-legend="layer" data-layer-id="${lid}"><span class="swatch" style="background:${layer.color}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">0</span></div></div>`;
         }
         const catRows = vals.map((v, i) => {
             const col = legendCategoryColor(sym, v.value, i, vals.length);
-            return `<div class="legend-row legend-sub"><span class="swatch" style="background:${col}"></span><span class="nm" title="${escLegend(v.value)}">${escLegend(v.value)}</span><span class="ct">${v.count}</span></div>`;
+            const focused = isLegendFocused(layer.id, sym.field, v.value) ? ' legend-focused' : '';
+            return `<div class="legend-row legend-sub${clickable}${focused}" data-legend="cat" data-layer-id="${lid}" data-field="${fieldEsc}" data-value="${escLegend(v.value)}"><span class="swatch" style="background:${col}"></span><span class="nm" title="${escLegend(v.value)}">${escLegend(v.value)}</span><span class="ct">${v.count}</span></div>`;
         }).join('');
-        return `<div class="legend-group"><div class="legend-row legend-head-row"><span class="nm legend-layer-name">${escLegend(layer.name)}</span><span class="ct">${total}</span></div>${catRows}</div>`;
+        const headFocus = isLegendFocused(layer.id, null, null) ? ' legend-focused' : '';
+        return `<div class="legend-group"><div class="legend-row legend-head-row${clickable}${headFocus}" data-legend="layer" data-layer-id="${lid}"><span class="nm legend-layer-name">${escLegend(layer.name)}</span><span class="ct">${total}</span></div>${catRows}</div>`;
     }
 
     if (sym.mode === 'graduated' && sym.field) {
         const ramp = COLOR_PALETTES[sym.colorRamp || sym.palette || 'Viridis'] || COLOR_PALETTES.Viridis;
         const grad = `linear-gradient(90deg, ${ramp[0]}, ${ramp[ramp.length - 1]})`;
-        return `<div class="legend-group"><div class="legend-row"><span class="swatch legend-grad" style="background:${grad}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
+        const focused = isLegendFocused(layer.id, null, null) ? ' legend-focused' : '';
+        return `<div class="legend-group"><div class="legend-row${clickable}${focused}" data-legend="layer" data-layer-id="${lid}"><span class="swatch legend-grad" style="background:${grad}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
     }
 
     const swatch = sym.mode === 'single' ? (sym.value || layer.color) : layer.color;
-    return `<div class="legend-group"><div class="legend-row"><span class="swatch" style="background:${swatch}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
+    const focused = isLegendFocused(layer.id, null, null) ? ' legend-focused' : '';
+    return `<div class="legend-group"><div class="legend-row${clickable}${focused}" data-legend="layer" data-layer-id="${lid}"><span class="swatch" style="background:${swatch}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
 }
 
 function updateLegend() {
@@ -1964,6 +2640,71 @@ function updateLegend() {
     if (vis.length === 0) { body.innerHTML = '<div class="legend-empty">Aucune couche visible</div>'; return; }
     const html = vis.map(buildLayerLegendHtml).join('');
     body.innerHTML = html || '<div class="legend-empty">Aucun objet visible</div>';
+}
+
+function fitToFeatures(features) {
+    if (!map || !features?.length) return false;
+    const bounds = new maplibregl.LngLatBounds();
+    let any = false;
+    features.forEach((f) => {
+        const g = f.geometry; if (!g) return;
+        const coords = g.type === 'Point' ? [g.coordinates] : g.coordinates.flat(g.type.includes('Multi') ? 2 : 1);
+        coords.forEach((c) => { if (Array.isArray(c) && typeof c[0] === 'number') { bounds.extend(c); any = true; } });
+    });
+    if (!any) return false;
+    map.fitBounds(bounds, { padding: 80, maxZoom: 18, duration: 800 });
+    return true;
+}
+
+function featuresMatchingCategory(layer, field, value) {
+    const propKey = resolveFeaturePropertyKey(layer, field);
+    const want = String(value).toLowerCase();
+    return (layer.geojson?.features || []).filter((f) => {
+        const key = normalizePropertyValue(f.properties?.[propKey]);
+        return key && String(key).toLowerCase() === want;
+    });
+}
+
+/** Clic légende (lecture) : zoom couche ou catégorie. */
+function onLegendClick(e) {
+    if (!CONFIG.viewMode) return;
+    const row = e.target.closest('[data-legend]');
+    if (!row) return;
+    const layerId = row.dataset.layerId;
+    const layer = STATE.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const action = row.dataset.legend;
+
+    if (action === 'layer') {
+        _legendFocus = { layerId };
+        fitToLayer(layer);
+        updateLegend();
+        showToast(`Ciblage « ${layer.name} »`, 'info');
+        return;
+    }
+    if (action === 'cat') {
+        const field = row.dataset.field;
+        const value = row.dataset.value;
+        if (_legendFocus?.layerId === layerId && _legendFocus.field === field && String(_legendFocus.value) === String(value)) {
+            _legendFocus = null;
+            fitToLayer(layer);
+            updateLegend();
+            showToast('Ciblage retiré', 'info');
+            return;
+        }
+        _legendFocus = { layerId, field, value };
+        const feats = featuresMatchingCategory(layer, field, value);
+        if (!fitToFeatures(feats)) fitToLayer(layer);
+        updateLegend();
+        showToast(`Ciblage « ${value} »`, 'info');
+    }
+}
+
+function wireLegendClicks() {
+    const body = $('legend-body');
+    if (!body || body._legendWired) return;
+    body._legendWired = true;
+    body.addEventListener('click', onLegendClick);
 }
 
 // ============================================================
@@ -2007,6 +2748,8 @@ function renderInspector() {
         return;
     }
     if (inspectorUserClosed) { closeInspectorPanel(); return; }
+    // Lecture : pas d’inspecteur de symbolisation (paramétrage éditeur)
+    if (CONFIG.viewMode) { closeInspectorPanel(); return; }
     if ((STATE.currentModule === 'symbo' || STATE.currentModule === 'couches') && STATE.selectedLayer) {
         const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer);
         if (layer) { renderSymbologyInspector(layer); openInspectorPanel(); return; }
@@ -2115,12 +2858,70 @@ function rangeInfo(layer, field) {
     return `<div class="range-info" style="margin-top:6px">Valeurs : <strong>${r.min.toFixed(1)}</strong> → <strong>${r.max.toFixed(1)}</strong> (${r.count} obj.)</div>`;
 }
 
+/** Réglages d'apparence communs : opacité de couche et contour. */
+function symAppearancePanel(layer, sym) {
+    const isPolygon = layer.geometryType === 'Polygon' || layer.geometryType === 'MultiPolygon';
+    const isPoint = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+    const is3D = isPoint && (layer.style?.mode === 'library' || layer.style?.mode === 'custom');
+    const auto = !Number.isFinite(sym.opacity);
+    const opVal = auto ? defaultLayerOpacity(layer) : sym.opacity;
+
+    const opacity = `<div class="section">
+        <div class="slider-head"><span class="lbl">Opacité</span><span class="val" id="op-val">${Math.round(opVal * 100)} %${auto ? ' (auto)' : ''}</span></div>
+        <input type="range" class="rng acc" min="0" max="1" step="0.05" value="${opVal}" oninput="A.setSymOpacity('${layer.id}', this.value)">
+        ${auto
+            ? '<div class="hint">Suit l’opacité du style ; bouge le curseur pour la fixer.</div>'
+            : `<button class="btn btn-soft btn-full" style="margin-top:6px" onclick="A.setSymOpacity('${layer.id}','auto')">↺ Revenir à l’automatique</button>`}
+    </div>`;
+
+    // Le contour n'a de sens que sur une surface à plat ou un point : une
+    // extrusion n'en porte pas, et un modèle 3D est rendu par three.js.
+    const flat = layer.style?.polygonMode === 'flat';
+    if (is3D || (isPolygon && !flat)) return opacity;
+
+    const st = sym.stroke || {};
+    const mode = st.enabled === false ? 'none' : (st.mode === 'fixed' ? 'fixed' : 'follow');
+    const stroke = `<div class="section"><div class="section-title">Contour</div>
+        <div class="seg">
+            <button class="${mode === 'none' ? 'active' : ''}" onclick="A.setStrokeMode('${layer.id}','none')">Aucun</button>
+            <button class="${mode === 'follow' ? 'active' : ''}" onclick="A.setStrokeMode('${layer.id}','follow')">Suit le remplissage</button>
+            <button class="${mode === 'fixed' ? 'active' : ''}" onclick="A.setStrokeMode('${layer.id}','fixed')">Couleur fixe</button>
+        </div>
+        ${mode === 'none' ? '' : `
+        <div class="slider-head" style="margin-top:8px"><span class="lbl">Épaisseur</span><span class="val">${st.width ?? 1.5} px</span></div>
+        <input type="range" class="rng acc" min="0.5" max="8" step="0.5" value="${st.width ?? 1.5}" oninput="A.setStrokeWidth('${layer.id}', this.value)">
+        ${mode === 'fixed' ? `<div style="margin-top:8px"><label class="input-label">Couleur du contour</label>
+            <input class="input" type="color" value="${st.color || layer.color}" onchange="A.setStrokeColor('${layer.id}', this.value)"></div>` : ''}`}
+    </div>`;
+    return opacity + stroke;
+}
+
 function symSizePanel(layer, sym) {
     const s = sym.size;
     const isPoint = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+    const isPolygon = layer.geometryType === 'Polygon' || layer.geometryType === 'MultiPolygon';
     const is3D = isPoint && (layer.style?.mode === 'library' || layer.style?.mode === 'custom');
     const unit = is3D ? '×' : (layer.geometryType === 'Polygon' ? 'm' : 'px');
     const title = is3D ? 'Échelle' : (layer.geometryType === 'Polygon' ? 'Hauteur extrusion' : layer.geometryType === 'Point' ? 'Rayon' : 'Épaisseur');
+
+    // Surfaces : à plat ou en volume. À plat, la hauteur d'extrusion n'a aucun
+    // effet — on masque le réglage plutôt que de l'afficher inopérant.
+    const flat = layer.style?.polygonMode === 'flat';
+    const volume = isPolygon ? `<div class="section"><div class="section-title">Rendu des surfaces</div>
+        <div class="seg">
+            <button class="${flat ? 'active' : ''}" onclick="A.setPolygonMode('${layer.id}','flat')">▭ À plat</button>
+            <button class="${!flat ? 'active' : ''}" onclick="A.setPolygonMode('${layer.id}','extruded')">◨ En volume</button>
+        </div></div>` : '';
+    if (isPolygon && flat) {
+        return volume + symAppearancePanel(layer, sym);
+    }
+
+    const base = Number.isFinite(sym.extrusion?.base) ? sym.extrusion.base : 0;
+    const basePanel = (isPolygon && !flat) ? `<div class="section">
+        <div class="slider-head"><span class="lbl">Base (socle)</span><span class="val">${base} m</span></div>
+        <input type="range" class="rng acc" min="0" max="100" step="1" value="${base}" oninput="A.setExtrusionBase('${layer.id}', this.value)">
+    </div>` : '';
+
     let inner = '';
     if (s.mode === 'single') {
         inner = `<div class="section"><div class="slider-head"><span class="lbl">${title}</span><span class="val" id="sz-val">${s.value} ${unit}</span></div>
@@ -2133,7 +2934,9 @@ function symSizePanel(layer, sym) {
                 <div><label class="input-label">Max</label><input class="input" type="number" step="0.1" value="${s.outputRange[1]}" onchange="A.setSymOutput('${layer.id}','size',1,this.value)"></div>
             </div></div>` : ''}`;
     }
-    return `<div class="section"><div class="section-title">Mode</div>${modeSeg(layer, 'size', s.mode, ['single', 'graduated'])}</div>${inner}`;
+    return volume
+        + `<div class="section"><div class="section-title">Mode</div>${modeSeg(layer, 'size', s.mode, ['single', 'graduated'])}</div>`
+        + inner + basePanel + symAppearancePanel(layer, sym);
 }
 
 function symModelPanel(layer, sym) {
@@ -2185,17 +2988,30 @@ function commonTransform(layer) {
 function symLabelPanel(layer, sym) {
     const l = sym.label;
     return `<div class="section"><div class="toggle-row"><span class="tlabel">Afficher les étiquettes</span><div class="toggle ${l.enabled ? 'on' : ''}" onclick="A.toggleLabel('${layer.id}')"></div></div></div>
-        ${l.enabled ? `<div class="section"><div class="section-title">Champ texte</div>${fieldSelect(layer, 'label', l.field, null)}</div>` : ''}`;
+        ${l.enabled ? `<div class="section"><div class="section-title">Champ texte</div>${fieldSelect(layer, 'label', l.field, null)}</div>
+        <div class="section">
+            <div class="slider-head"><span class="lbl">Taille du texte</span><span class="val">${l.size ?? 12} px</span></div>
+            <input type="range" class="rng acc" min="6" max="28" step="1" value="${l.size ?? 12}" oninput="A.setLabelSize('${layer.id}', this.value)">
+            <div style="margin-top:8px"><label class="input-label">Couleur du texte</label>
+                <input class="input" type="color" value="${l.color || '#2D2820'}" onchange="A.setLabelColor('${layer.id}', this.value)"></div>
+        </div>` : ''}`;
 }
 
 // ---- Object inspector (selection) ----
-function renderAttrFields(layer, props) {
+function renderAttrFields(layer, props, opts = {}) {
+    const readOnly = !!opts.readOnly;
     const fields = getLayerFields(layer).filter((f) => !['geometry_json', 'latitude', 'longitude', 'fill_color', 'atlas_3d_json'].includes(f.id));
-    if (!fields.length) return '<div class="hint">Aucun attribut éditable.</div>';
+    if (!fields.length) return '<div class="hint">Aucun attribut.</div>';
     return fields.map((f) => {
         const val = props[f.id] ?? '';
         const esc = String(val).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const inputType = f.type === 'numeric' ? 'number' : 'text';
+        if (readOnly) {
+            return `<div class="section" style="margin-bottom:8px">
+                <label class="input-label">${f.label || f.id}</label>
+                <div class="input" style="opacity:.85;background:var(--surface-muted)">${esc || '—'}</div>
+            </div>`;
+        }
         return `<div class="section" style="margin-bottom:8px">
             <label class="input-label">${f.label || f.id}</label>
             <input class="input" type="${inputType}" value="${esc}"
@@ -2215,14 +3031,15 @@ function renderObjectInspector() {
     const label = props.name || props._label || props._osmId || `Objet #${idx + 1}`;
     const r = resolveFeatureProps(f, layer);
     const isQgis = layer.source === 'qgis2grist';
-    const tabs = ['Géométrie'];
-    if (isQgis && !multi) tabs.push('Attributs');
-    if (!_inspObjTab || !tabs.includes(_inspObjTab)) _inspObjTab = 'Géométrie';
+    const view = !!CONFIG.viewMode;
+    const is3D = isModelLayer(layer);
+    const tabs = objectInspectorTabs({ layer, multi });
+    if (!_inspObjTab || !tabs.includes(_inspObjTab)) _inspObjTab = tabs[0] || null;
 
     $('insp-head').innerHTML = `
         <div class="insp-eyebrow"><span class="layer-swatch" style="background:${layer.color}"></span>${count > 1 ? `${count} objets` : layer.name}</div>
         <div class="insp-title">${count > 1 ? 'Sélection multiple' : label}</div>
-        <div class="insp-sub">${count > 1 ? `Édition par lot · ${layer.name}` : `${layer.geometryType}${isQgis ? ' · Grist' : ''}`}</div>`;
+        <div class="insp-sub">${count > 1 ? `${layer.name}` : `${layer.geometryType}${isQgis ? ' · Grist' : ''}${view ? ' · lecture' : ''}`}</div>`;
     $('insp-tabs').innerHTML = tabs.map((t) =>
         `<button class="insp-tab ${_inspObjTab === t ? 'active' : ''}" onclick="A.setInspObjTab('${t}')">${t}</button>`
     ).join('');
@@ -2233,27 +3050,62 @@ function renderObjectInspector() {
             <input type="range" class="rng acc" id="${id}" min="${min}" max="${max}" step="${step}" value="${mixed ? (min + max) / 2 : val}" oninput="A.editFeature('${id}', this.value)">
         </div>`;
 
-    if (_inspObjTab === 'Attributs' && isQgis && !multi) {
-        $('insp-body').innerHTML = `<div class="hint" style="margin-bottom:10px">Modifications enregistrées dans <strong>${layer.sourceTable}</strong>.</div>${renderAttrFields(layer, props)}`;
-    } else if (!multi) {
-        $('insp-body').innerHTML =
-            slider('f-scale', '📏 Échelle', r.scale, 0.1, 5, 0.05, '×') +
-            slider('f-rotationZ', '🔄 Rotation Z (azimut)', r.rotationZ, 0, 360, 5, '°') +
-            slider('f-rotationX', '↕️ Rotation X', r.rotationX, -90, 90, 5, '°') +
-            slider('f-offsetZ', '⬆️ Altitude', r.offsetZ, 0, 20, 0.5, 'm') +
-            slider('f-offsetX', '↔️ Décalage X', r.offsetX, -10, 10, 0.1, 'm') +
-            slider('f-offsetY', '↕️ Décalage Y', r.offsetY, -10, 10, 0.1, 'm');
+    const geoReadOnly = () => `
+        <div class="hint" style="margin-bottom:10px">Mode lecture — géométrie 3D non modifiable.</div>
+        <div class="section" style="margin-bottom:8px"><label class="input-label">Échelle</label><div class="input" style="background:var(--surface-muted)">${r.scale}×</div></div>
+        <div class="section" style="margin-bottom:8px"><label class="input-label">Rotation Z</label><div class="input" style="background:var(--surface-muted)">${r.rotationZ}°</div></div>
+        <div class="section" style="margin-bottom:8px"><label class="input-label">Rotation X</label><div class="input" style="background:var(--surface-muted)">${r.rotationX}°</div></div>
+        <div class="section" style="margin-bottom:8px"><label class="input-label">Altitude</label><div class="input" style="background:var(--surface-muted)">${r.offsetZ}m</div></div>
+        <div class="section" style="margin-bottom:8px"><label class="input-label">Décalage X / Y</label><div class="input" style="background:var(--surface-muted)">${r.offsetX}m · ${r.offsetY}m</div></div>`;
+
+    // Le corps suit l'onglet actif. Une cascade parallèle laisserait passer les
+    // réglages 3D là où l'onglet a justement été retiré (objet non qgis2grist,
+    // sélection multiple, mode lecture).
+    if (_inspObjTab === 'Attributs') {
+        const readOnly = view || !isQgis;
+        const entete = readOnly
+            ? (isQgis ? '' : '<div class="hint" style="margin-bottom:10px">Attributs de la couche — lecture seule (source hors table Grist).</div>')
+            : `<div class="hint" style="margin-bottom:10px">Modifications enregistrées dans <strong>${layer.sourceTable}</strong>.</div>`;
+        $('insp-body').innerHTML = entete + renderAttrFields(layer, props, { readOnly });
+    } else if (_inspObjTab === 'Placement 3D') {
+        if (view) {
+            $('insp-body').innerHTML = multi
+                ? `<div class="hint">Mode lecture — sélection de ${count} objets (pas d’édition).</div>`
+                : geoReadOnly();
+        } else if (!multi) {
+            $('insp-body').innerHTML =
+                slider('f-scale', '📏 Échelle', r.scale, 0.1, 5, 0.05, '×') +
+                slider('f-rotationZ', '🔄 Rotation Z (azimut)', r.rotationZ, 0, 360, 5, '°') +
+                slider('f-rotationX', '↕️ Rotation X', r.rotationX, -90, 90, 5, '°') +
+                slider('f-offsetZ', '⬆️ Altitude', r.offsetZ, 0, 20, 0.5, 'm') +
+                slider('f-offsetX', '↔️ Décalage X', r.offsetX, -10, 10, 0.1, 'm') +
+                slider('f-offsetY', '↕️ Décalage Y', r.offsetY, -10, 10, 0.1, 'm');
+        } else {
+            $('insp-body').innerHTML = `<div class="hint">Modifications relatives appliquées aux ${count} objets.</div>` +
+                slider('m-scale', '📏 Échelle (×)', 1, 0.1, 5, 0.05, '×') +
+                slider('m-rotationZ', '🔄 Rotation Z (+/-)', 0, -180, 180, 5, '°') +
+                slider('m-offsetZ', '⬆️ Altitude (+/-)', 0, -5, 10, 0.5, 'm') +
+                slider('m-offsetX', '↔️ Décalage X (+/-)', 0, -5, 5, 0.1, 'm') +
+                slider('m-offsetY', '↕️ Décalage Y (+/-)', 0, -5, 5, 0.1, 'm');
+        }
     } else {
-        $('insp-body').innerHTML = `<div class="hint">Modifications relatives appliquées aux ${count} objets.</div>` +
-            slider('m-scale', '📏 Échelle (×)', 1, 0.1, 5, 0.05, '×') +
-            slider('m-rotationZ', '🔄 Rotation Z (+/-)', 0, -180, 180, 5, '°') +
-            slider('m-offsetZ', '⬆️ Altitude (+/-)', 0, -5, 10, 0.5, 'm') +
-            slider('m-offsetX', '↔️ Décalage X (+/-)', 0, -5, 5, 0.1, 'm') +
-            slider('m-offsetY', '↕️ Décalage Y (+/-)', 0, -5, 5, 0.1, 'm');
+        // Aucun onglet : sélection multiple sur des objets sans réglage commun.
+        $('insp-body').innerHTML = `<div class="hint">${count} objets sélectionnés — aucun réglage groupé pour ce type d’objet.</div>`;
     }
-    $('insp-foot').innerHTML = `
-        <button class="btn btn-soft" style="flex:1" onclick="A.resetSelected()">🔄 Reset</button>
-        <button class="btn btn-dark" style="flex:2" onclick="A.applySelected()">Enregistrer · ${count} objet${count > 1 ? 's' : ''}</button>`;
+
+    if (view) {
+        $('insp-foot').innerHTML = `<div class="hint" style="margin:0;flex:1">Mode lecture — consultation seule</div>`;
+    } else if (!tabs.length) {
+        $('insp-foot').innerHTML = '';
+    } else {
+        // « Reset » ne rétablit que les surcharges de placement 3D ; « Enregistrer »
+        // persiste aussi les attributs, il reste donc dans tous les cas.
+        const reset = is3D
+            ? `<button class="btn btn-soft" style="flex:1" onclick="A.resetSelected()">🔄 Reset</button>`
+            : '';
+        $('insp-foot').innerHTML = reset
+            + `<button class="btn btn-dark" style="flex:2" onclick="A.applySelected()">Enregistrer · ${count} objet${count > 1 ? 's' : ''}</button>`;
+    }
 }
 
 // ============================================================
@@ -2277,11 +3129,21 @@ function setupInteraction() {
         if (locationPickMode) { onLocationPick(e); return; }
         const ids = hitLayerIds();
         const feats = ids.length ? map.queryRenderedFeatures(e.point, { layers: ids }) : [];
-        if (!feats.length) return;
+        if (!feats.length) {
+            if (CONFIG.viewMode) closeViewPopup();
+            return;
+        }
         const f = feats[0];
         const layer = STATE.layers.find((l) => l.id === f.layer.id);
         if (!layer) return;
         const idx = f.properties?._idx ?? 0;
+
+        // Lecture : popup attributs (pas d’inspecteur édition)
+        if (CONFIG.viewMode) {
+            showViewFeaturePopup(layer, idx, e.lngLat);
+            return;
+        }
+
         if (STATE.selection.mode && STATE.selection.layerId === layer.id) {
             if (e.originalEvent.shiftKey) toggleSelect(idx); else STATE.selection.features = [idx];
             afterSelectionChange();
@@ -2292,6 +3154,7 @@ function setupInteraction() {
 
     const cc = map.getCanvasContainer();
     cc.addEventListener('mousedown', (e) => {
+        if (CONFIG.viewMode) return;
         if (!STATE.selection.mode || !e.shiftKey) return;
         map.dragPan.disable(); boxing = true;
         boxStart = { x: e.clientX, y: e.clientY };
@@ -2317,6 +3180,106 @@ function setupInteraction() {
     };
     cc.addEventListener('mouseup', endBox);
     document.addEventListener('mouseup', (e) => { if (boxing) { map.dragPan.enable(); if (boxEl) { boxEl.remove(); boxEl = null; } boxing = false; } });
+}
+
+let _viewPopup = null;
+
+function closeViewPopup() {
+    if (_viewPopup) {
+        try { _viewPopup.remove(); } catch (_) {}
+        _viewPopup = null;
+    }
+}
+
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function formatPopupValue(v) {
+    if (v == null || v === '') return '';
+    if (Array.isArray(v)) {
+        return v.map(formatPopupValue).filter(Boolean).join(', ');
+    }
+    if (typeof v === 'object') {
+        if (v.name != null) return String(v.name);
+        if (v.label != null) return String(v.label);
+        try { return JSON.stringify(v); } catch (_) { return String(v); }
+    }
+    return String(v);
+}
+
+/** HTML popup lecture : template manifest si présent, sinon attributs métier. */
+function buildViewPopupHtml(layer, feature, idx) {
+    const props = feature?.properties || {};
+    const ml = layer._manifestLayer || {};
+    const template = ml.popup_template || ml.popup?.template || layer.popupTemplate || layer.popup_template;
+    const title = formatPopupValue(props.name || props._label || props.label)
+        || layer.name || `Objet #${(idx ?? 0) + 1}`;
+
+    if (typeof template === 'string' && template.trim()) {
+        let html = template;
+        html = html.replace(/\{([^}]+)\}/g, (_, key) => escapeHtml(formatPopupValue(props[key.trim()])));
+        return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>${html}</div>`;
+    }
+
+    const skip = new Set(['_idx', '_row_id', '_fill_color', '_visible', '_fill_opacity', '_line_opacity',
+        '_scale', '_rotationX', '_rotationY', '_rotationZ', '_offsetX', '_offsetY', '_offsetZ', '_modelId']);
+    const fields = (layer._fields || []).filter((f) => f.name && !skip.has(f.name));
+    const rows = [];
+    if (fields.length) {
+        for (const f of fields.slice(0, 12)) {
+            const key = f.name;
+            const val = formatPopupValue(props[key] ?? props[f._rawKey] ?? props[f.rawKey]);
+            if (!val) continue;
+            rows.push([f.label || f.name, val]);
+        }
+    } else {
+        for (const [k, v] of Object.entries(props)) {
+            if (skip.has(k) || k.startsWith('_')) continue;
+            const val = formatPopupValue(v);
+            if (!val) continue;
+            rows.push([k, val]);
+            if (rows.length >= 12) break;
+        }
+    }
+    if (!rows.length) {
+        return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div><div class="atlas-popup-empty">Pas d’attributs</div></div>`;
+    }
+    const body = rows.map(([k, v]) =>
+        `<div class="atlas-popup-row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v)}</span></div>`
+    ).join('');
+    return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>${body}</div>`;
+}
+
+function showViewFeaturePopup(layer, idx, lngLat) {
+    if (!map || typeof maplibregl === 'undefined') return;
+    const feature = layer.geojson?.features?.[idx];
+    if (!feature) return;
+    closeViewPopup();
+    let coords = lngLat;
+    if (!coords && feature.geometry?.type === 'Point') {
+        const [lng, lat] = feature.geometry.coordinates;
+        coords = { lng, lat };
+    } else if (!coords && feature.geometry) {
+        try {
+            const b = boundsFromGeoJSON({ type: 'FeatureCollection', features: [feature] });
+            if (b) coords = { lng: (b[0] + b[2]) / 2, lat: (b[1] + b[3]) / 2 };
+        } catch (_) {}
+    }
+    if (!coords) return;
+    _viewPopup = new maplibregl.Popup({
+        maxWidth: '300px',
+        closeButton: true,
+        closeOnClick: true,
+        className: 'atlas-view-popup',
+    })
+        .setLngLat(coords)
+        .setHTML(buildViewPopupHtml(layer, feature, idx))
+        .addTo(map);
 }
 
 function selectInBox(a, b) {
@@ -2350,6 +3313,11 @@ async function onLocationPick(e) {
     } catch (e2) {}
 }
 function enterSelectionMode(layerId, idx) {
+    if (CONFIG.viewMode) {
+        const layer = STATE.layers.find((l) => l.id === layerId);
+        if (layer && idx != null) showViewFeaturePopup(layer, idx);
+        return;
+    }
     STATE.selection.mode = true;
     STATE.selection.layerId = layerId;
     STATE.selection.features = idx != null ? [idx] : [];
@@ -2529,7 +3497,7 @@ async function reloadGenericTableLayer(layer, force) {
     layer.geojson = tableToGeoJSON(cols, gc);
     indexFeatures(layer);
     applyControls(layer);
-    if (map.getSource(layer.id)) map.getSource(layer.id).setData(filteredGeoJSON(layer));
+    if (map.getSource(layer.id)) syncLayerSourceData(layer);
     else addLayerToMap(layer);
     Models3D.scheduleBuild();
     return layer.geojson.features.length;
@@ -2579,19 +3547,132 @@ const TABLE_SCHEMAS = {
 async function syncStoryFromGrist() {
     if (!CONFIG.grist.ready) return;
     STATE.story = await loadStoryFromGrist(grist.docApi);
+    refreshStoryNavChrome();
+    if (CONFIG.viewMode) return;
     try {
         const rec = await grist.docApi.fetchTable('Atlas_Story');
         if ((rec.id?.length || 0) > STATE.story.length) {
-            await saveStoryToGrist(grist.docApi, STATE.story);
+            await saveStoryToGrist(grist.docApi, STATE.story, { viewMode: CONFIG.viewMode });
         }
     } catch (_) { /* table absente */ }
 }
 
+function assertCanWrite(actionLabel) {
+    if (canWrite(CONFIG.viewMode)) return true;
+    showToast('Mode lecture — ' + actionLabel + ' indisponible', 'warning');
+    return false;
+}
+
+function enterViewModeOnWriteFail(err) {
+    if (CONFIG.viewMode) return;
+    CONFIG.viewMode = true;
+    applyViewModeChrome();
+    const msg = err?.message || String(err || '');
+    showToast('Écriture refusée — passage en lecture' + (msg ? ` (${msg})` : ''), 'warning');
+}
+
+function applyViewModeChrome() {
+    document.body.classList.toggle('view-mode', !!CONFIG.viewMode);
+    const badge = $('view-mode-badge');
+    if (badge) badge.hidden = !CONFIG.viewMode;
+    refreshViewerControlsHud();
+    refreshStoryNavChrome();
+    refreshControlsDock();
+    if (CONFIG.viewMode) {
+        // Lecture = carte + FAB récit ; jamais panneau atelier (même Récit) au boot
+        closeModulePanel();
+        closeInspectorPanel();
+    }
+}
+
+/** Récit en lecture : FAB seulement (pas de rail / panneau latéral). */
+function refreshStoryNavChrome() {
+    const hasStory = (STATE.story?.length || 0) > 0;
+    document.body.classList.toggle('view-has-story', !!(CONFIG.viewMode && hasStory));
+    const railRecit = document.querySelector('.rail-item[data-module="recit"]');
+    if (railRecit) {
+        if (CONFIG.viewMode) railRecit.hidden = true;
+        else railRecit.hidden = false;
+    }
+    const fab = $('viewer-story-fab');
+    if (fab) fab.hidden = !(CONFIG.viewMode && hasStory);
+    if (CONFIG.viewMode && STATE.currentModule === 'recit') closeModulePanel();
+}
+
+/** Contrôles canvas publiés (active) — interaction lecteur, pas config éditeur. */
+function collectPublishedControls() {
+    const out = [];
+    for (const layer of STATE.layers) {
+        for (const c of (layer.controls || [])) {
+            if (c.active) out.push({ layer, c });
+        }
+    }
+    return out;
+}
+
+/** HUD rect lecture — désactivé (dock pastilles, spec D12). T6 : pastilles données sur le dock. */
+function refreshViewerControlsHud() {
+    const el = $('viewer-controls');
+    if (!el) return;
+    el.classList.remove('has-controls', 'collapsed');
+    el.innerHTML = '';
+}
+
+function updateMobileLayout() {
+    const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
+    document.body.classList.toggle('mobile-layout', narrow);
+    CONFIG.light3d = shouldEnableLight3d({
+        viewMode: CONFIG.viewMode,
+        no3dParam: parseNo3dParam(typeof location !== 'undefined' ? location.search : ''),
+        isNarrow: narrow,
+        hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 8,
+    });
+    if (CONFIG.light3d && typeof Models3D !== 'undefined') {
+        Models3D._disabled = true;
+    }
+}
+
+function wireMobileNav() {
+    document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.mobileTab;
+            document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
+                b.classList.toggle('active', b === btn);
+            });
+            if (tab === 'map') {
+                closeModulePanel();
+                A.closeInspector?.();
+            } else if (tab === 'couches') {
+                if (CONFIG.viewMode) return;
+                openModule('couches');
+            } else if (tab === 'recit') {
+                if (CONFIG.viewMode && !(STATE.story?.length)) {
+                    showToast('Aucun récit publié', 'info');
+                    return;
+                }
+                openModule('recit');
+            }
+        });
+    });
+}
+
 async function initGrist() {
     if (typeof grist === 'undefined') { console.log('Grist indisponible — mode standalone'); return; }
+    const mode = parseAtlasMode(typeof location !== 'undefined' ? location.search : '');
+    const intent = accessIntentFromMode(mode);
     try {
-        grist.ready({ requiredAccess: 'full' });
+        grist.ready({ requiredAccess: intent.requiredAccess });
         CONFIG.grist.ready = true;
+        CONFIG.viewMode = !!intent.viewModeForced;
+        // Auto / edit : sonde réelle (viewer public ≠ widget « Full » en creator)
+        if (!CONFIG.viewMode && intent.preferFull) {
+            const writable = await probeCanWriteDoc(grist.docApi);
+            if (!writable) {
+                CONFIG.viewMode = true;
+                console.info('[Atlas] Accès sans écriture — mode lecture');
+            }
+        }
+        applyViewModeChrome();
         CONFIG.docMode = await detectDocMode(grist.docApi);
         if (CONFIG.docMode === 'scene-manifest') {
             await loadFromSceneManifest();
@@ -2601,13 +3682,46 @@ async function initGrist() {
             await loadLayersFromGrist();
         }
         await syncStoryFromGrist();
+        await syncScenePrefsFromGrist();
+        refreshControlsDock();
         await refreshGeoTables();
-    } catch (e) { console.warn('Grist init:', e.message); }
+        if (CONFIG.viewMode) {
+            showToast('Mode lecture — consultation seule', 'warning');
+        }
+    } catch (e) {
+        console.warn('Grist init:', e.message);
+        if (!intent.viewModeForced && intent.preferFull) {
+            try {
+                grist.ready({ requiredAccess: 'read table' });
+                CONFIG.grist.ready = true;
+                CONFIG.viewMode = true;
+                applyViewModeChrome();
+                CONFIG.docMode = await detectDocMode(grist.docApi);
+                if (CONFIG.docMode === 'scene-manifest') {
+                    await loadFromSceneManifest();
+                    startSceneManifestPolling();
+                } else {
+                    await loadLayersFromGrist();
+                }
+                await syncStoryFromGrist();
+                await refreshGeoTables();
+                showToast('Accès limité — mode lecture', 'warning');
+            } catch (e2) {
+                console.warn('Grist init lecture:', e2.message);
+            }
+        }
+    }
 }
 async function initGristTables() {
+    if (CONFIG.viewMode) return;
+    if (!assertCanWrite('créer les tables maquette')) return;
     const tables = await grist.docApi.listTables();
     if (!tables.includes('Maquette_Layers')) {
-        await grist.docApi.applyUserActions([['AddTable', 'Maquette_Layers', TABLE_SCHEMAS.Maquette_Layers]]);
+        try {
+            await grist.docApi.applyUserActions([['AddTable', 'Maquette_Layers', TABLE_SCHEMAS.Maquette_Layers]]);
+        } catch (e) {
+            enterViewModeOnWriteFail(e);
+        }
     }
 }
 
@@ -2622,12 +3736,17 @@ function mountLoadedLayers(bounds) {
             syncAllLayersToMap();
             const r = reconcilePanelVisibilityToMap();
             if (r.fixed) updateLegend();
+            if (CONFIG.viewMode) refreshViewerControlsHud();
         };
         map.once('moveend', remount);
         map.once('idle', remount);
         setTimeout(remount, 700);
         setTimeout(remount, 1500);
     });
+    if (CONFIG.viewMode) {
+        applyViewModeChrome();
+        refreshViewerControlsHud();
+    }
 }
 
 /** Doc qgis2grist : Scene Manifest + tables métier. */
@@ -2643,10 +3762,15 @@ async function loadFromSceneManifest() {
         _sceneManifest = manifest;
         _widgetConfig = await loadQgisWidgetConfig(grist.docApi);
         const prefs = await loadLayerPrefs(grist.docApi);
-        const { layers, projectName, bounds } = await loadSceneManifestLayers(
+        const { layers, projectName, bounds: rawBounds } = await loadSceneManifestLayers(
             grist.docApi, manifest, _widgetConfig
         );
-        for (const layer of layers) applyLayerPrefs(layer, prefs);
+        for (const layer of layers) {
+            applyLayerPrefs(layer, prefs);
+            if (layer.visible !== false && layer._deferredLoad) {
+                materializeDeferredLayer(layer);
+            }
+        }
         STATE.layers.push(...layers);
         layers.forEach((layer) => {
             (layer.controls || []).forEach((c) => repairSelectControlFromManifest(layer, c));
@@ -2658,6 +3782,7 @@ async function loadFromSceneManifest() {
             const el = $('project-name');
             if (el) el.textContent = projectName;
         }
+        const bounds = boundsFromVisibleLayers(layers) || rawBounds;
         mountLoadedLayers(bounds);
         await refreshGeoTables();
         const visCount = layers.filter((l) => l.visible !== false).length;
@@ -2688,7 +3813,7 @@ function startSceneManifestPolling() {
         isPaused: () => _syncPaused || dirty || _storyPresenting,
         onLayerUpdated(layer) {
             if (!map?.isStyleLoaded()) return;
-            syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(initSymbolization(layer).color));
+            syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(initSymbolization(layer).color, layer));
             if (_storyPresenting && STATE.story[_storyIdx]?.state) {
                 const stepLayer = STATE.story[_storyIdx].state.layers?.find(
                     (x) => x.sourceTable === layer.sourceTable || x.id === layer.id || x.name === layer.name
@@ -2739,13 +3864,15 @@ async function loadLayersFromGrist() {
 }
 async function saveLayerToGrist(layer, silent) {
     if (!CONFIG.grist.ready) return;
+    if (!assertCanWrite('enregistrer les préférences')) return;
     if (layer.source === 'qgis2grist') {
         try {
-            await saveLayerPref(grist.docApi, layer);
+            await saveLayerPref(grist.docApi, layer, { viewMode: CONFIG.viewMode });
             if (!silent) showToast(`Préférences Atlas · ${layer.name}`, 'success');
             dirty = false;
             $('app-header')?.classList.remove('dirty');
         } catch (e) {
+            enterViewModeOnWriteFail(e);
             if (!silent) showToast('Grist : ' + e.message, 'error');
         }
         return;
@@ -2806,6 +3933,7 @@ async function restoreProject(p) {
     if (p.location?.lat) { STATE.location = p.location; map.jumpTo({ center: [p.location.lng, p.location.lat] }); }
     if (p.settings) { Object.assign(STATE.settings, p.settings); STATE.settings.date = new Date(p.settings.date || Date.now()); MODEL_LIBRARY.set = STATE.settings.modelSet || 'colored'; }
     STATE.story = p.story || [];
+    refreshStoryNavChrome();
     (p.layers || []).forEach((ld) => {
         const layer = { ...ld, visible: ld.visible !== false, controls: ld.controls || [] };
         initSymbolization(layer);
@@ -2814,7 +3942,8 @@ async function restoreProject(p) {
         if (layer.controls?.length) applyControls(layer);
     });
     updateRailBadge(); Models3D.rebuildScene(); applyTerrain(); applyBuildingVisibility(); updateLighting();
-    openModule('couches');
+    if (!CONFIG.viewMode) openModule('couches');
+    else updateLegend();
     showToast(`Projet chargé · ${p.layers?.length || 0} couches`, 'success');
 }
 function loadProject() {
@@ -2859,7 +3988,7 @@ function openCmd() {
 }
 function closeCmd() { $('cmd-overlay').classList.remove('open'); }
 function buildCmdItems(q) {
-    const base = [
+    let base = [
         { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: '📍' },
         { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: '🗂️' },
         { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: '🎛️' },
@@ -2874,7 +4003,25 @@ function buildCmdItems(q) {
         { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
         { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
     ];
-    STATE.layers.forEach((l) => base.push({ label: l.name, kind: 'couche', run: () => { A.selectLayer(l.id); }, ic: '▢' }));
+    if (CONFIG.viewMode) {
+        const hasStory = (STATE.story?.length || 0) > 0;
+        base = [
+            ...(hasStory ? [
+                { label: '▶ Lancer le récit', kind: 'action', run: () => A.storyPlay(0), ic: '📖' },
+                { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: '📖' },
+            ] : []),
+            { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
+            { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
+        ];
+        STATE.layers.filter((l) => l.visible !== false).forEach((l) => base.push({
+            label: `Cibler « ${l.name} »`,
+            kind: 'couche',
+            run: () => { _legendFocus = { layerId: l.id }; fitToLayer(l); updateLegend(); },
+            ic: '🎯',
+        }));
+    } else {
+        STATE.layers.forEach((l) => base.push({ label: l.name, kind: 'couche', run: () => { A.selectLayer(l.id); }, ic: '▢' }));
+    }
     const ql = q.toLowerCase();
     cmdItems = base.filter((i) => i.label.toLowerCase().includes(ql));
     cmdSel = 0; renderCmd();
@@ -2945,6 +4092,10 @@ const A = {
     // Couches
     openOSM, runOSM,
     selectLayer(id) {
+        if (CONFIG.viewMode) {
+            A.zoomLayer(id);
+            return;
+        }
         inspectorUserClosed = false;
         STATE.selectedLayer = id;
         const layer = STATE.layers.find((l) => l.id === id);
@@ -2989,7 +4140,7 @@ const A = {
                 await refreshLayerFromTable(grist.docApi, l, _widgetConfig, ml);
                 syncFeatureColorsFromSymbolization(l);
                 applyControls(l);
-                if (map?.getSource(l.id)) map.getSource(l.id).setData(filteredGeoJSON(l));
+                syncLayerSourceData(l);
                 Models3D.scheduleBuild();
                 n = l.geojson?.features?.length || 0;
             } else {
@@ -3004,7 +4155,59 @@ const A = {
         }
     },
     controlLayer(id) { STATE.selectedLayer = id; renderControles(); },
+    setViewerExposed(id, on) {
+        if (!assertCanWrite('modifier les contrôles scène')) return;
+        setViewerExposedFn(STATE.viewerControls, id, !!on);
+        persistScenePrefs();
+        refreshControlsDock();
+        if (STATE.currentModule === 'controles') renderControles();
+    },
+    setViewerShadows(on) {
+        if (!assertCanWrite('modifier les contrôles scène')) return;
+        const vc = getViewerControl(STATE.viewerControls, 'sun');
+        if (!vc) return;
+        vc.config = { ...vc.config, shadows: !!on };
+        if (STATE.settings) STATE.settings.shadows = !!on;
+        updateLighting();
+        persistScenePrefs();
+        if (STATE.currentModule === 'controles') renderControles();
+    },
+    toggleViewerBasemapAllowed(key) {
+        if (!assertCanWrite('modifier les contrôles scène')) return;
+        const vc = getViewerControl(STATE.viewerControls, 'basemap');
+        if (!vc) return;
+        const allowed = [...(vc.config?.allowed || [])];
+        const i = allowed.indexOf(key);
+        if (i >= 0) allowed.splice(i, 1);
+        else {
+            if (allowed.length >= 3) {
+                showToast('Maximum 3 fonds autorisés', 'warning');
+                return;
+            }
+            allowed.push(key);
+        }
+        vc.config = { ...vc.config, allowed };
+        persistScenePrefs();
+        refreshControlsDock();
+        if (STATE.currentModule === 'controles') renderControles();
+    },
+    setControlLabel(layerId, field, label) {
+        if (CONFIG.viewMode) return;
+        const l = STATE.layers.find((x) => x.id === layerId);
+        if (!l) return;
+        const c = (l.controls || []).find((x) => x.field === field);
+        if (!c) return;
+        c.label = String(label || field).trim() || field;
+        markDirty();
+        if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
+            saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
+        }
+    },
     toggleControl(id, field, type) {
+        if (CONFIG.viewMode) {
+            showToast('Mode lecture — activation des contrôles réservée à l’éditeur', 'warning');
+            return;
+        }
         const l = STATE.layers.find((x) => x.id === id);
         if (!l) return;
         l.controls = l.controls || [];
@@ -3012,18 +4215,21 @@ const A = {
         if (!c) {
             c = { field, type };
             Object.assign(c, controlBounds(l, type, field));
+            c.variant = defaultControlVariant(type);
             if (type !== 'select') { c.min = c.dataMin; c.max = c.dataMax; }
             l.controls.push(c);
         }
+        ensureControlVariant(c, type);
         c.active = !c.active;
         if (c.active && c.type === 'select' && !c._selectionTouched && !Array.isArray(c.values)) {
             c.values = controlUniqueValues(l, c.field, 40).map((v) => v.value);
         }
         applyControls(l);
         renderControles();
+        refreshControlsDock();
         markDirty();
         if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
-            saveLayerPref(grist.docApi, l).catch(() => {});
+            saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
         }
     },
     setControlBound(id, field, which, v) {
@@ -3035,6 +4241,18 @@ const A = {
         if (c.min > c.max) { if (which === 'min') c.max = c.min; else c.min = c.max; }
         const el = $(`ctl-${field}-${which === 'min' ? 'lo' : 'hi'}`);
         if (el) el.textContent = fmtControlValue(c, c[which]);
+        clearTimeout(this._ctlT);
+        this._ctlT = setTimeout(() => applyControls(l), 80);
+        markDirty();
+    },
+    setControlMin(id, field, v) {
+        const l = STATE.layers.find((x) => x.id === id);
+        if (!l) return;
+        const c = (l.controls || []).find((x) => x.field === field);
+        if (!c) return;
+        c.min = +v;
+        const el = $(`ctl-${field}-v`);
+        if (el) el.textContent = fmtControlValue(c, c.min);
         clearTimeout(this._ctlT);
         this._ctlT = setTimeout(() => applyControls(l), 80);
         markDirty();
@@ -3051,21 +4269,47 @@ const A = {
         this._ctlT = setTimeout(() => applyControls(l), 80);
         markDirty();
     },
+    setControlVariant(id, field, variant) {
+        if (CONFIG.viewMode) return;
+        const l = STATE.layers.find((x) => x.id === id);
+        if (!l) return;
+        const c = (l.controls || []).find((x) => x.field === field);
+        if (!c) return;
+        c.variant = variant;
+        ensureControlVariant(c, c.type);
+        if (c.type === 'select' && c.variant === 'select_single' && Array.isArray(c.values) && c.values.length > 1) {
+            c.values = [c.values[0]];
+            c._selectionTouched = true;
+        }
+        applyControls(l);
+        renderControles();
+        refreshControlsDock();
+        markDirty();
+        if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
+            saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
+        }
+    },
     toggleControlValue(id, field, value) {
         const l = STATE.layers.find((x) => x.id === id);
         if (!l) return;
         const c = (l.controls || []).find((x) => x.field === field);
         if (!c) return;
         c.values = c.values || [];
+        ensureControlVariant(c, c.type);
         const norm = String(value).toLowerCase();
         const i = c.values.findIndex((v) => String(v).toLowerCase() === norm);
-        if (i >= 0) c.values.splice(i, 1);
-        else c.values.push(value);
+        if (c.variant === 'select_single') {
+            if (i >= 0) c.values = [];
+            else c.values = [value];
+        } else {
+            if (i >= 0) c.values.splice(i, 1);
+            else c.values.push(value);
+        }
         c._selectionTouched = true;
         applyControls(l);
         markDirty();
         if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
-            saveLayerPref(grist.docApi, l).catch(() => {});
+            saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
         }
     },
     playTime(id, field) {
@@ -3073,19 +4317,36 @@ const A = {
         if (!l) return;
         const c = (l.controls || []).find((x) => x.field === field);
         if (!c || c.type !== 'time') return;
+        ensureControlVariant(c, c.type);
         if (this._playT) { clearInterval(this._playT); this._playT = null; return; }
-        c.max = c.dataMin;
+        if (c.variant === 'time_between') {
+            c.min = c.dataMin;
+            c.max = c.dataMin;
+        } else {
+            c.max = c.dataMin;
+        }
         const steps = 60;
         const inc = (c.dataMax - c.dataMin) / steps;
         this._playT = setInterval(() => {
-            c.max += inc;
+            if (c.variant === 'time_between') {
+                const span = Math.max(inc * 6, (c.dataMax - c.dataMin) * 0.08);
+                c.max += inc;
+                c.min = Math.max(c.dataMin, c.max - span);
+            } else {
+                c.max += inc;
+            }
             if (c.max >= c.dataMax) { c.max = c.dataMax; clearInterval(this._playT); this._playT = null; }
             applyControls(l);
-            const el = $(`ctl-${field}-v`);
-            if (el) el.textContent = fmtControlValue(c, c.max);
+            const vEl = $(`ctl-${field}-v`);
+            if (vEl) vEl.textContent = fmtControlValue(c, c.max);
+            const loEl = $(`ctl-${field}-lo`);
+            const hiEl = $(`ctl-${field}-hi`);
+            if (loEl) loEl.textContent = fmtControlValue(c, c.min);
+            if (hiEl) hiEl.textContent = fmtControlValue(c, c.max);
         }, 66);
     },
     storyCapture() {
+        if (!assertCanWrite('capturer le récit')) return;
         STATE.story.push({
             title: 'Étape ' + (STATE.story.length + 1),
             text: '',
@@ -3097,6 +4358,7 @@ const A = {
         showToast('Étape capturée', 'success');
     },
     storyRecapture(i) {
+        if (!assertCanWrite('re-capturer le récit')) return;
         if (STATE.story[i]) {
             STATE.story[i].state = captureStoryState(map, STATE);
             markDirty();
@@ -3105,9 +4367,11 @@ const A = {
         }
     },
     storySet(i, k, v) {
+        if (!assertCanWrite('modifier le récit')) return;
         if (STATE.story[i]) { STATE.story[i][k] = v; markDirty(); persistStory(); }
     },
     storyMove(i, d) {
+        if (!assertCanWrite('réordonner le récit')) return;
         const j = i + d;
         if (j < 0 || j >= STATE.story.length) return;
         [STATE.story[i], STATE.story[j]] = [STATE.story[j], STATE.story[i]];
@@ -3116,6 +4380,7 @@ const A = {
         renderRecit();
     },
     storyDelete(i) {
+        if (!assertCanWrite('supprimer une étape')) return;
         STATE.story.splice(i, 1);
         markDirty();
         persistStory();
@@ -3129,33 +4394,57 @@ const A = {
     },
     storyExit() {
         _storyPresenting = false;
-        restorePreStorySnapshot();
+        document.body.classList.remove('story-presenting');
         const ov = document.getElementById('story-present');
         if (ov) ov.remove();
+        // Rend la scène telle qu'elle était avant la présentation : visibilité,
+        // filtres et symbolisation. Sans cela on sort du récit sur l'état de la
+        // dernière étape.
+        restorePreStorySnapshot();
         remountAllLayers();
+        updateLegend();
+        refreshControlsDock();
         if (STATE.currentModule === 'couches' || STATE.currentModule === 'symbo') {
             renderLayersPanel(STATE.currentModule);
         }
     },
     toggleLayer(id, e) {
+        if (CONFIG.viewMode) {
+            e?.stopPropagation?.();
+            showToast('Mode lecture — visibilité figée par l’éditeur', 'warning');
+            return;
+        }
         e.stopPropagation();
         const l = STATE.layers.find((x) => x.id === id);
         if (!l) return;
         l.visible = l.visible === false ? true : false;
+        if (l.visible && l._deferredLoad) {
+            showToast('Chargement bâtiments…', 'warning');
+            materializeDeferredLayer(l);
+            if (map?.getSource(l.id)) syncLayerSourceData(l);
+            else if (typeof addLayerToMap === 'function') addLayerToMap(l);
+        }
         syncLayerToMapState(l);
         updateLegend();
         if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
-            saveLayerPref(grist.docApi, l).catch(() => {});
+            saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
         }
         renderLayersPanel(STATE.currentModule);
     },
     toggleAllLayers(v) {
-        STATE.layers.forEach((l) => { l.visible = v; });
+        if (CONFIG.viewMode) {
+            showToast('Mode lecture — visibilité figée par l’éditeur', 'warning');
+            return;
+        }
+        STATE.layers.forEach((l) => {
+            l.visible = v;
+            if (v && l._deferredLoad) materializeDeferredLayer(l);
+        });
         syncAllLayersToMap();
         updateLegend();
         if (CONFIG.grist.ready) {
             STATE.layers.filter((l) => l.source === 'qgis2grist').forEach((l) => {
-                saveLayerPref(grist.docApi, l).catch(() => {});
+                saveLayerPref(grist.docApi, l, { viewMode: CONFIG.viewMode }).catch(() => {});
             });
         }
         renderLayersPanel(STATE.currentModule);
@@ -3264,7 +4553,7 @@ const A = {
         else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => Models3D.recomputeAll(), 250); }
         else if (key === 'labels') applyLabelsVisibility();
         else if (key === 'sky') applySky();
-        else if (key === 'shadows') { updateLighting(); $('shadow-toggle').classList.toggle('on', STATE.settings.shadows); }
+        else if (key === 'shadows') { updateLighting(); $('shadow-toggle')?.classList.toggle('on', STATE.settings.shadows); }
         if (STATE.currentModule === 'vues') renderVues(); else if (STATE.currentModule === 'soleil') renderSoleil();
     },
 
@@ -3277,10 +4566,22 @@ const A = {
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
     setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => Models3D.recomputeAll(), 200); } },
     setBasemap(k) {
+        if (CONFIG.viewMode) {
+            const allowed = basemapChoicesForDock();
+            if (!allowed.includes(k)) {
+                showToast('Fond non autorisé en lecture', 'warning');
+                return;
+            }
+        }
         STATE.settings.basemap = k; renderVues();
         const b = BASEMAPS[k];
         map.setStyle(b.style ? b.style() : b.url);
         map.once('idle', onStyleReady);
+        refreshControlsDock();
+    },
+    setView3d(on) {
+        if (!map) return;
+        map.easeTo({ pitch: on ? 55 : 0, duration: 600 });
     },
     setTerrainSource(src) { setTerrainSource(src); renderVues(); },
     setProjection(p) { STATE.settings.projection = p; applyProjection(); renderVues(); },
@@ -3320,6 +4621,59 @@ const A = {
     },
     setSymSizeValue(id, v) { const l = STATE.layers.find((x) => x.id === id); if (!l) return; initSymbolization(l).size.value = +v; const el = $('sz-val'); if (el) el.textContent = v + (l.geometryType === 'Polygon' ? ' m' : (l.style?.mode === 'library' ? ' ×' : ' px')); applyLayerStyle(l); },
     setSymOutput(id, param, i, v) { const l = STATE.layers.find((x) => x.id === id); if (!l) return; initSymbolization(l)[param].outputRange[i] = +v; applyLayerStyle(l); },
+
+    /** Surfaces à plat ou extrudées. Remonter en volume réactive la hauteur. */
+    setPolygonMode(id, mode) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        l.style = l.style || { mode: 'mapbox' };
+        l.style.polygonMode = mode === 'flat' ? 'flat' : 'extruded';
+        applyLayerStyle(l); renderInspector(); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    /** Opacité de couche ; 'auto' rend la main au style déclaratif. */
+    setSymOpacity(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        const sym = initSymbolization(l);
+        sym.opacity = v === 'auto' ? null : clamp(+v, 0, 1);
+        const el = $('op-val');
+        if (el && v !== 'auto') el.textContent = Math.round(+v * 100) + ' %';
+        applyLayerStyle(l);
+        if (v === 'auto') renderInspector();
+        markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setStrokeMode(id, mode) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        const st = initSymbolization(l).stroke;
+        st.enabled = mode !== 'none';
+        if (mode !== 'none') st.mode = mode;
+        if (mode === 'fixed' && !st.color) st.color = l.color;
+        applyLayerStyle(l); renderInspector(); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setStrokeWidth(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        initSymbolization(l).stroke.width = clamp(+v, 0, 20);
+        applyLayerStyle(l); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setStrokeColor(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        const st = initSymbolization(l).stroke;
+        st.color = v; st.mode = 'fixed'; st.enabled = true;
+        applyLayerStyle(l); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setExtrusionBase(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        initSymbolization(l).extrusion.base = Math.max(0, +v || 0);
+        applyLayerStyle(l); renderInspector(); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setLabelSize(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        initSymbolization(l).label.size = clamp(+v, 6, 40);
+        applyLayerStyle(l); markDirty(); saveLayerPrefIfSynced(l);
+    },
+    setLabelColor(id, v) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        initSymbolization(l).label.color = v;
+        applyLayerStyle(l); markDirty(); saveLayerPrefIfSynced(l);
+    },
     pickCatColor(id, value, el) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         const cat = l.style.symbolization.color.categories.find((c) => String(c.value) === String(value)); if (!cat) return;
@@ -3361,6 +4715,7 @@ const A = {
     },
     selClear() { STATE.selection.features = []; afterSelectionChange(); },
     editFeature(sliderId, value) {
+        if (!assertCanWrite('éditer les objets 3D')) return;
         const layer = STATE.layers.find((l) => l.id === STATE.selection.layerId); if (!layer) return;
         const v = parseFloat(value); const el = $(sliderId + '-v');
         const param = sliderId.split('-')[1];
@@ -3385,6 +4740,7 @@ const A = {
         Models3D.updateEdited(layer.id, multi ? STATE.selection.features : [STATE.selection.features[0]]);
     },
     resetSelected() {
+        if (!assertCanWrite('réinitialiser les objets')) return;
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId); if (!l) return;
         STATE.selection.features.forEach((i) => clearFeatureOverrides(l, i));
         multiBaseValues = null; Models3D.updateEdited(l.id, STATE.selection.features); renderInspector(); showToast('Réinitialisé', 'success');
@@ -3394,6 +4750,7 @@ const A = {
         multiBaseValues = null;
         if (!l) return;
         if (l.source === 'qgis2grist' && CONFIG.grist.ready) {
+            if (!assertCanWrite('enregistrer les objets')) return;
             saveFeaturesToSource(grist.docApi, l, STATE.selection.features)
                 .then((n) => {
                     dirty = false;
@@ -3401,7 +4758,10 @@ const A = {
                     $('app-header')?.classList.remove('dirty');
                     showToast(`${n} enregistrement(s) · ${l.sourceTable}`, 'success');
                 })
-                .catch((e) => showToast('Grist : ' + e.message, 'error'));
+                .catch((e) => {
+                    enterViewModeOnWriteFail(e);
+                    showToast('Grist : ' + e.message, 'error');
+                });
             return;
         }
         markDirty();
@@ -3411,6 +4771,7 @@ const A = {
     setInspObjTab(tab) { _inspObjTab = tab; renderObjectInspector(); },
     closeInspector() { closeInspectorByUser(); },
     setFeatureAttr(layerId, field, value) {
+        if (!assertCanWrite('modifier les attributs')) return;
         const l = STATE.layers.find((x) => x.id === layerId);
         if (!l) return;
         const idx = STATE.selection.features[0];
@@ -3464,15 +4825,65 @@ function wireMapControlsDock() {
     const apply = (collapsed) => {
         dock.classList.toggle('collapsed', !!collapsed);
         try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (e) {}
+        if (!collapsed && _openDockPill) renderDockSlotHost();
     };
     let collapsed = false;
     try { collapsed = localStorage.getItem(KEY) === '1'; } catch (e) {}
     apply(collapsed);
-    $('dock-fab')?.addEventListener('click', () => apply(false));
     $('dock-collapse')?.addEventListener('click', () => apply(true));
+
+    const host = $('dock-slot-host');
+    if (host && !host._dockWired) {
+        host._dockWired = true;
+        host.addEventListener('click', (e) => {
+            if (e.target.closest('#shadow-toggle')) A.toggleSetting('shadows');
+        });
+        const arcSet = (clientX, arc) => {
+            const rect = arc.getBoundingClientRect();
+            const r = clamp((clientX - rect.left - 8) / 152, 0, 1);
+            STATE.settings.timeOfDay = Math.round(360 + r * 840);
+            updateLighting();
+            if (STATE.currentModule === 'soleil') renderSoleil();
+        };
+        host.addEventListener('mousedown', (e) => {
+            const arc = e.target.closest('.sun-arc');
+            if (!arc) return;
+            _sunArcDragging = true;
+            arcSet(e.clientX, arc);
+            e.preventDefault();
+        });
+        host.addEventListener('touchstart', (e) => {
+            const arc = e.target.closest('.sun-arc');
+            if (!arc || !e.touches[0]) return;
+            _sunArcDragging = true;
+            arcSet(e.touches[0].clientX, arc);
+            e.preventDefault();
+        }, { passive: false });
+        window.addEventListener('mousemove', (e) => {
+            if (!_sunArcDragging) return;
+            const arc = host.querySelector('.sun-arc');
+            if (arc) arcSet(e.clientX, arc);
+        });
+        window.addEventListener('touchmove', (e) => {
+            if (!_sunArcDragging || !e.touches[0]) return;
+            const arc = host.querySelector('.sun-arc');
+            if (arc) arcSet(e.touches[0].clientX, arc);
+        }, { passive: true });
+        window.addEventListener('mouseup', () => { _sunArcDragging = false; });
+        window.addEventListener('touchend', () => { _sunArcDragging = false; });
+    }
 }
 
 function wireEvents() {
+    updateMobileLayout();
+    wireMobileNav();
+    wireLegendClicks();
+    $('viewer-story-fab')?.addEventListener('click', () => {
+        if ((STATE.story?.length || 0) > 0) A.storyPlay(0);
+    });
+    if (typeof window !== 'undefined' && window.matchMedia) {
+        window.matchMedia('(max-width: 720px)').addEventListener('change', () => updateMobileLayout());
+    }
     document.querySelectorAll('.rail-item[data-module]').forEach((b) => {
         b.addEventListener('click', () => {
             const m = b.dataset.module;
@@ -3499,28 +4910,10 @@ function wireEvents() {
 
     // dock contrôles (repli style boussole)
     wireMapControlsDock();
+    refreshControlsDock();
 
     // fermeture inspecteur (pas de pastille carte)
     $('insp-close-btn')?.addEventListener('click', () => A.closeInspector());
-
-    // shadow toggle on sun strip
-    $('shadow-toggle')?.addEventListener('click', () => A.toggleSetting('shadows'));
-
-    // sun strip drag
-    const arc = $('sun-arc');
-    if (arc) {
-        const arcSet = (clientX) => {
-            const rect = arc.getBoundingClientRect();
-            const r = clamp((clientX - rect.left - 8) / 152, 0, 1);
-            STATE.settings.timeOfDay = Math.round(360 + r * 840);
-            updateLighting();
-            if (STATE.currentModule === 'soleil') renderSoleil();
-        };
-        let dragging = false;
-        arc.addEventListener('mousedown', (e) => { dragging = true; arcSet(e.clientX); e.preventDefault(); });
-        window.addEventListener('mousemove', (e) => { if (dragging) arcSet(e.clientX); });
-        window.addEventListener('mouseup', () => { dragging = false; });
-    }
 
     // command palette keyboard
     $('cmd-input').addEventListener('input', (e) => buildCmdItems(e.target.value));
@@ -3547,10 +4940,19 @@ function wireEvents() {
 // INIT
 // ============================================================
 async function init() {
+    // Mode URL avant premier paint chrome
+    const bootMode = parseAtlasMode(typeof location !== 'undefined' ? location.search : '');
+    if (bootMode === 'view') {
+        CONFIG.viewMode = true;
+        applyViewModeChrome();
+    }
+    updateMobileLayout();
     wireEvents();
     initMap();
     probeLocalModels();
     await initGrist();
+    applyViewModeChrome();
+    updateMobileLayout();
     // Autosave : standalone uniquement — pas en doc Grist (Scene Manifest charge déjà les couches)
     try {
         const auto = localStorage.getItem('atlas_autosave');

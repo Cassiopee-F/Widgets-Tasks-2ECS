@@ -7,19 +7,20 @@ import {
   flattenCoords2D,
   configLayerMeta,
   resolveSceneGeometryType,
-} from './grist-rows.js?v=20260729o';
+} from './grist-rows.js?v=1.0.0';
 import {
   layerPrefsPayload,
   applyLayerPrefsBinding,
-} from './manifest-binding.js?v=20260729p';
+} from './manifest-binding.js?v=1.0.0';
 import { parseGristBool } from './grist-bool.js';
+import { isModelLayer } from './model-layer.js?v=1.0.0';
 import {
   manifestGeometryType,
   atlasGeomToBridge,
   primaryColorFromDeclarative,
   colorFnFromDeclarative,
   syncFeatureColorsFromSymbolization,
-} from './declarative-style.js?v=20260729b';
+} from './declarative-style.js?v=1.0.0';
 
 export const ATLAS_PREFS_TABLE = 'Atlas_LayerPrefs';
 
@@ -56,7 +57,8 @@ export function defaultLayerVisible(ml, featureCount) {
 
 export { parseGristBool } from './grist-bool.js';
 
-export async function ensureAtlasPrefsTable(docApi) {
+export async function ensureAtlasPrefsTable(docApi, opts = {}) {
+  if (opts.viewMode) return;
   const tables = await docApi.listTables();
   if (tables.includes(ATLAS_PREFS_TABLE)) return;
   await docApi.applyUserActions([['AddTable', ATLAS_PREFS_TABLE, ATLAS_PREFS_SCHEMA]]);
@@ -93,9 +95,10 @@ export function applyLayerPrefs(layer, prefsMap) {
   applyLayerPrefsBinding(layer, p);
 }
 
-export async function saveLayerPref(docApi, layer) {
+export async function saveLayerPref(docApi, layer, opts = {}) {
+  if (opts.viewMode) return;
   if (layer.source !== 'qgis2grist' || !layer.sourceTable) return;
-  await ensureAtlasPrefsTable(docApi);
+  await ensureAtlasPrefsTable(docApi, opts);
   const data = {
     source_table: layer.sourceTable,
     StyleJSON: JSON.stringify(layerPrefsPayload(layer)),
@@ -187,13 +190,19 @@ export function featureToRowUpdate(feature, layer) {
     update.fill_color = props._fill_color;
   }
 
-  const atlas3d = {};
-  for (const k of ['scale', 'rotationX', 'rotationY', 'rotationZ', 'offsetX', 'offsetY', 'offsetZ', 'modelId']) {
-    const v = props['_' + k];
-    if (v != null && v !== '') atlas3d[k] = v;
-  }
-  if (Object.keys(atlas3d).length && (!gristCols.length || colSet.has(ATLAS_3D_COL))) {
-    update[ATLAS_3D_COL] = JSON.stringify(atlas3d);
+  // Placement 3D : n'a de sens que pour une couche rendue en modèles. Sans cette
+  // garde, des surcharges héritées — ou une couche ayant changé de mode —
+  // écriraient des transformations 3D sur des objets qui ne seront jamais rendus
+  // ainsi, salissant la table de l'utilisateur.
+  if (isModelLayer(layer)) {
+    const atlas3d = {};
+    for (const k of ['scale', 'rotationX', 'rotationY', 'rotationZ', 'offsetX', 'offsetY', 'offsetZ', 'modelId']) {
+      const v = props['_' + k];
+      if (v != null && v !== '') atlas3d[k] = v;
+    }
+    if (Object.keys(atlas3d).length && (!gristCols.length || colSet.has(ATLAS_3D_COL))) {
+      update[ATLAS_3D_COL] = JSON.stringify(atlas3d);
+    }
   }
 
   if (!Object.keys(update).length) return null;

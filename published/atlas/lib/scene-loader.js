@@ -7,18 +7,22 @@ import {
   boundsFromGeoJSON,
   configLayerMeta,
   resolveSceneGeometryType,
-} from './grist-rows.js?v=20260729o';
+} from './grist-rows.js?v=1.0.0';
 import {
   manifestGeometryType,
   atlasGeomToBridge,
   primaryColorFromDeclarative,
   colorFnFromDeclarative,
+  opacityFnFromDeclarative,
   applyDeclarativeToLayer,
-} from './declarative-style.js?v=20260729b';
-import { defaultLayerVisible, applyAtlas3dFromRows, isBasemapLayer } from './grist-sync.js?v=20260729o';
-import { applyManifestControlsToLayer } from './manifest-binding.js?v=20260729o';
+} from './declarative-style.js?v=1.0.0';
+import { defaultLayerVisible, applyAtlas3dFromRows } from './grist-sync.js?v=1.0.0';
+import { applyManifestControlsToLayer } from './manifest-binding.js?v=1.0.0';
 
 export const SCENE_MANIFEST_TABLE = 'SceneManifest';
+
+/** Au-delà, une couche masquée à l'ouverture n'est convertie qu'à l'activation. */
+export const DEFER_FEATURE_THRESHOLD = 8000;
 export const QGIS_WIDGETS_TABLE = 'QgisWidgets';
 
 /** Détecte le mode de doc Grist. */
@@ -76,7 +80,8 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
   }
 
   const atlasLayers = [];
-  const allBounds = [];
+  const primaryBounds = [];
+  const fallbackBounds = [];
 
   for (const ml of manifest.layers) {
     const tableName = ml.source?.table || ml.id;
@@ -101,16 +106,34 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     const layerMeta = {
       geomType: atlasGeomToBridge(geometryType),
       fields: cfgLayer?.fields || [],
+      geometryFields: ml.source?.geometry_fields || null,
+      opacityFn: opacityFnFromDeclarative(declarative, cfgLayer?.fields || []),
       _color: fallbackColor,
       color: fallbackColor,
     };
 
     const rows = fetchTableToRows(colData);
-    const colorFn = colorFnFromDeclarative(declarative, fallbackColor, cfgLayer?.fields || []);
-    const geojson = rowsToGeoJSON(rows, layerMeta, colorFn);
-    applyAtlas3dFromRows(rows, geojson);
+    const featureCountHint = rows.length;
+    const willHide = !defaultLayerVisible(ml, featureCountHint);
+    // Une couche masquée et volumineuse n'est pas convertie en GeoJSON tant
+    // qu'on ne l'allume pas : le coût est le volume, pas la nature des données.
+    const deferHeavy = willHide && featureCountHint > DEFER_FEATURE_THRESHOLD;
 
-    if (!geojson.features.length) continue;
+    let geojson;
+    let featureCount;
+    if (deferHeavy) {
+      geojson = { type: 'FeatureCollection', features: [] };
+      featureCount = featureCountHint;
+      console.warn(
+        `[Atlas scene-loader] ${tableName}: ${featureCountHint} entités masquées — chargement différé (activer la pastille)`
+      );
+    } else {
+      const colorFn = colorFnFromDeclarative(declarative, fallbackColor, cfgLayer?.fields || []);
+      geojson = rowsToGeoJSON(rows, layerMeta, colorFn);
+      applyAtlas3dFromRows(rows, geojson);
+      if (!geojson.features.length) continue;
+      featureCount = geojson.features.length;
+    }
 
     geometryType = resolveSceneGeometryType(
       ml.geometry_type,
@@ -119,8 +142,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       geometryType
     );
 
-    const featureCount = geojson.features.length;
-    const visible = defaultLayerVisible(ml, featureCount);
+    const visible = deferHeavy ? false : defaultLayerVisible(ml, featureCount);
 
     const layer = {
       id: 'layer-scene-' + tableName.replace(/[^a-zA-Z0-9_-]/g, '_'),
@@ -139,6 +161,8 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       _gristColumns: Object.keys(colData).filter((k) => k !== 'id'),
       _manifestLayer: ml,
       _profile: ml.profile || 'A',
+      _deferredRows: deferHeavy ? rows : null,
+      _deferredLoad: deferHeavy,
     };
 
     applyDeclarativeToLayer(layer, declarative);
@@ -146,13 +170,22 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     atlasLayers.push(layer);
 
     const b = boundsFromGeoJSON(geojson);
-    if (b && !isBasemapLayer(ml, featureCount)) allBounds.push(b);
+    // Cadrage : couches visibles porteuses de détail d'abord (surfaces, lignes).
+    // Les points et les couches masquées ne servent qu'en repli — sinon des
+    // repères dispersés imposent une échelle où le détail est sous-pixel.
+    if (b) {
+      const areal = geometryType === 'Polygon' || geometryType === 'Line'
+        || geometryType === 'LineString';
+      if (visible && areal) primaryBounds.push(b);
+      else fallbackBounds.push(b);
+    }
   }
 
   let bounds = null;
-  if (allBounds.length) {
+  const boundList = primaryBounds.length ? primaryBounds : fallbackBounds;
+  if (boundList.length) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const b of allBounds) {
+    for (const b of boundList) {
       minX = Math.min(minX, b[0][0]); minY = Math.min(minY, b[0][1]);
       maxX = Math.max(maxX, b[1][0]); maxY = Math.max(maxY, b[1][1]);
     }
@@ -165,4 +198,57 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     projectName: manifest.title || widgetConfig?.meta?.source_file || 'Import QGIS',
     bounds,
   };
+}
+
+/** Matérialise une couche lourde chargée en différé (bâtiments masqués). */
+export function materializeDeferredLayer(layer) {
+  if (!layer?._deferredLoad || !layer._deferredRows?.length) return false;
+  const declarative = layer._declarative || layer._manifestLayer?.style?.declarative || null;
+  const fallbackColor = layer.color || '#808080';
+  const layerMeta = {
+    geomType: atlasGeomToBridge(layer.geometryType || 'Polygon'),
+    fields: layer._fields || [],
+    geometryFields: layer._manifestLayer?.source?.geometry_fields || null,
+    opacityFn: opacityFnFromDeclarative(declarative, layer._fields || []),
+    _color: fallbackColor,
+    color: fallbackColor,
+  };
+  const colorFn = colorFnFromDeclarative(declarative, fallbackColor, layer._fields || []);
+  const geojson = rowsToGeoJSON(layer._deferredRows, layerMeta, colorFn);
+  applyAtlas3dFromRows(layer._deferredRows, geojson);
+  layer.geojson = geojson;
+  layer._deferredRows = null;
+  layer._deferredLoad = false;
+  if (declarative) applyDeclarativeToLayer(layer, declarative);
+  return geojson.features.length > 0;
+}
+
+/**
+ * Bounds à partir des couches déjà visibles (après prefs Atlas).
+ *
+ * Les couches surfaciques et linéaires cadrent en priorité : ce sont elles qui
+ * portent le détail. Des points de repère dispersés sur un pourtour entier
+ * étireraient la vue à une échelle où une maille de 200 m fait moins d'un
+ * pixel — la carte paraîtrait vide à l'ouverture. Les points ne servent donc
+ * de cadrage que s'il n'y a rien d'autre.
+ */
+export function boundsFromVisibleLayers(layers) {
+  const areal = [];
+  const punctual = [];
+  for (const layer of layers || []) {
+    if (layer.visible === false) continue;
+    const b = boundsFromGeoJSON(layer.geojson);
+    if (!b) continue;
+    const gt = layer.geometryType;
+    if (gt === 'Polygon' || gt === 'Line' || gt === 'LineString') areal.push(b);
+    else punctual.push(b);
+  }
+  const list = areal.length ? areal : punctual;
+  if (!list.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const b of list) {
+    minX = Math.min(minX, b[0][0]); minY = Math.min(minY, b[0][1]);
+    maxX = Math.max(maxX, b[1][0]); maxY = Math.max(maxY, b[1][1]);
+  }
+  return [[minX, minY], [maxX, maxY]];
 }
