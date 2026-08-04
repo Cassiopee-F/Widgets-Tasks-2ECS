@@ -65,23 +65,30 @@
     return /grille|grid|maille|200m|grille_/.test(n);
   }
 
+  /** Plancher de zoom d'une grille : ses mailles sont sous-pixel en petite échelle. */
+  const GRID_MIN_ZOOM = 11;
+
   /**
    * Infère visibility / fetch / limits depuis le volume de la couche.
+   *
+   * Le LOD zoom n'est posé qu'à partir du Profil B : en Profil A la couche
+   * tient intégralement en mémoire, contraindre le zoom ne ferait que la
+   * rendre invisible sans contrepartie. Une grille voit son plancher relevé
+   * à GRID_MIN_ZOOM (minZoom, pas maxZoom : une maille 200 m est illisible
+   * en petite échelle, pas en grande).
+   *
    * @param {object} layer - { geomType, displayName?, name?, featureCount? }
    * @param {number} [featureCount]
    */
   function inferLayerLod(layer, featureCount) {
     const count = featureCount ?? layer.featureCount ?? 0;
     const geom = layer.geomType || 'Polygon';
-    const visibility = { minZoom: null, maxZoom: null };
-    if (isGridLayer(layer)) visibility.maxZoom = 11;
+    const geomMinZoom = geom === 'Point' ? 8 : geom === 'Line' ? 9 : 10;
+    const minZoom = isGridLayer(layer) ? Math.max(geomMinZoom, GRID_MIN_ZOOM) : geomMinZoom;
 
     if (count > TIER_B_MAX) {
       return {
-        visibility: {
-          minZoom: geom === 'Point' ? 8 : geom === 'Line' ? 9 : 10,
-          maxZoom: visibility.maxZoom,
-        },
+        visibility: { minZoom, maxZoom: null },
         fetch: { mode: 'tile' },
         limits: { maxFeaturesInView: DEFAULT_MAX_IN_VIEW },
         profile: 'C',
@@ -89,17 +96,14 @@
     }
     if (count > TIER_A_MAX) {
       return {
-        visibility: {
-          minZoom: geom === 'Point' ? 8 : geom === 'Line' ? 9 : 10,
-          maxZoom: visibility.maxZoom,
-        },
+        visibility: { minZoom, maxZoom: null },
         fetch: { mode: 'viewport' },
         limits: { maxFeaturesInView: DEFAULT_MAX_IN_VIEW },
         profile: 'B',
       };
     }
     return {
-      visibility,
+      visibility: { minZoom: null, maxZoom: null },
       fetch: { mode: 'full' },
       limits: { maxFeaturesInView: DEFAULT_MAX_IN_VIEW },
       profile: 'A',
@@ -175,6 +179,7 @@
     TIER_A_MAX,
     TIER_B_MAX,
     DEFAULT_MAX_IN_VIEW,
+    GRID_MIN_ZOOM,
     GEOMETRY_FIELD_NAMES,
     inferLayerLod,
     isTileFetchMode,

@@ -17,7 +17,7 @@ const forms = path.join(root, 'projects', 'grist_forms');
 const pub = path.join(root, 'published', 'qgis2grist');
 const v2 = path.join(pub, 'v2');
 const vendor = path.join(v2, 'vendor', 'grist_forms');
-const VER = '2.0.0';
+const VER = '2.0.1';
 
 function mkdirp(d) {
   fs.mkdirSync(d, { recursive: true });

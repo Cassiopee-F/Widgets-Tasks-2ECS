@@ -36,6 +36,30 @@
     return 'polygon';
   }
 
+  /** Colonnes géométriques conventionnelles pour un geomType donné. */
+  function defaultGeometryCols(geomType) {
+    return geometryType(geomType) === 'point'
+      ? { lat: 'latitude', lon: 'longitude' }
+      : { geojson: 'geometry_json', lat: 'centroid_lat', lon: 'centroid_lon' };
+  }
+
+  /**
+   * Déclare les colIds géométriques réels quand ils s'écartent de la
+   * convention — cas d'une source portant déjà un champ homonyme, que Grist
+   * suffixe ('latitude' → 'latitude2'). Omis si tout est conventionnel, pour
+   * ne pas alourdir le manifest du cas nominal.
+   *
+   * Extension additive à V0.2.1 (à valider cerema-offre-de-service) : un
+   * lecteur qui l'ignore retombe sur la convention, comme aujourd'hui.
+   */
+  function geometryFieldsFor(layer) {
+    const actual = layer._geometryCols;
+    if (!actual) return null;
+    const def = defaultGeometryCols(layer.geomType);
+    const differs = Object.keys(def).some((k) => actual[k] && actual[k] !== def[k]);
+    return differs ? { ...def, ...actual } : null;
+  }
+
   /**
    * Construit un Scene Manifest V0.2 complet.
    * @param {Record<string, object>} importedLayerData - tableName → layer
@@ -56,10 +80,14 @@
         ? ctrl.inferLayerControls(layer, meta, tableName, declarative)
         : [];
 
+      const geometryFields = geometryFieldsFor(layer);
+      const source = { type: 'grist', table: tableName };
+      if (geometryFields) source.geometry_fields = geometryFields;
+
       return {
         id: tableName,
         name: layer.displayName || tableName,
-        source: { type: 'grist', table: tableName },
+        source,
         geometry_type: geometryType(layer.geomType),
         visibility: layerLod?.visibility || null,
         fetch: layerLod?.fetch || { mode: 'full' },
@@ -120,6 +148,8 @@
     MANIFEST_VERSION,
     DEFAULT_CLASSIFICATION,
     geometryType,
+    defaultGeometryCols,
+    geometryFieldsFor,
     buildSceneManifest,
     canonicalStringify,
     hashSceneManifest,
