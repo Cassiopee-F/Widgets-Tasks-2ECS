@@ -668,6 +668,8 @@ body {
 
 <div id="toast"></div>
 
+<script src="lib/geom-reconcile.js?v=2.0.1"></script>
+<script src="lib/gpkg-datasource.js?v=2.0.1"></script>
 <script>
 // ══════════════════════════════════════════════════════════════
 // STATE MACHINE
@@ -733,14 +735,30 @@ dropZone.addEventListener('drop', e => {
 });
 fileInput.addEventListener('change', e => {
   const f = e.target.files[0];
-  if (f) handleFile(f);
-  fileInput.value = '';
+  // Ne pas vider l'input avant la fin de handleFile (NotReadableError Chrome/Electron).
+  if (f) handleFile(f).finally(() => { fileInput.value = ''; });
 });
 
 // ══════════════════════════════════════════════════════════════
 // MAIN FILE HANDLER
 // ══════════════════════════════════════════════════════════════
 async function handleFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  let filePayload;
+  try {
+    if (ext === 'html' || ext === 'htm') {
+      filePayload = { kind: 'text', data: await file.text() };
+    } else {
+      filePayload = { kind: 'buffer', data: await file.arrayBuffer() };
+    }
+  } catch (readErr) {
+    const hint = readErr?.name === 'NotReadableError'
+      ? ' Le navigateur a perdu l\'accès au fichier — rechargez la page (Ctrl+F5), ou glissez-déposez le fichier.'
+      : '';
+    throw new Error(`Impossible de lire « ${file.name} ».${hint} (${readErr?.message || readErr})`);
+  }
+
   // Nettoyer l'état précédent (cas : drop depuis la carte sans passer par resetToIdleState)
   _mapSessionId++; // invalider les async en cours
   if (_mapPollInterval) { clearInterval(_mapPollInterval); _mapPollInterval = null; }
@@ -763,27 +781,23 @@ async function handleFile(file) {
   setReadingLabel('Détection du format…', file.name);
 
   try {
-    const ext = file.name.split('.').pop().toLowerCase();
     let layers = [];
 
     if (ext === 'html' || ext === 'htm') {
       setReadingLabel('Lecture HTML qgis2web…', 'extraction des couches');
-      const text = await file.text();
+      const text = filePayload.data;
       originalHtml = text;  // keep for embedded viewer
       layers = await parseQgis2webHtml(text);
     } else if (ext === 'zip') {
       // Could be qgis2web ZIP, QField ZIP, or normal ZIP with QGZ
       setReadingLabel('Lecture de l\'archive ZIP…', 'décompression');
-      const ab = await file.arrayBuffer();
-      layers = await parseZipFile(ab, file.name);
+      layers = await parseZipFile(filePayload.data, file.name);
     } else if (ext === 'qgz') {
       setReadingLabel('Lecture du projet QGIS…', 'décompression QGZ');
-      const ab = await file.arrayBuffer();
-      layers = await parseQgzFile(ab, null, file.name);
+      layers = await parseQgzFile(filePayload.data, null, file.name);
     } else if (ext === 'gpkg') {
       setReadingLabel('Lecture GeoPackage…', 'ouverture SQLite');
-      const ab = await file.arrayBuffer();
-      layers = await parseGpkgFile(ab);
+      layers = await parseGpkgFile(filePayload.data);
     } else {
       throw new Error(`Format non reconnu: .${ext}. Formats supportés: .zip, .html, .qgz, .gpkg`);
     }
@@ -1882,16 +1896,6 @@ async function parseQgsXml(xmlText, internalZip, externalZip, gpkgFiles, geojson
     // Extract fields from <fields> or <fieldConfiguration>
     const fields = extractFieldsFromXml(ml);
 
-    // Add geometry columns based on type
-    if (geomType === 'Point') {
-      fields.push({ name: 'latitude', qType: 'double', gType: 'Numeric' });
-      fields.push({ name: 'longitude', qType: 'double', gType: 'Numeric' });
-    } else {
-      fields.push({ name: 'geometry_json', qType: 'string', gType: 'Text' });
-      fields.push({ name: 'centroid_lat', qType: 'double', gType: 'Numeric' });
-      fields.push({ name: 'centroid_lon', qType: 'double', gType: 'Numeric' });
-    }
-
     // Try to load actual features from GPKG or GeoJSON
     let features = [];
     let featuresLoaded = false;
@@ -1932,7 +1936,8 @@ async function parseQgsXml(xmlText, internalZip, externalZip, gpkgFiles, geojson
         setReadingLabel('Lecture GPKG…', match.name.split('/').pop());
         try {
           const gpkgAb = await match.zip.files[match.name].async('arraybuffer');
-          const gpkgFeatures = await readGpkgWithSqlJs(gpkgAb, name);
+          const gpkgTableHint = Q2GGpkgDs.resolveGpkgTableHint(name, datasource);
+          const gpkgFeatures = await readGpkgWithSqlJs(gpkgAb, gpkgTableHint);
           if (gpkgFeatures && gpkgFeatures.length > 0) {
             features = gpkgFeatures;
             featuresLoaded = true;
@@ -1952,12 +1957,17 @@ async function parseQgsXml(xmlText, internalZip, externalZip, gpkgFiles, geojson
       } catch(e) { console.warn('[parseQgsXml] Style extraction failed for', name, e); }
     }
 
+    const reconciled = Q2GGeomReconcile.reconcileLayerGeometry(
+      geomType, fields, features, featuresLoaded,
+      detectGeomTypeFromFeatures, flattenGeoJsonFeatures
+    );
+
     layers.push({
       name: sanitizeTableName(name),
       displayName: name,
-      geomType,
-      fields,
-      features: featuresLoaded ? flattenGeoJsonFeatures(features, fields, geomType) : [],
+      geomType: reconciled.geomType,
+      fields: reconciled.fields,
+      features: reconciled.rows,
       featureCount: featuresLoaded ? features.length : 0,
       hasData: featuresLoaded,
       datasource,
@@ -2038,6 +2048,7 @@ function applyValueRelationRefs(layers, layerIdToTable) {
 // ══════════════════════════════════════════════════════════════
 function normalizeGeomType(geomAttr, ml) {
   const g = (geomAttr || '').toLowerCase();
+  if (g === 'none' || g === 'no geometry' || g === 'nogeometry') return 'No geometry';
   if (g.includes('point')) return 'Point';
   if (g.includes('line')) return 'Line';
   if (g.includes('polygon') || g.includes('surface')) return 'Polygon';
@@ -2676,22 +2687,39 @@ async function parseGpkgFile(arrayBuffer) {
 async function readGpkgWithSqlJs(arrayBuffer, layerHint) {
   try {
     const db = await openSqlJs(arrayBuffer);
-    const tableRes = db.exec("SELECT table_name FROM gpkg_contents WHERE data_type='features'");
+    const types = (Q2GGpkgDs.GPKG_IMPORTABLE_DATA_TYPES || ['features', 'attributes'])
+      .map(t => `'${t}'`).join(',');
+    const tableRes = db.exec(
+      `SELECT table_name, data_type FROM gpkg_contents WHERE data_type IN (${types})`
+    );
     if (!tableRes.length || !tableRes[0].values.length) { db.close(); return null; }
+
+    const tableNames = tableRes[0].values.map(r => r[0]);
+    const tableTypes = Object.fromEntries(tableRes[0].values.map(r => [r[0], r[1]]));
+    let targetTables = Q2GGpkgDs.matchGpkgTables(tableNames, layerHint);
+    if (layerHint && !targetTables.length) {
+      console.warn('[GPKG] table introuvable pour', layerHint, '—', tableNames.join(', '));
+      db.close();
+      return [];
+    }
+    if (!layerHint && !targetTables.length && tableNames.length === 1) {
+      targetTables = [tableNames[0]];
+    }
 
     const { crsMap, proj4fn } = await buildCrsContext(db);
 
     const features = [];
-    for (const [tableName] of tableRes[0].values) {
-      const gcRes  = db.exec(`SELECT column_name, srs_id FROM gpkg_geometry_columns WHERE table_name='${tableName}'`);
+    for (const tableName of targetTables) {
+      const isAttribute = tableTypes[tableName] === 'attributes';
+      const gcRes  = isAttribute ? null : db.exec(`SELECT column_name, srs_id FROM gpkg_geometry_columns WHERE table_name='${tableName}'`);
       const geomCol = gcRes?.[0]?.values?.[0]?.[0] || 'geom';
       const srsId   = gcRes?.[0]?.values?.[0]?.[1];
       const epsg    = crsMap[srsId]?.epsg ?? srsId;
-      const needsReproj = epsg !== 4326 && srsId !== 4326 && epsg !== 0;
+      const needsReproj = !isAttribute && epsg !== 4326 && srsId !== 4326 && epsg !== 0;
 
       const cols    = db.exec(`PRAGMA table_info("${tableName}")`);
       const colNames = cols[0].values.map(r => r[1]);
-      const geomIdx  = colNames.indexOf(geomCol);
+      const geomIdx  = isAttribute ? -1 : colNames.indexOf(geomCol);
       const rows    = db.exec(`SELECT * FROM "${tableName}" LIMIT 10000`);
       if (!rows.length) continue;
 
@@ -2814,6 +2842,7 @@ function flattenGeoJsonFeatures(features, fields, geomType) {
         row['centroid_lon'] = centroid ? centroid[0] : null;
       }
     }
+    row._localId = rows.length + 1;
     rows.push(row);
   }
   return rows;
@@ -2935,9 +2964,9 @@ function showPreview(layers, fileName) {
       </div>
       <div class="layer-card-body" id="body-${idx}">
         <div class="layer-include">
-          <input type="checkbox" class="checkbox" id="inc-${idx}" checked onchange="updateImportCount()">
-          <label for="inc-${idx}">Inclure cette couche dans l'import</label>
-          ${!layer.hasData ? '<span style="font-size:11px;color:var(--yellow);margin-left:auto" title="Les données sont dans des fichiers GPKG externes non inclus dans le QGZ. Pour importer les données, compressez le .qgz et les .gpkg dans un même ZIP.">⚠ Schéma seul — données GPKG non trouvées</span>' : ''}
+          <input type="checkbox" class="checkbox" id="inc-${idx}" ${layer.hasData ? 'checked' : ''} ${layer.hasData ? '' : 'disabled'} onchange="updateImportCount()">
+          <label for="inc-${idx}">Inclure cette couche dans l'import${layer.hasData ? '' : ' (désactivé : pas de données)'}</label>
+          ${!layer.hasData ? '<span style="font-size:11px;color:var(--orange);margin-left:auto" title="Les données sont dans des fichiers GPKG externes non inclus dans le QGZ. Pour importer les données, compressez le .qgz et les .gpkg dans un même ZIP.">⚠ Pas de données — couche exclue</span>' : ''}
         </div>
         <table class="field-table">
           <thead><tr><th>CHAMP QGIS</th><th>TYPE QGIS</th><th>TYPE GRIST</th></tr></thead>
@@ -2947,18 +2976,31 @@ function showPreview(layers, fileName) {
     body.appendChild(card);
   });
 
-  // Bandeau d'aide si aucune couche n'a de données (GPKG externes non fournis)
+  // Bandeau d'erreur bloquant si aucune couche n'a de données (GPKG externes non fournis)
+  // Importer un schéma vide n'a aucun intérêt — on bloque l'import et on guide l'utilisateur.
   const noDataLayers = layers.filter(l => !l.hasData);
-  if (noDataLayers.length > 0 && noDataLayers.length === layers.length) {
+  const allSchemaOnly = noDataLayers.length > 0 && noDataLayers.length === layers.length;
+  if (allSchemaOnly) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'margin:12px 0 4px;padding:14px 16px;background:rgba(239,68,68,0.08);border:1px solid var(--orange);border-radius:8px;font-size:12px;color:var(--text);line-height:1.55';
+    hint.innerHTML =
+      '<strong style="color:var(--orange);font-size:13px">⚠ Import bloqué — aucune donnée trouvée</strong><br>' +
+      'Le projet QGIS référence des <strong>fichiers GPKG externes</strong> qui ne sont pas inclus dans le <code>.qgz</code> déposé. Importer le schéma seul produirait des tables vides, sans intérêt.<br><br>' +
+      '<strong>Pour récupérer les données :</strong><br>' +
+      '• Créez un <strong>ZIP</strong> contenant le <code>.qgz</code> et tous les <code>.gpkg</code> qu\'il référence (dans le même dossier que le projet QGIS), puis déposez ce ZIP.<br>' +
+      '• Ou déposez directement un <code>.gpkg</code> standalone si vous n\'avez besoin que d\'une couche.';
+    body.insertBefore(hint, body.firstChild);
+  } else if (noDataLayers.length > 0) {
     const hint = document.createElement('div');
     hint.style.cssText = 'margin:12px 0 4px;padding:10px 14px;background:rgba(227,179,65,0.1);border:1px solid rgba(227,179,65,0.3);border-radius:8px;font-size:12px;color:var(--text-muted);line-height:1.5';
-    hint.innerHTML = '<strong style="color:var(--yellow)">Données non incluses dans le QGZ</strong><br>Les fichiers GPKG sont des sources externes non embarquées dans le projet. Pour importer les données, créez un ZIP contenant le <strong>.qgz</strong> et les <strong>.gpkg</strong> associés, puis déposez ce ZIP.';
+    hint.innerHTML =
+      '<strong style="color:var(--yellow)">' + noDataLayers.length + ' couche' + (noDataLayers.length > 1 ? 's' : '') + ' sans données</strong> — exclue' + (noDataLayers.length > 1 ? 's' : '') + ' de l\'import (GPKG externe manquant ou table vide). Les tables attributaires liées sont importées automatiquement si leurs données sont dans le ZIP.';
     body.insertBefore(hint, body.firstChild);
   }
 
   setState('preview');
   // Update button count AFTER checkboxes are in DOM
-  updateImportCount();
+  updateImportCount(allSchemaOnly);
 }
 
 function toggleLayerCard(idx) {
@@ -2968,9 +3010,18 @@ function toggleLayerCard(idx) {
   chev.classList.toggle('open', open);
 }
 
-function updateImportCount() {
+function updateImportCount(allSchemaOnly) {
+  const btn = document.getElementById('import-btn');
   const checked = document.querySelectorAll('.checkbox:checked').length;
-  document.getElementById('import-btn').textContent = `⬆ Importer ${checked} couche${checked > 1 ? 's' : ''} dans Grist`;
+  if (allSchemaOnly === true || checked === 0) {
+    btn.disabled = true;
+    btn.textContent = allSchemaOnly === true
+      ? '⛔ Pas de données — import bloqué'
+      : '⛔ Aucune couche sélectionnée';
+  } else {
+    btn.disabled = false;
+    btn.textContent = `⬆ Importer ${checked} couche${checked > 1 ? 's' : ''} dans Grist`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════

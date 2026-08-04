@@ -10,20 +10,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"/>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="lib/qml-to-declarative.js?v=2.0.0"></script>
-<script src="lib/qml-style-parser.js?v=2.0.0"></script>
-<script src="lib/provenance.js?v=2.0.0"></script>
-<script src="lib/scene-lod.js?v=2.0.0"></script>
-<script src="lib/geom-reconcile.js?v=2.0.0"></script>
-<script src="lib/gpkg-datasource.js?v=2.0.0"></script>
-<script src="lib/controls-from-layer.js?v=2.0.0"></script>
-<script src="lib/scene-manifest.js?v=2.0.0"></script>
+<script src="lib/qml-to-declarative.js?v=2.0.1"></script>
+<script src="lib/qml-style-parser.js?v=2.0.1"></script>
+<script src="lib/provenance.js?v=2.0.1"></script>
+<script src="lib/scene-lod.js?v=2.0.1"></script>
+<script src="lib/geom-reconcile.js?v=2.0.1"></script>
+<script src="lib/gpkg-datasource.js?v=2.0.1"></script>
+<script src="lib/controls-from-layer.js?v=2.0.1"></script>
+<script src="lib/scene-manifest.js?v=2.0.1"></script>
 <script src="lib/parse-remote-mcp.js"></script>
-<script src="lib/maplibre-bridge.js?v=2.0.0"></script>
+<script src="lib/maplibre-bridge.js?v=2.0.1"></script>
 <script src="lib/qgis-form-to-formdef.js"></script>
 <script src="lib/terrain-provision.js"></script>
 <script src="vendor/grist_forms/publish.js"></script>
-<script src="lib/qfield-publish-pack.js?v=2.0.0"></script>
+<script src="lib/qfield-publish-pack.js?v=2.0.1"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 
@@ -3317,6 +3317,46 @@ function sanitizeColName(name) {
 // ══════════════════════════════════════════════════════════════
 // PREVIEW UI
 // ══════════════════════════════════════════════════════════════
+/**
+ * Signale les tables homonymes déjà présentes avant d'importer.
+ *
+ * Sans cet avertissement, un réimport empile silencieusement des jumelles
+ * (`Batiments`, `Batiments_1`, `_2`…) : le document grossit et les
+ * consommateurs du Scene Manifest ne savent plus quelle table fait foi.
+ */
+async function renderReimportHint(layers) {
+  let existing = [];
+  try {
+    existing = await grist.docApi.listTables();
+  } catch (_) {
+    return; // hors Grist (démo) : rien à signaler
+  }
+  const clashes = layers.filter(l => l.hasData && existing.includes(l.name));
+  const body = document.getElementById('preview-body');
+  document.getElementById('reimport-hint')?.remove();
+  if (!clashes.length || !body) return;
+
+  const names = clashes.map(l => l.name);
+  const plural = clashes.length > 1;
+  const hint = document.createElement('div');
+  hint.id = 'reimport-hint';
+  hint.style.cssText = 'margin:12px 0 4px;padding:10px 14px;background:rgba(227,179,65,0.1);'
+    + 'border:1px solid rgba(227,179,65,0.3);border-radius:8px;font-size:12px;'
+    + 'color:var(--text-muted);line-height:1.5';
+  hint.innerHTML =
+    `<strong style="color:var(--yellow)">${clashes.length} table${plural ? 's' : ''} `
+    + `de même nom déjà présente${plural ? 's' : ''}</strong> — `
+    + `<code>${names.join('</code>, <code>')}</code>.<br>`
+    + `Par défaut l'import en crée de nouvelles (<code>${names[0]}_1</code>, `
+    + `<code>${names[0]}_2</code>…) et les anciennes subsistent.`
+    + '<div class="layer-include" style="margin-top:8px">'
+    + '<input type="checkbox" class="checkbox" id="reimport-replace">'
+    + '<label for="reimport-replace">Remplacer les tables existantes '
+    + '(supprime leurs données, vues et préférences de style)</label>'
+    + '</div>';
+  body.insertBefore(hint, body.firstChild);
+}
+
 function showPreview(layers, fileName) {
   const totalFeatures = layers.reduce((s, l) => s + l.featureCount, 0);
   document.getElementById('preview-title').textContent = `${layers.length} couche${layers.length > 1 ? 's' : ''} détectée${layers.length > 1 ? 's' : ''}`;
@@ -3407,6 +3447,7 @@ function showPreview(layers, fileName) {
   }
 
   setState('preview');
+  renderReimportHint(layers);
   // Update button count AFTER checkboxes are in DOM
   updateImportCount(allSchemaOnly);
   const previewMapBtn = document.getElementById('preview-map-btn');
@@ -3571,6 +3612,8 @@ async function startImport() {
   const refLookupNeeds   = buildRefLookupNeeds(selectedLayers);
   const parentMaps       = {}; // tableName → { refedField → { value: rowId } }
   const tableNameRemap   = {}; // layerName → actualTableName (en cas de collision)
+  // Case cochée dans la prévisualisation (cf. renderReimportHint)
+  const replaceExisting  = !!document.getElementById('reimport-replace')?.checked;
 
   // Pré-assigner couleurs, styles et LOD avant l'import
   { let _ci = 0;
@@ -3612,6 +3655,15 @@ async function startImport() {
       // Check if table exists — listTables() est l'API publique officielle
       let tableName = layer.name;
       try {
+        // Remplacement explicitement demandé dans la prévisualisation :
+        // on supprime l'homonyme pour réutiliser son nom au lieu de suffixer.
+        if (replaceExisting) {
+          const before = await grist.docApi.listTables();
+          if (before.includes(layer.name)) {
+            await grist.docApi.applyUserActions([['RemoveTable', layer.name]]);
+            console.log('[import] table remplacée:', layer.name);
+          }
+        }
         const existingTables = await grist.docApi.listTables();
         let n = 0;
         while (existingTables.includes(tableName)) {
@@ -3735,6 +3787,30 @@ async function startImport() {
       for (const f of importFields) {
         const mapped = colIdByFieldName[f.name];
         if (mapped) f.name = mapped;
+      }
+
+      // Colonnes géométriques réelles : si la source portait déjà un champ
+      // 'latitude' / 'geometry_json', Grist a suffixé la nôtre ('latitude2').
+      // On mémorise les colIds effectifs pour que le manifest les déclare —
+      // sans quoi les consommateurs (Atlas) lisent la colonne source homonyme.
+      const geomColId = (canonical) => colIdByFieldName[canonical] || canonical;
+      layer._geometryCols = layer.geomType === 'Point'
+        ? { lat: geomColId('latitude'), lon: geomColId('longitude') }
+        : {
+            geojson: geomColId('geometry_json'),
+            lat: geomColId('centroid_lat'),
+            lon: geomColId('centroid_lon'),
+          };
+      layer._fillColorCol = colIdByFieldName.fill_color || 'fill_color';
+      const renamedGeom = Object.entries(layer._geometryCols)
+        .filter(([k, v]) => v !== (k === 'geojson' ? 'geometry_json'
+          : layer.geomType === 'Point' ? (k === 'lat' ? 'latitude' : 'longitude')
+          : (k === 'lat' ? 'centroid_lat' : 'centroid_lon')));
+      if (renamedGeom.length) {
+        console.warn(
+          `[import] ${tableName} : collision de noms, géométrie stockée dans`,
+          Object.fromEntries(renamedGeom)
+        );
       }
 
       if (layer.geomType === 'Point') {

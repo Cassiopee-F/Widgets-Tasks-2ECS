@@ -104,6 +104,26 @@ document (la table fait partie du document, l'option non).
   décimales ≈ 1 m), `centroid_lat`, `centroid_lon`.
 - Pas de `Ref:Geometry` Grist — la géométrie est sérialisée.
 
+**Collision de noms** : si la source porte déjà un champ `latitude` /
+`geometry_json` / `fill_color`, Grist suffixe la colonne que nous ajoutons
+(`latitude2`). Les données partent au bon endroit (`colIdByFieldName` est
+capturé depuis `AddTable`), mais un consommateur qui applique la convention
+lirait la colonne source homonyme — souvent vide ou à 0. L'import mémorise donc
+les colIds effectifs dans `layer._geometryCols`, et le manifest les publie dans
+`source.geometry_fields` (émis seulement en cas d'écart). Atlas lit ce champ en
+priorité ; à défaut il retombe sur la convention puis sur les variantes
+numérotées. Extension additive à V0.2.1, à valider côté
+`cerema-offre-de-service`.
+
+### LOD zoom (`lib/scene-lod.js`)
+
+Aucune contrainte de zoom en **Profil A** : la couche tient en mémoire, la
+brider ne ferait que la rendre invisible. À partir du Profil B, `minZoom` suit
+la géométrie (Point 8 / Line 9 / Polygon 10) et une grille voit son plancher
+relevé à `GRID_MIN_ZOOM` (11). Jamais de `maxZoom` : une maille 200 m est
+illisible en petite échelle, pas en grande — l'inverse ferait disparaître la
+couche quand on zoome dessus.
+
 ### Couleur par feature
 
 Colonne auto `fill_color` (Text) calculée à l'import via le QML / les fonctions
@@ -165,6 +185,16 @@ est essentielle pour les Refs ; sans elle on ne peut pas indexer les parents.
 Cycles ignorés via `visiting`/`visited`. Si A référence B et B référence A,
 les deux sont émis dans l'ordre de découverte ; les Refs cycliques ne seront
 pas résolues correctement (acceptable, c'est un cas exotique en QGIS).
+
+### Réimport du même fichier
+
+`startImport` génère un nom unique en suffixant (`Batiments_1`, `_2`…) : quatre
+imports du même GPKG produisent quatre jeux de tables et quatre lignes
+`SceneManifest`, sans que rien n'indique lequel fait foi. La prévisualisation
+signale donc les tables homonymes déjà présentes (`renderReimportHint`) et offre
+une case « Remplacer les tables existantes » — décochée par défaut, car un
+remplacement détruit aussi les vues et les préférences de style (`Atlas_LayerPrefs`)
+attachées à ces tables.
 
 ### Renommage de table en cas de collision
 
