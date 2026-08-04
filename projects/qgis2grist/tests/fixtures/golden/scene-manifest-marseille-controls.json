@@ -1,0 +1,101 @@
+{
+  "version": "0.2.1",
+  "title": "Golden — binding controls (Bee + Marseille)",
+  "classification": "cerema_internal",
+  "layers": [
+    {
+      "id": "Pollen_Consumption",
+      "name": "Pollen Consumption",
+      "source": { "type": "grist", "table": "Pollen_Consumption" },
+      "geometry_type": "point",
+      "style": {
+        "declarative": {
+          "kind": "graduated",
+          "field": "percentage",
+          "method": "linear",
+          "stops": [
+            { "lower": 0, "upper": 25, "color": "#0000ff", "opacity": 1 },
+            { "lower": 25, "upper": 100, "color": "#ff0000", "opacity": 1 }
+          ]
+        }
+      },
+      "controls": [
+        {
+          "field": "percentage",
+          "type": "range",
+          "label": "percentage",
+          "min": 0,
+          "max": 100,
+          "dataMin": 0,
+          "dataMax": 100,
+          "active": false
+        }
+      ]
+    },
+    {
+      "id": "Apiary",
+      "name": "Apiary",
+      "source": { "type": "grist", "table": "Apiary" },
+      "geometry_type": "point",
+      "style": {
+        "declarative": {
+          "kind": "categorized",
+          "field": "bee_species",
+          "stops": [
+            { "value": "Apis mellifera", "label": "Apis mellifera", "color": "#336699", "opacity": 1 },
+            { "value": "Bombus terrestris", "label": "Bombus terrestris", "color": "#993366", "opacity": 1 }
+          ]
+        }
+      },
+      "controls": [
+        {
+          "field": "bee_species",
+          "type": "select",
+          "label": "bee_species",
+          "values": ["Apis mellifera", "Bombus terrestris"],
+          "active": false
+        }
+      ]
+    },
+    {
+      "id": "flood_zones",
+      "name": "Zones inondables",
+      "source": { "type": "grist", "table": "flood_zones" },
+      "geometry_type": "polygon",
+      "style": {
+        "declarative": {
+          "kind": "graduated",
+          "field": "ht_max",
+          "method": "linear",
+          "stops": [
+            { "lower": 0, "upper": 2, "color": "#3388ff", "opacity": 1 },
+            { "lower": 2, "upper": 5, "color": "#003388", "opacity": 1 }
+          ]
+        }
+      },
+      "controls": [
+        {
+          "field": "ht_max",
+          "type": "range",
+          "label": "ht_max",
+          "min": 0,
+          "max": 5,
+          "dataMin": 0,
+          "dataMax": 5,
+          "active": false
+        },
+        {
+          "field": "ht_min",
+          "type": "range",
+          "mode": "simulation",
+          "label": "Niveau eau simulée",
+          "min": 0,
+          "max": 5,
+          "dataMin": 0,
+          "dataMax": 5,
+          "active": false
+        }
+      ]
+    }
+  ]
+}
