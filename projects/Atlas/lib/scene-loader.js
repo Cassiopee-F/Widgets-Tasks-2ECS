@@ -25,6 +25,21 @@ export const SCENE_MANIFEST_TABLE = 'SceneManifest';
 export const DEFER_FEATURE_THRESHOLD = 8000;
 export const QGIS_WIDGETS_TABLE = 'QgisWidgets';
 
+/**
+ * La couche peut-elle être différée **sans même télécharger sa table** ?
+ *
+ * Le report « chaud » (DEFER_FEATURE_THRESHOLD) évite la conversion en GeoJSON
+ * mais pas le transfert : il faut compter les entités pour décider. Quand le
+ * manifest déclare explicitement la couche masquée, la décision est connue
+ * d'avance — on peut donc ne rien télécharger du tout.
+ *
+ * Prudence : on exige un type de géométrie déclaré, faute de quoi il serait
+ * déduit du GeoJSON, qu'on n'aura pas.
+ */
+export function shouldDeferCold(ml) {
+  return ml?.visibility?.defaultVisible === false && !!ml?.geometry_type;
+}
+
 /** Détecte le mode de doc Grist. */
 export async function detectDocMode(docApi) {
   const tables = await docApi.listTables();
@@ -87,12 +102,18 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     const tableName = ml.source?.table || ml.id;
     if (!tableName) continue;
 
+    // Couche déclarée masquée : on ne télécharge rien. La table sera lue au
+    // moment de l'allumer (materializeDeferredLayer via _loadRows).
+    const deferCold = shouldDeferCold(ml);
+
     let colData;
-    try {
-      colData = await docApi.fetchTable(tableName);
-    } catch (e) {
-      console.warn('[Atlas scene-loader] table absente:', tableName, e.message);
-      continue;
+    if (!deferCold) {
+      try {
+        colData = await docApi.fetchTable(tableName);
+      } catch (e) {
+        console.warn('[Atlas scene-loader] table absente:', tableName, e.message);
+        continue;
+      }
     }
 
     const cfgLayer = configLayerMeta(widgetConfig, tableName);
@@ -112,21 +133,21 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       color: fallbackColor,
     };
 
-    const rows = fetchTableToRows(colData);
+    const rows = deferCold ? [] : fetchTableToRows(colData);
     const featureCountHint = rows.length;
-    const willHide = !defaultLayerVisible(ml, featureCountHint);
+    const willHide = deferCold || !defaultLayerVisible(ml, featureCountHint);
     // Une couche masquée et volumineuse n'est pas convertie en GeoJSON tant
     // qu'on ne l'allume pas : le coût est le volume, pas la nature des données.
-    const deferHeavy = willHide && featureCountHint > DEFER_FEATURE_THRESHOLD;
+    const deferHeavy = deferCold || (willHide && featureCountHint > DEFER_FEATURE_THRESHOLD);
 
     let geojson;
     let featureCount;
     if (deferHeavy) {
       geojson = { type: 'FeatureCollection', features: [] };
       featureCount = featureCountHint;
-      console.warn(
-        `[Atlas scene-loader] ${tableName}: ${featureCountHint} entités masquées — chargement différé (activer la pastille)`
-      );
+      console.warn(deferCold
+        ? `[Atlas scene-loader] ${tableName}: masquée au manifest — table non téléchargée (activer la pastille)`
+        : `[Atlas scene-loader] ${tableName}: ${featureCountHint} entités masquées — chargement différé (activer la pastille)`);
     } else {
       const colorFn = colorFnFromDeclarative(declarative, fallbackColor, cfgLayer?.fields || []);
       geojson = rowsToGeoJSON(rows, layerMeta, colorFn);
@@ -158,12 +179,22 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       _modelCat: 'furniture',
       _declarative: declarative,
       _fields: cfgLayer?.fields || [],
-      _gristColumns: Object.keys(colData).filter((k) => k !== 'id'),
+      _gristColumns: deferCold ? [] : Object.keys(colData).filter((k) => k !== 'id'),
       _manifestLayer: ml,
       _profile: ml.profile || 'A',
-      _deferredRows: deferHeavy ? rows : null,
+      _deferredRows: deferHeavy && !deferCold ? rows : null,
       _deferredLoad: deferHeavy,
     };
+
+    // Différé « froid » : la couche porte son propre moyen de lire la table,
+    // pour que materializeDeferredLayer n'ait pas besoin de connaître docApi.
+    if (deferCold) {
+      layer._loadRows = async () => {
+        const cd = await docApi.fetchTable(tableName);
+        layer._gristColumns = Object.keys(cd).filter((k) => k !== 'id');
+        return fetchTableToRows(cd);
+      };
+    }
 
     applyDeclarativeToLayer(layer, declarative);
     applyManifestControlsToLayer(layer, ml);
@@ -201,8 +232,34 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
 }
 
 /** Matérialise une couche lourde chargée en différé (bâtiments masqués). */
-export function materializeDeferredLayer(layer) {
-  if (!layer?._deferredLoad || !layer._deferredRows?.length) return false;
+/**
+ * Convertit une couche différée en GeoJSON affichable.
+ *
+ * @param {object} layer
+ * @param {{onReady?: (layer: object) => void}} [opts] `onReady` n'est appelé que
+ *   dans le cas « froid », où les lignes doivent d'abord être téléchargées : la
+ *   fonction rend alors la main immédiatement et la couche se peuple ensuite.
+ * @returns {boolean} true si la couche est prête *maintenant*
+ */
+export function materializeDeferredLayer(layer, opts = {}) {
+  if (!layer?._deferredLoad) return false;
+
+  // Différé « froid » : la table n'a jamais été téléchargée.
+  if (!layer._deferredRows?.length) {
+    if (!layer._loadRows || layer._deferredFetching) return false;
+    layer._deferredFetching = true;
+    layer._loadRows()
+      .then((rows) => {
+        layer._deferredFetching = false;
+        layer._deferredRows = rows;
+        if (materializeDeferredLayer(layer) && opts.onReady) opts.onReady(layer);
+      })
+      .catch((e) => {
+        layer._deferredFetching = false;
+        console.warn('[Atlas scene-loader] chargement différé', layer.sourceTable, e.message);
+      });
+    return false;
+  }
   const declarative = layer._declarative || layer._manifestLayer?.style?.declarative || null;
   const fallbackColor = layer.color || '#808080';
   const layerMeta = {

@@ -1561,12 +1561,26 @@ function applyMapLayerVisibility(layer, visible) {
     Models3D.scheduleBuild();
 }
 
+/**
+ * Suite d'un chargement différé « froid » : la couche vient de recevoir ses
+ * lignes, il faut la monter sur la carte et rafraîchir la légende.
+ */
+const DEFERRED_OPTS = {
+    onReady: (l) => {
+        if (!map?.isStyleLoaded()) return;
+        syncLayerToMapState(l);
+        updateLegend();
+    },
+};
+
 function setLayerVisibility(layer, visible) {
     layer.visible = visible;
     // Une couche lourde chargée en différé n'a pas encore de GeoJSON : la rendre
     // visible sans la matérialiser afficherait du vide. Vaut pour toutes les
     // origines — pastille, récit, prefs.
-    if (visible && layer._deferredLoad) materializeDeferredLayer(layer);
+    // Une couche différée « froide » n'a pas encore ses lignes : la conversion
+    // rend la main tout de suite et la couche se peint à l'arrivée des données.
+    if (visible && layer._deferredLoad) materializeDeferredLayer(layer, DEFERRED_OPTS);
     applyMapLayerVisibility(layer, visible);
 }
 
@@ -3771,7 +3785,7 @@ async function loadFromSceneManifest() {
         for (const layer of layers) {
             applyLayerPrefs(layer, prefs);
             if (layer.visible !== false && layer._deferredLoad) {
-                materializeDeferredLayer(layer);
+                materializeDeferredLayer(layer, DEFERRED_OPTS);
             }
         }
         STATE.layers.push(...layers);
@@ -4423,7 +4437,7 @@ const A = {
         l.visible = l.visible === false ? true : false;
         if (l.visible && l._deferredLoad) {
             showToast('Chargement bâtiments…', 'warning');
-            materializeDeferredLayer(l);
+            materializeDeferredLayer(l, DEFERRED_OPTS);
             if (map?.getSource(l.id)) syncLayerSourceData(l);
             else if (typeof addLayerToMap === 'function') addLayerToMap(l);
         }
@@ -4441,7 +4455,7 @@ const A = {
         }
         STATE.layers.forEach((l) => {
             l.visible = v;
-            if (v && l._deferredLoad) materializeDeferredLayer(l);
+            if (v && l._deferredLoad) materializeDeferredLayer(l, DEFERRED_OPTS);
         });
         syncAllLayersToMap();
         updateLegend();
