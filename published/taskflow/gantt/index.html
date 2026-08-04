@@ -36,6 +36,7 @@
         .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         .header-center { display: flex; align-items: center; gap: 8px; }
         .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .header-right select { max-width: 185px; }
         .btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; transition: all 0.15s; color: var(--text); }
         .btn:hover { background: var(--bg); }
         .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -600,6 +601,11 @@
                     <option value="assignee">Couleur: Assigné</option>
                     <option value="status">Couleur: Statut</option>
                 </select>
+                <select id="levelSelect" onchange="changeWorkLevel(this.value)" title="Niveau affiché — Tous = arbre ; Synthèses = tâches mères (parents) ; Actions = tâches sans sous-tâche (feuilles), vue aplatie">
+                    <option value="all">Niveau : Tous</option>
+                    <option value="parents">Niveau : Synthèses</option>
+                    <option value="actions">Niveau : Actions</option>
+                </select>
             </div>
         </div>
         <div class="header-center">
@@ -1002,6 +1008,60 @@
                 return out;
             }
 
+            /* ----- #7 : respect des droits (ACL) ------------------------------------
+             * Deux niveaux : (a) acces document lecture seule -> Grist passe
+             * `readonly=true` dans l'URL de l'iframe ; (b) ACL au niveau ligne ->
+             * l'acces widget peut etre `full` mais une ecriture sur une ligne donnee
+             * est refusee par le serveur. safeApply absorbe ce refus proprement.
+             * --------------------------------------------------------------------- */
+            function _qp(name) { try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; } }
+            // Vrai si Grist a ouvert le widget en lecture seule (acces doc restreint).
+            function isReadOnly() { return _qp('readonly') === 'true'; }
+            // Niveau d'acces accorde au widget : 'full' | 'read table' | 'none' (defaut 'full').
+            function accessLevel() { return _qp('access') || 'full'; }
+            // Detecte un message d'erreur Grist correspondant a un refus de droits.
+            function isAccessError(e) {
+                const msg = (e && (e.message || e.toString())) || '';
+                return /access denied|not allowed|permission|forbidden|read[- ]?only|cannot (modify|add|remove)|acl/i.test(msg);
+            }
+            // Applique des actions en absorbant un refus de droits.
+            // Retourne { ok:true } ou { ok:false, denied:bool, message }. Ne fait PAS d'UI
+            // (chaque widget affiche son propre toast et recharge pour annuler l'optimiste).
+            async function safeApply(grist, actions) {
+                if (isReadOnly()) return { ok: false, denied: true, message: 'Document en lecture seule' };
+                try { const r = await grist.docApi.applyUserActions(actions); return { ok: true, ret: r }; }
+                catch (e) { return { ok: false, denied: isAccessError(e), message: (e && (e.message || e.toString())) || 'Erreur' }; }
+            }
+            // Garde transverse : enrobe grist.docApi.applyUserActions une seule fois pour
+            // respecter les droits sur TOUS les sites d'ecriture sans les modifier un a un.
+            // - lecture seule -> bloque + opts.onReadOnly()
+            // - refus ACL au niveau ligne -> opts.onDenied(err) (le widget toast + recharge)
+            // Les erreurs continuent d'etre levees (les try/catch existants les absorbent).
+            function guardWrites(grist, opts) {
+                opts = opts || {};
+                if (!grist || !grist.docApi || grist.docApi._tfGuarded) return;
+                const raw = grist.docApi.applyUserActions.bind(grist.docApi);
+                grist.docApi._tfGuarded = true;
+                grist.docApi.applyUserActions = async function (actions) {
+                    if (isReadOnly()) { try { opts.onReadOnly && opts.onReadOnly(); } catch (e) {} const err = new Error('Document en lecture seule'); err.tfReadOnly = true; throw err; }
+                    try { return await raw(actions); }
+                    catch (e) { if (isAccessError(e)) { try { opts.onDenied && opts.onDenied(e); } catch (e2) {} } throw e; }
+                };
+            }
+            // Bandeau "lecture seule" auto-contenu (aucun markup widget requis).
+            // Pousse le contenu vers le bas (padding-top sur body) pour NE PAS recouvrir l'en-tete du widget.
+            function readOnlyBanner() {
+                if (!isReadOnly() || (typeof document === 'undefined') || document.getElementById('tf-ro-banner')) return;
+                const b = document.createElement('div');
+                b.id = 'tf-ro-banner';
+                b.textContent = 'Lecture seule — vos droits ne permettent pas la modification';
+                b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b45309;color:#fff;font:600 12px/1.4 system-ui,-apple-system,sans-serif;text-align:center;padding:6px 10px;letter-spacing:.2px;box-sizing:border-box';
+                document.body.appendChild(b);
+                const h = b.offsetHeight || 28;
+                const prev = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+                document.body.style.paddingTop = (prev + h) + 'px';
+            }
+
             return {
                 DEFAULT_STATUSES: DEFAULT_STATUSES,
                 columnarToRows: columnarToRows,
@@ -1019,7 +1079,13 @@
                 chargeByMemberPeriod: chargeByMemberPeriod,
                 shiftPeriods: shiftPeriods,
                 periodRange: periodRange,
-                chargeMatrix: chargeMatrix
+                chargeMatrix: chargeMatrix,
+                isReadOnly: isReadOnly,
+                accessLevel: accessLevel,
+                isAccessError: isAccessError,
+                safeApply: safeApply,
+                guardWrites: guardWrites,
+                readOnlyBanner: readOnlyBanner
             };
         })();
         // </taskflow-core>
@@ -1030,6 +1096,7 @@
         let gristReady = false;
         let tasks = [], team = [], projects = [];
         let TASK_COLS = new Set(); // colonnes reelles de Tasks (sweet spot : charges/dateCloture n'existent que si le widget Plan a ete ouvert)
+        let CRA_ACTIVE = false; // Feuille de temps active -> tempsPasse = rollup CRA, saisie manuelle figee (anti-doublon)
         function pruneTaskRecord(rec) { if (TASK_COLS.size) { for (const k in rec) if (!TASK_COLS.has(k)) delete rec[k]; } return rec; }
         let statusCfg = TF.buildStatusConfig(TF.DEFAULT_STATUSES, 'default'); // #1 : statuts dynamiques, alimente par TF.loadStatusConfig
         let currentView = localStorage.getItem('taskflow_gantt_view') || 'month';
@@ -1037,6 +1104,8 @@
         let selectedTaskId = null;
         let sortMode = localStorage.getItem('taskflow_gantt_sort') || 'priority';
         let colorMode = localStorage.getItem('taskflow_gantt_colormode') || 'priority';
+        // #9 niveau de travail (par widget, opt-in, defaut 'all' = arbre) : 'actions'/'parents' = vue aplatie du niveau.
+        let workLevel = localStorage.getItem('taskflow_gantt_worklevel') || 'all';
         // WBS-02: état expand/collapse par tâche parente
         let expandedTasks = new Set();
         try { expandedTasks = new Set(JSON.parse(localStorage.getItem('taskflow_gantt_expanded') || '[]').map(Number).filter(n => !isNaN(n))); } catch (e) {}
@@ -1262,6 +1331,9 @@
         // Renvoie [{task, depth, dimmed}]
         function buildVisibleTasks() {
             const filtered = getFilteredTasks();
+            // #9 : niveau != 'all' -> vue APLATIE du niveau (pas d'arbre), coherent avec le Kanban.
+            if (workLevel === 'actions') return filtered.filter(t => !hasChildren(t)).map(t => ({ task: t, depth: 0, dimmed: false }));
+            if (workLevel === 'parents') return filtered.filter(t => hasChildren(t)).map(t => ({ task: t, depth: 0, dimmed: false }));
             const directMatches = new Set(filtered.map(t => t.id));
             // branches = tâches dont elles-mêmes OU un ancêtre OU un descendant match
             const branchTasks = new Set();
@@ -1470,6 +1542,13 @@
         function changeColorMode(mode) {
             colorMode = mode;
             localStorage.setItem('taskflow_gantt_colormode', mode);
+            render();
+        }
+        // #9 : niveau de travail affiche (persistance locale par widget).
+        function changeWorkLevel(v) {
+            workLevel = v;
+            localStorage.setItem('taskflow_gantt_worklevel', v);
+            const s = document.getElementById('levelSelect'); if (s) s.value = v;
             render();
         }
         // Édite la couleur d'un projet (lue par tous les widgets TaskFlow via getProjectColor)
@@ -2332,7 +2411,7 @@
                         '<div class="prop-row"><span class="prop-label">Temps &amp; charge</span><div class="prop-value">' +
                             '<div class="tc-grid">' +
                                 '<div class="tc-box"><div class="tcl">Estimé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (estim || '') + '" placeholder="0" onchange="updateField(\'estimationH\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
-                                '<div class="tc-box"><div class="tcl">Passé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
+                                '<div class="tc-box"><div class="tcl">Passé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" ' + (CRA_ACTIVE ? 'readonly title="Saisi via la Feuille de temps" ' : '') + 'onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
                             '</div>' +
                             (estim > 0 ? '<div class="tc-bar"><i class="' + (timeOver ? 'over' : '') + '" style="width:' + timePercent + '%"></i></div><div class="tc-foot"><span>' + Math.round((passe/estim)*100) + '% consommé</span><span>reste ' + Math.max(estim-passe,0) + ' h</span></div>' : '') +
                             ((data.assignees.length && TASK_COLS.has('charges')) ? '<div style="margin-top:13px"><div class="prop-label" style="margin-bottom:6px">Charge par personne</div>' + data.assignees.map(function(id){ return '<div class="charge-row"><span class="an">'+escapeHtml(getTeamMemberName(id))+'</span><input type="number" min="0" step="0.5" value="'+chargeOf(id)+'" onchange="updateCharge('+id+', this.value)"><span style="font-size:0.75rem;color:var(--text-muted)">h</span></div>'; }).join('') + '<div style="margin-top:6px;font-size:0.78rem;color:var(--text-muted)">Total : <strong>' + chargeTotalH + '</strong> h</div></div>' : '') + chargeConsolHtml +
@@ -2958,13 +3037,23 @@
                 useDemoMode();
                 return;
             }
+            // #7 respect des droits : bandeau lecture seule + garde transverse sur toutes les ecritures.
+            TF.readOnlyBanner();
+            TF.guardWrites(grist, {
+                onReadOnly: () => showToast('Lecture seule : modification non autorisee', 'error'),
+                onDenied: () => { showToast('Modification refusee par vos droits', 'error'); loadAllData(); }
+            });
             // Phase 2 : ici on est dans Grist. Toute erreur est logguée mais ne bascule PAS en démo.
-            try {
-                await ensureSchema();
-            } catch (e) {
-                console.error('ensureSchema error (continuing):', e);
-                showToast('Schéma: ' + (e?.message || e), 'error');
+            // En lecture seule, on ne tente pas de creer le schema (ecritures bloquees).
+            if (!TF.isReadOnly()) {
+                try {
+                    await ensureSchema();
+                } catch (e) {
+                    console.error('ensureSchema error (continuing):', e);
+                    showToast('Schéma: ' + (e?.message || e), 'error');
+                }
             }
+            try { CRA_ACTIVE = (await grist.docApi.listTables()).includes('TimeEntries'); } catch (e) {}
             try {
                 await loadAllData();
             } catch (e) {
@@ -3089,6 +3178,7 @@
         { const s = document.getElementById('sortSelect'); if (s) s.value = sortMode; }
         // Idem pour le <select> de couleur
         { const s = document.getElementById('colorSelect'); if (s) s.value = colorMode; }
+        { const s = document.getElementById('levelSelect'); if (s) s.value = workLevel; }
         // Relancer le rendu quand le widget est redimensionné (ex: panel ouvert/fermé, fenêtre)
         new ResizeObserver(() => render()).observe(document.getElementById('timelineScroll'));
         // Décorateur panneau (look « Propriétés / B ») : icône devant chaque libellé, sans toucher au rendu
