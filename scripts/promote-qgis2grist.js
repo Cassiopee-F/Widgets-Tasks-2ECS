@@ -2,7 +2,7 @@
  * promote-qgis2grist.js
  * Publie qgis2grist v2 en parallèle de v1 (CADRAGE D4-B).
  *
- * - published/qgis2grist/index.html  = v1 Leaflet (inchangé si déjà présent)
+ * - published/qgis2grist/index.html  = v1 Leaflet (+ lib/ qu'elle référence)
  * - published/qgis2grist/v2/         = MapLibre + Scene Manifest + terrain
  * - package.json : deux entrées grist
  *
@@ -42,6 +42,21 @@ function rewrite(file, replacers) {
 mkdirp(v2);
 mkdirp(path.join(v2, 'lib'));
 mkdirp(vendor);
+
+// --- v1 HTML ---
+// La v1 charge désormais quelques modules de lib/ (WKB/GPKG, réconciliation
+// de géométrie). Publier l'index seul les laisserait en 404 : on copie donc
+// exactement les fichiers qu'elle référence, pas tout lib/ (le reste est v2).
+copyFile(path.join(src, 'index.html'), path.join(pub, 'index.html'));
+const v1Libs = [
+  ...fs.readFileSync(path.join(pub, 'index.html'), 'utf8').matchAll(/src="lib\/([\w.-]+\.js)/g),
+].map((m) => m[1]);
+for (const name of new Set(v1Libs)) {
+  copyFile(path.join(src, 'lib', name), path.join(pub, 'lib', name));
+}
+rewrite(path.join(pub, 'index.html'), [
+  [/lib\/([\w.-]+\.js)\?v=[^"']+/g, `lib/$1?v=${VER}`],
+]);
 
 // --- v2 HTML ---
 copyFile(path.join(src, 'index_v2.html'), path.join(v2, 'index.html'));
