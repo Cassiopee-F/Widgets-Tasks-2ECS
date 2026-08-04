@@ -276,6 +276,23 @@ export function applyAtlas3dFromRows(rows, geojson) {
   }
 }
 
+/**
+ * Couches qu'il vaut la peine de rafraîchir périodiquement.
+ *
+ * Un cycle recharge la table entière, la reconvertit en GeoJSON et repeint la
+ * couche. Le faire pour une couche qu'on ne voit pas coûte le volume complet
+ * sans rien apporter : sur une scène d'analyse, les couches lourdes sont
+ * justement celles qui sont masquées par défaut.
+ */
+export function layersToRefresh(layers) {
+  return (layers || []).filter((l) => l?.source === 'qgis2grist'
+    // Différée : pas encore convertie en GeoJSON. Elle sera chargée à jour au
+    // moment où on l'allumera (materializeDeferredLayer).
+    && !l._deferredLoad
+    // Masquée : rien n'est peint, et l'affichage déclenche déjà un rafraîchissement.
+    && l.visible !== false);
+}
+
 export function startScenePolling(opts) {
   const {
     docApi,
@@ -283,13 +300,13 @@ export function startScenePolling(opts) {
     getWidgetConfig,
     getManifest,
     onLayerUpdated,
-    intervalMs = 5000,
+    intervalMs = 30000,
     isPaused = () => false,
   } = opts;
 
   return setInterval(async () => {
     if (isPaused()) return;
-    const layers = getLayers().filter((l) => l.source === 'qgis2grist');
+    const layers = layersToRefresh(getLayers());
     if (!layers.length) return;
     const widgetConfig = getWidgetConfig();
     const manifest = getManifest();

@@ -129,7 +129,10 @@ const CONFIG = {
     grist: { ready: false },
     /** 'scene-manifest' | 'maquette' | null */
     docMode: null,
-    pollIntervalMs: 5000,
+    // Un cycle recharge et reconvertit chaque table visible : à 5 s, une scène
+    // d'analyse saturait l'onglet. 30 s suffisent au travail collaboratif, et le
+    // rafraîchissement manuel par couche reste disponible.
+    pollIntervalMs: 30000,
     /** Mode lecture (pas d'écriture Grist) — URL ?mode=view ou droits insuffisants */
     viewMode: false,
     /** Réduit / coupe Models3D (mobile lent ou ?no3d=1) */
