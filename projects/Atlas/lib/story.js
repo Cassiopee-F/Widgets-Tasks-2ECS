@@ -50,11 +50,16 @@ export function captureStoryState(map, state) {
         type: c.type,
         min: c.min,
         max: c.max,
+        // Conservé pour qu'une re-capture ne perde pas l'exigence de valeur.
+        ...(c.requireValue ? { requireValue: true } : {}),
         values: c.type === 'select'
           ? captureSelectControlValues(l, c)
           : c.values,
       })),
       symbolization: cloneJson(l.style?.symbolization),
+      // Le rendu surfacique (à plat / en volume) vit hors symbolization : sans
+      // lui, une étape ne saurait pas montrer la morphologie d'un bâti.
+      ...(l.style?.polygonMode ? { polygonMode: l.style.polygonMode } : {}),
       declarative: declarativeFromAtlasLayer(l),
       controlDeclaratives: controlDeclarativesFromAtlasLayer(l).filter((c) => c.active),
     })),
@@ -75,17 +80,18 @@ export function storyToManifestFragment(story) {
   };
 }
 
-export async function ensureStoryTable(docApi) {
+export async function ensureStoryTable(docApi, opts = {}) {
+  if (opts.viewMode) return;
   const tables = await docApi.listTables();
   if (!tables.includes(ATLAS_STORY_TABLE)) {
     await docApi.applyUserActions([['AddTable', ATLAS_STORY_TABLE, STORY_SCHEMA]]);
   }
 }
 
-export async function saveStoryToGrist(docApi, story) {
-  if (!docApi) return;
+export async function saveStoryToGrist(docApi, story, opts = {}) {
+  if (!docApi || opts.viewMode) return;
   _storySaveChain = _storySaveChain.then(async () => {
-    await ensureStoryTable(docApi);
+    await ensureStoryTable(docApi, opts);
     const rec = await docApi.fetchTable(ATLAS_STORY_TABLE);
     const ids = rec.id || [];
     if (ids.length) {

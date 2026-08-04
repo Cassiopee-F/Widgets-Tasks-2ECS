@@ -1,7 +1,7 @@
 /**
  * Reconstruction GeoJSON depuis tables Grist (contrat qgis2grist / Scene Manifest).
  */
-import { manifestGeometryType } from './declarative-style.js?v=20260729o';
+import { manifestGeometryType } from './declarative-style.js?v=1.0.0';
 
 /** Colonne Grist → lignes objet. */
 export function fetchTableToRows(colData) {
@@ -24,6 +24,28 @@ function parseCoord(row, keys) {
   return NaN;
 }
 
+const LAT_KEYS = ['latitude', 'Latitude', 'lat', 'centroid_lat'];
+const LON_KEYS = ['longitude', 'Longitude', 'lon', 'lng', 'centroid_lon'];
+
+/** (0, 0) = « null island » : sentinelle de coordonnée absente, pas un point réel. */
+function isUsableLonLat(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+}
+
+/**
+ * Repli pour les imports antérieurs à `source.geometry_fields` : quand la
+ * source portait déjà un champ `latitude`, Grist a suffixé celui de
+ * qgis2grist (`latitude2`). On cherche les variantes numérotées.
+ */
+function suffixedCoords(row) {
+  const suffixed = (bases) => Object.keys(row)
+    .filter((k) => bases.some((b) => new RegExp(`^${b}\\d+$`, 'i').test(k)))
+    .sort();
+  const lat = parseCoord(row, suffixed(['latitude', 'lat', 'centroid_lat']));
+  const lon = parseCoord(row, suffixed(['longitude', 'lon', 'centroid_lon']));
+  return isUsableLonLat(lat, lon) ? { lat, lon } : null;
+}
+
 /** MapLibre GeoJSON : conserver lon/lat uniquement (QGIS exporte souvent Z/M). */
 export function flattenCoords2D(geom) {
   if (!geom?.coordinates) return geom;
@@ -41,23 +63,38 @@ export function flattenCoords2D(geom) {
  */
 export function rowToFeature(row, layerMeta, fillColor, visible) {
   const geomType = layerMeta?.geomType || 'Polygon';
+  // Colonnes géométriques déclarées par le manifest (source.geometry_fields) —
+  // sinon convention qgis2grist.
+  const geomCols = layerMeta?.geometryFields || null;
+  const geojsonKey = geomCols?.geojson || 'geometry_json';
   let geometry = null;
 
   // geometry_json prioritaire — polygones/lignes QGIS (même si cfg widget dit Point)
-  if (row.geometry_json) {
+  if (row[geojsonKey]) {
     try {
-      geometry = typeof row.geometry_json === 'string'
-        ? JSON.parse(row.geometry_json)
-        : row.geometry_json;
+      geometry = typeof row[geojsonKey] === 'string'
+        ? JSON.parse(row[geojsonKey])
+        : row[geojsonKey];
     } catch (_) {
       geometry = null;
     }
   }
 
   if (!geometry && geomType === 'Point') {
-    const lat = parseCoord(row, ['latitude', 'Latitude', 'lat', 'centroid_lat']);
-    const lon = parseCoord(row, ['longitude', 'Longitude', 'lon', 'lng', 'centroid_lon']);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    let lat;
+    let lon;
+    if (geomCols?.lat && geomCols?.lon) {
+      lat = parseCoord(row, [geomCols.lat]);
+      lon = parseCoord(row, [geomCols.lon]);
+    } else {
+      lat = parseCoord(row, LAT_KEYS);
+      lon = parseCoord(row, LON_KEYS);
+      if (!isUsableLonLat(lat, lon)) {
+        const alt = suffixedCoords(row);
+        if (alt) ({ lat, lon } = alt);
+      }
+    }
+    if (!isUsableLonLat(lat, lon)) return null;
     geometry = { type: 'Point', coordinates: [lon, lat] };
   }
 
@@ -68,10 +105,18 @@ export function rowToFeature(row, layerMeta, fillColor, visible) {
     _row_id: row.id,
     _fill_color: fillColor || '#808080',
     _visible: visible === false ? 0 : 1,
-    _fill_opacity: row._fill_opacity != null ? row._fill_opacity : 0.55,
-    _line_opacity: row._line_opacity != null ? row._line_opacity : 0.85,
   };
+  // Opacité par entité : valeur portée par la ligne, sinon celle du style
+  // déclaratif. Laissée absente si rien ne la définit, pour que le rendu
+  // retombe sur l'opacité de couche plutôt que sur une constante figée.
+  const declaredOpacity = row._fill_opacity != null
+    ? row._fill_opacity
+    : (typeof layerMeta?.opacityFn === 'function' ? layerMeta.opacityFn(row) : null);
+  if (Number.isFinite(declaredOpacity)) props._fill_opacity = declaredOpacity;
+  if (row._line_opacity != null) props._line_opacity = row._line_opacity;
   const skip = new Set(['geometry_json', 'centroid_lat', 'centroid_lon', 'latitude', 'longitude', 'id']);
+  // Colonnes géométriques suffixées (latitude2…) : données techniques, pas des attributs.
+  for (const k of Object.values(geomCols || {})) skip.add(k);
 
   /** Lit une valeur ligne Grist en essayant name / _rawKey / label (casse insensible). */
   function rowValueForField(rowObj, fieldMeta) {

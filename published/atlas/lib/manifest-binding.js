@@ -5,13 +5,13 @@
 import {
   applyDeclarativeToLayer,
   resolveGristFieldName,
-} from './declarative-style.js?v=20260729b';
+} from './declarative-style.js?v=1.0.0';
 import {
   applyControlDeclarativesToLayer,
   applyControlsFromPrefs,
   controlDeclarativesFromAtlasLayer,
   controlsPrefsPayload,
-} from './controls.js?v=20260729m';
+} from './controls.js?v=1.0.0';
 import { parseGristBool } from './grist-bool.js';
 
 /** StyleDeclarative ← symbolisation Atlas courante. */
@@ -62,10 +62,30 @@ export function declarativeFromAtlasLayer(layer) {
   return { kind: 'single', color: fb, opacity: 1 };
 }
 
+/**
+ * Reporte les réglages d'apparence d'une symbolisation enregistrée sur la
+ * couche, sans toucher aux couleurs (pilotées par le style déclaratif).
+ */
+export function mergeAppearancePrefs(layer, symbolization) {
+  if (!symbolization) return;
+  layer.style = layer.style || { mode: 'mapbox' };
+  const sym = layer.style.symbolization = layer.style.symbolization || {};
+  if ('opacity' in symbolization) sym.opacity = symbolization.opacity;
+  if (symbolization.stroke) sym.stroke = { ...symbolization.stroke };
+  if (symbolization.extrusion) sym.extrusion = { ...symbolization.extrusion };
+  if (symbolization.label) {
+    sym.label = { ...(sym.label || {}), ...symbolization.label };
+  }
+  if (symbolization.size) sym.size = { ...(sym.size || {}), ...symbolization.size };
+}
+
 /** Payload prefs Grist (StyleJSON structuré). */
 export function layerPrefsPayload(layer) {
   return {
     mode: layer.style?.mode || 'mapbox',
+    // Rendu surfacique (à plat / en volume) : réglage d'apparence à part
+    // entière, il doit survivre au rechargement comme le reste du style.
+    polygonMode: layer.style?.polygonMode || null,
     symbolization: layer.style?.symbolization || null,
     controls: controlsPrefsPayload(layer),
     declarative: declarativeFromAtlasLayer(layer),
@@ -87,8 +107,16 @@ export function applyLayerPrefsBinding(layer, prefs) {
     if (payload.declarative) {
       layer._declarative = payload.declarative;
       applyDeclarativeToLayer(layer, payload.declarative);
+      // Le déclaratif porte les couleurs ; les réglages d'apparence
+      // (opacité, contour, base d'extrusion, étiquette) vivent dans la
+      // symbolisation et doivent être restaurés en plus, pas à la place.
+      mergeAppearancePrefs(layer, payload.symbolization);
     } else if (payload.symbolization) {
       layer.style = { ...layer.style, mode: payload.mode || 'mapbox', symbolization: payload.symbolization };
+    }
+
+    if (payload.polygonMode) {
+      layer.style = { ...layer.style, polygonMode: payload.polygonMode };
     }
 
     if (payload.controls?.length) {

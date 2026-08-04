@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Atlas — validation récit Fields (navigateur)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    #status { padding: 10px; border-radius: 8px; margin-bottom: 12px; }
+    #status.ok { background: #14532d; color: #ecfdf5; }
+    #status.fail { background: #7f1d1d; color: #fee2e2; }
+    pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; font-size: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div id="status">Test en cours…</div>
+  <pre id="log"></pre>
+  <script type="module">
+    import {
+      applyControlDeclarativesToLayer,
+      buildControlPredicate,
+      filteredGeoJSON,
+      captureSelectControlValues,
+      isSelectValueChecked,
+      repairSelectControlFromManifest,
+      normalizeSelectValuesForLayer,
+    } from '../lib/controls.js?v=20260729d';
+    import { captureStoryState } from '../lib/story.js?v=20260729d';
+
+    const log = document.getElementById('log');
+    const status = document.getElementById('status');
+    const errors = [];
+    const lines = [];
+
+    function assert(cond, msg) {
+      lines.push((cond ? '✓ ' : '✗ ') + msg);
+      if (!cond) errors.push(msg);
+    }
+
+    const fieldsLayer = {
+      id: 'layer-scene-Fields',
+      name: 'Fields',
+      sourceTable: 'Fields',
+      visible: true,
+      style: { symbolization: { color: { mode: 'categorized', field: 'plant_species' } } },
+      geojson: {
+        type: 'FeatureCollection',
+        features: [
+          { type: 'Feature', properties: { plant_species: 'Grass' }, geometry: { type: 'Polygon', coordinates: [] } },
+          { type: 'Feature', properties: { plant_species: 'Colza' }, geometry: { type: 'Polygon', coordinates: [] } },
+          { type: 'Feature', properties: { plant_species: 'Lavender' }, geometry: { type: 'Polygon', coordinates: [] } },
+        ],
+      },
+      controls: [],
+    };
+
+    // Simule import qgis2grist (controls inactifs au chargement)
+    applyControlDeclarativesToLayer(fieldsLayer, [{
+      field: 'plant_species', type: 'select', active: false,
+      values: ['colza', 'grass', 'lavender', 'taraxacum', 'weed'],
+    }], { activateDefaults: false });
+    const c = fieldsLayer.controls[0];
+    repairSelectControlFromManifest(fieldsLayer, c);
+
+    assert(c.options?.length === 5, 'options manifest conservées');
+    assert(c.values === undefined, 'pas de sélection au chargement');
+
+    // Utilisateur active le contrôle puis décoche tout
+    c.active = true;
+    c.values = [];
+    c._selectionTouched = true;
+    assert(!isSelectValueChecked(c, 'Grass'), 'UI: Grass décoché');
+    assert(filteredGeoJSON(fieldsLayer).features.length === 0, 'filtre: 0 feature');
+
+    const step1 = captureStoryState(null, {
+      settings: { projection: 'globe', timeOfDay: 0, date: new Date() },
+      layers: [fieldsLayer],
+    });
+    assert(step1.layers[0].controls[0].values.length === 0, 'capture étape 1: values []');
+
+    // Étape 2 : Grass seul
+    c.values = ['Grass'];
+    assert(filteredGeoJSON(fieldsLayer).features.length === 1, 'filtre Grass: 1 feature');
+    const step2 = captureStoryState(null, {
+      settings: { projection: 'globe', timeOfDay: 0, date: new Date() },
+      layers: [fieldsLayer],
+    });
+    assert(step2.layers[0].controls[0].values[0] === 'Grass', 'capture étape 2: Grass');
+
+    // Restauration lecture récit
+    c.values = normalizeSelectValuesForLayer(fieldsLayer, 'plant_species', step1.layers[0].controls[0].values);
+    assert(c.values.length === 0, 'restore étape 1');
+    assert(filteredGeoJSON(fieldsLayer).features.length === 0, 'lecture étape 1: 0 feature');
+
+    c.values = normalizeSelectValuesForLayer(fieldsLayer, 'plant_species', step2.layers[0].controls[0].values);
+    assert(c.values[0] === 'Grass', 'restore étape 2');
+    assert(filteredGeoJSON(fieldsLayer).features.length === 1, 'lecture étape 2: 1 feature');
+
+    log.textContent = lines.join('\n');
+    if (errors.length) {
+      status.className = 'fail';
+      status.textContent = 'ÉCHEC — ' + errors.join(' · ');
+    } else {
+      status.className = 'ok';
+      status.textContent = 'OK — récit Fields : étape 1 vide, étape 2 Grass seul';
+    }
+    window.__ATLAS_STORY_TEST__ = { ok: !errors.length, errors };
+  </script>
+</body>
+</html>

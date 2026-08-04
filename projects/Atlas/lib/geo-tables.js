@@ -8,6 +8,7 @@ export const GEO_SKIP_TABLES = new Set([
   'SceneManifest',
   'QgisWidgets',
   'Atlas_LayerPrefs',
+  'Atlas_ScenePrefs',
   'Atlas_Story',
 ]);
 

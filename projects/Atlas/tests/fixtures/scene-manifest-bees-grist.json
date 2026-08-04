@@ -1,0 +1,83 @@
+{
+  "version": "0.2.1",
+  "classification": "cerema_internal",
+  "title": "qfield_bees.zip",
+  "layers": [
+    {
+      "id": "Apiary",
+      "name": "Apiary",
+      "source": { "type": "grist", "table": "Apiary" },
+      "geometry_type": "point",
+      "profile": "A",
+      "style": {
+        "declarative": {
+          "kind": "categorized",
+          "field": "bee_species",
+          "stops": [
+            { "value": "Apis Mellifera Mellifera", "label": "European honey bee", "color": "#de7300", "opacity": 1 },
+            { "value": "Apis Mellifera", "label": "Buckfast bee", "color": "#2da4ff", "opacity": 1 },
+            { "value": "Apis Mellifera Carnica", "label": "Carniolan honey bee", "color": "#9d3796", "opacity": 1 }
+          ]
+        }
+      },
+      "controls": [
+        {
+          "field": "bee_species",
+          "type": "select",
+          "label": "Species of Bees",
+          "values": ["Apis Mellifera Mellifera", "Apis Mellifera", "Apis Mellifera Carnica"],
+          "active": false
+        }
+      ]
+    },
+    {
+      "id": "Fields",
+      "name": "Fields",
+      "source": { "type": "grist", "table": "Fields" },
+      "geometry_type": "polygon",
+      "profile": "A",
+      "style": {
+        "declarative": {
+          "kind": "categorized",
+          "field": "plant_species",
+          "stops": [
+            { "value": "colza", "label": "Colza", "color": "#d7191c", "opacity": 1 },
+            { "value": "grass", "label": "Grass", "color": "#f69053", "opacity": 1 },
+            { "value": "lavender", "label": "Lavender", "color": "#daafc1", "opacity": 1 },
+            { "value": "taraxacum", "label": "Dandelions", "color": "#90c6a9", "opacity": 1 },
+            { "value": "weed", "label": "Weed", "color": "#90c6a9", "opacity": 1 }
+          ]
+        }
+      },
+      "controls": [
+        {
+          "field": "plant_species",
+          "type": "select",
+          "label": "Plants",
+          "values": ["colza", "grass", "lavender", "taraxacum", "weed"],
+          "active": false
+        }
+      ]
+    },
+    {
+      "id": "Pollen_Consumption",
+      "name": "Pollen_Consumption",
+      "source": { "type": "grist", "table": "Pollen_Consumption" },
+      "geometry_type": "point",
+      "profile": "A",
+      "style": {
+        "declarative": { "kind": "single", "color": "#3e5de7", "opacity": 1 }
+      },
+      "controls": [
+        {
+          "field": "percentage",
+          "type": "range",
+          "label": "Percentage",
+          "min": 0,
+          "max": 100,
+          "active": false
+        }
+      ]
+    }
+  ]
+}

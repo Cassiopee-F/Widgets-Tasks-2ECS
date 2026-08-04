@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Atlas — validation catégorisé (navigateur)</title>
+  <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #status { padding: 10px 14px; background: #1e293b; color: #e2e8f0; font-size: 14px; }
+    #status.ok { background: #14532d; }
+    #status.fail { background: #7f1d1d; }
+    #map { height: calc(100vh - 44px); }
+  </style>
+</head>
+<body>
+  <div id="status">Chargement…</div>
+  <div id="map"></div>
+  <script type="module">
+    import {
+      applyDeclarativeToLayer,
+      syncFeatureColorsFromSymbolization,
+    } from '../lib/declarative-style.js?v=20260729b';
+
+    const status = document.getElementById('status');
+    const errors = [];
+
+    function assert(cond, msg) {
+      if (!cond) errors.push(msg);
+    }
+
+    const layer = {
+      id: 'test-apiary',
+      name: 'Apiary',
+      color: '#888',
+      geometryType: 'Point',
+      source: 'qgis2grist',
+      style: { mode: 'mapbox' },
+      _fields: [{ name: 'bee_species', label: 'Espèce' }],
+      geojson: {
+        type: 'FeatureCollection',
+        features: [
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [6.95, 46.58] }, properties: { bee_species: 'Apis Mellifera Mellifera' } },
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [6.96, 46.581] }, properties: { bee_species: 'Apis Mellifera Carnica' } },
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [6.951, 46.579] }, properties: { bee_species: 'Apis Mellifera' } },
+        ],
+      },
+    };
+
+    const declarative = {
+      kind: 'categorized',
+      field: 'bee_species',
+      stops: [
+        { value: 'Apis Mellifera Mellifera', label: 'European honey bee', color: '#e15759' },
+        { value: 'Apis Mellifera', label: 'Buckfast bee', color: '#4e79a7' },
+        { value: 'Apis Mellifera Carnica', label: 'Carniolan honey bee', color: '#59a14f' },
+      ],
+    };
+
+    applyDeclarativeToLayer(layer, declarative);
+    syncFeatureColorsFromSymbolization(layer);
+
+    const f0 = layer.geojson.features[0].properties._fill_color;
+    const f1 = layer.geojson.features[1].properties._fill_color;
+    const f2 = layer.geojson.features[2].properties._fill_color;
+
+    assert(f0 === '#e15759', `Apis Mellifera Mellifera → #e15759 (got ${f0})`);
+    assert(f1 === '#59a14f', `Apis Mellifera Carnica → #59a14f (got ${f1})`);
+    assert(f2 === '#4e79a7', `Apis Mellifera → #4e79a7 (got ${f2})`);
+    assert(f0 !== f1 && f1 !== f2, 'couleurs distinctes');
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      center: [6.955, 46.58],
+      zoom: 14,
+    });
+
+    map.on('load', () => {
+      map.addSource(layer.id, { type: 'geojson', data: layer.geojson });
+      map.addLayer({
+        id: layer.id,
+        type: 'circle',
+        source: layer.id,
+        paint: {
+          'circle-radius': 12,
+          'circle-color': ['coalesce', ['get', '_fill_color'], '#999'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      if (errors.length) {
+        status.className = 'fail';
+        status.textContent = 'ÉCHEC : ' + errors.join(' · ');
+      } else {
+        status.className = 'ok';
+        status.textContent = 'OK — catégorisé Apiary : 3 couleurs distinctes (_fill_color correct)';
+      }
+      window.__ATLAS_CATEGORIZED_TEST__ = { ok: !errors.length, errors, colors: [f0, f1, f2] };
+    });
+  </script>
+</body>
+</html>

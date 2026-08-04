@@ -211,6 +211,22 @@ export function applyGraduatedColorsToFeatures(layer, paletteHex) {
   const sym = layer.style?.symbolization?.color;
   if (!sym || sym.mode !== 'graduated' || !sym.field) return;
   const propKey = resolveFeaturePropertyKey(layer, sym.field);
+  // Des classes explicitement bornées font autorité sur l'étalement linéaire.
+  // Sans cela, une distribution asymétrique (la plupart des mailles à 1 ou 2
+  // bâtiments, quelques-unes à 134) verse presque tout dans la première classe.
+  const bornes = (layer._declarative?.stops || []).filter(
+    (s) => Number.isFinite(s?.lower) || Number.isFinite(s?.upper));
+  if (bornes.length) {
+    const repli = sym.defaultColor || sym.value || layer.color || '#808080';
+    for (const f of (layer.geojson?.features || [])) {
+      if (!f.properties) f.properties = {};
+      const n = parsePropertyNumber(f.properties[propKey]);
+      if (!Number.isFinite(n)) { f.properties._fill_color = repli; continue; }
+      const cl = bornes.find((s) => n >= (s.lower ?? -Infinity) && n <= (s.upper ?? Infinity));
+      f.properties._fill_color = cl?.color || repli;
+    }
+    return;
+  }
   const nums = [];
   for (const f of (layer.geojson?.features || [])) {
     const n = parsePropertyNumber(f.properties?.[propKey]);
@@ -273,6 +289,54 @@ export function primaryColorFromDeclarative(decl, fallback = '#808080') {
 }
 
 /** Fonction de couleur par ligne (pour GeoJSON _fill_color). */
+/**
+ * Opacité par entité depuis les stops du style déclaratif.
+ *
+ * Le contrat Scene Manifest porte une `opacity` par classe ; sans cette
+ * lecture, elle resterait décorative et toutes les entités s'afficheraient à
+ * l'opacité fixe du moteur. Renvoie null si aucun stop n'en déclare, pour que
+ * l'appelant garde son défaut.
+ *
+ * @returns {((row: object) => number) | null}
+ */
+export function opacityFnFromDeclarative(decl, fieldNames = null) {
+  if (!decl) return null;
+
+  if (decl.kind === 'single') {
+    return Number.isFinite(decl.opacity) ? () => decl.opacity : null;
+  }
+
+  const stops = decl.stops || [];
+  if (!stops.some((s) => Number.isFinite(s?.opacity))) return null;
+
+  let field = decl.field;
+  if (fieldNames?.length) field = resolveGristFieldName(fieldNames, field) || field;
+  if (!field) return null;
+
+  if (decl.kind === 'categorized') {
+    const map = new Map();
+    for (const s of stops) {
+      if (Number.isFinite(s?.opacity)) registerStopColors(map, s, s.opacity);
+    }
+    return (row) => {
+      const v = rowPropertyValue(row, fieldNames, field);
+      const o = resolveCategoryColor(map, v, null, 0);
+      return Number.isFinite(o) ? o : null;
+    };
+  }
+
+  if (decl.kind === 'graduated') {
+    return (row) => {
+      const val = parsePropertyNumber(rowPropertyValue(row, fieldNames, field));
+      if (!Number.isFinite(val)) return null;
+      const match = stops.find((s) => val >= (s.lower ?? -Infinity) && val <= (s.upper ?? Infinity));
+      const o = match?.opacity ?? stops[stops.length - 1]?.opacity;
+      return Number.isFinite(o) ? o : null;
+    };
+  }
+  return null;
+}
+
 export function colorFnFromDeclarative(decl, fallback = '#808080', fieldNames = null) {
   if (!decl || decl.kind === 'single') {
     const c = decl?.color || fallback;
