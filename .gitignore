@@ -37,3 +37,6 @@ temp/
 coverage/
 .nyc_output/
 published/taskflow/HARMONIZATION.md
+
+# Sauvegardes locales (versions de travail retirees du poste)
+backups/
