@@ -30,10 +30,28 @@ Atlas/
 │   ├── CADRAGE-BINDING-COMPLET.md
 │   └── MANUAL_TEST.md
 ├── tests/                 # node --test
-├── index_v6.html / app_v6.js   # Historique (ne plus étendre)
-├── index.html / app.js         # Ancienne entrée (pré-v7)
 └── CLAUDE.md
 ```
+
+> **`projects/Atlas/app.js` sur `origin/main` — ne pas écraser.**
+> Cette entrée pré-v7 (3 110 lignes) porte deux fonctionnalités **absentes de la
+> v7 et de la version en ligne** : l'export QGIS (`layerToQML`, `qgisSymbol`,
+> `hexToQgisColor`, `downloadFile`) et le modèle 3D par objet en pièce jointe
+> Grist (`model_glb`, colonne `Attachments`). Elles ont quitté le widget lors du
+> passage à la v7, le 30 juillet 2026 — sans décision explicite : la v7 a été
+> développée sur une branche qui ignorait cette lignée.
+>
+> Tant qu'elles ne sont pas portées dans la v7, ce fichier est leur **dernière
+> copie**. Les versions de travail pré-v7 ont été retirées du poste
+> (sauvegarde : `backups/atlas-prev7/`) parce qu'un `git add projects/Atlas/`
+> aurait remplacé la version complète par une copie tronquée de 2 371 lignes.
+>
+> Portage : l'export QGIS ≈ 108 lignes, quatre fonctions isolables en
+> `lib/qgis-export.js` — mais le QML doit alors être **généré depuis le
+> StyleDeclarative**, pas depuis l'état interne, pour respecter
+> `BINDING-QGIS-GRIST-CEREMA-v2.md` §5.2. Pour `model_glb`, arbitrer d'abord la
+> coexistence avec le catalogue partagé (`catalog.json`) : pièce jointe par objet
+> > `gltf_url` de couche > catalogue > cercle 2D.
 
 **Publication** : `published/atlas/` = copie de `index_v7.html` → `index.html`, `app_v7.js` → `app.js`, + `lib/`.
 
