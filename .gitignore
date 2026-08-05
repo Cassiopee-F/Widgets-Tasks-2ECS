@@ -40,3 +40,6 @@ published/taskflow/HARMONIZATION.md
 
 # Sauvegardes locales (versions de travail retirees du poste)
 backups/
+
+# Outil de coordination local
+.wikichat/

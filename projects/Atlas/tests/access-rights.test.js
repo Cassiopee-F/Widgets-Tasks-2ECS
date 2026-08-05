@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { gristGrantFromSearch, resolveAccess, decodeAccessToken, userFromAccessList, initialsFrom } from '../lib/view-mode.js';
+import { gristGrantFromSearch, resolveAccess, decodeAccessToken, initialsFrom } from '../lib/view-mode.js';
 
 describe('gristGrantFromSearch', () => {
   it('lit ce que Grist transmet reellement', () => {
@@ -94,32 +94,7 @@ describe('decodeAccessToken — base64url', () => {
   });
 });
 
-describe('resolution facultative de l\'identite', () => {
-  // Reponse reelle de /api/docs/{id}/access (extrait)
-  const acces = { maxInheritedRole: 'owners', users: [
-    { id: 481, email: 'quentin.leroy@interieur.gouv.fr', name: 'Quentin Leroy', access: null, parentAccess: 'viewers' },
-    { id: 37212, email: 'nicolas.laval@cerema.fr', name: 'nicolas.laval', access: 'owners' },
-  ] };
-
-  it('retrouve la personne courante par son userId', () => {
-    const u = userFromAccessList(acces, 37212);
-    assert.equal(u.name, 'nicolas.laval');
-    assert.equal(u.email, 'nicolas.laval@cerema.fr');
-    assert.equal(u.access, 'owners');
-  });
-
-  it('retombe sur parentAccess quand access est nul', () => {
-    assert.equal(userFromAccessList(acces, 481).access, 'viewers');
-  });
-
-  it('null si absent, si userId inconnu, ou si la reponse est refusee', () => {
-    assert.equal(userFromAccessList(acces, 99999), null);
-    assert.equal(userFromAccessList(acces, null), null);
-    // Endpoint ferme au jeton : on recoit une erreur, pas une liste.
-    assert.equal(userFromAccessList({ error: 'Broken token' }, 37212), null);
-    assert.equal(userFromAccessList(null, 37212), null);
-  });
-
+describe('initiales affichees', () => {
   it('initiales — nom compose, nom pointe, repli sur l\'email', () => {
     assert.equal(initialsFrom('Quentin Leroy', null), 'QL');
     assert.equal(initialsFrom('nicolas.laval', null), 'NL');

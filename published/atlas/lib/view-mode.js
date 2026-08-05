@@ -103,31 +103,6 @@ export function decodeAccessToken(token) {
 }
 
 /**
- * Retrouve la personne courante dans la liste de partage du document.
- *
- * `GET {baseUrl}/access` renvoie les collaborateurs ; l'`id` y est de même
- * nature que le `userId` du jeton. Le droit d'appeler cet endpoint avec un
- * jeton de document n'est **pas garanti** — l'appelant doit traiter l'échec
- * comme un cas normal, pas comme une erreur.
- *
- * @param {any} payload réponse de /access
- * @param {number|null} userId
- * @returns {{name: string|null, email: string|null, access: string|null}|null}
- */
-export function userFromAccessList(payload, userId) {
-  if (userId == null) return null;
-  const users = Array.isArray(payload?.users) ? payload.users : null;
-  if (!users) return null;
-  const moi = users.find((u) => u && u.id === userId);
-  if (!moi) return null;
-  return {
-    name: moi.name || null,
-    email: moi.email || null,
-    access: moi.access || moi.parentAccess || null,
-  };
-}
-
-/**
  * Initiales d'affichage. Gère « Quentin Leroy » comme « nicolas.laval »,
  * et retombe sur l'email quand le nom manque.
  *

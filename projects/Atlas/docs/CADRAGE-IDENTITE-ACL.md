@@ -74,17 +74,26 @@ Ce qui est acquis : le jeton livre l'`userId`. Attention, sa charge utile est en
 **base64url** — sans conversion, `atob` échoue et l'identification tombe en
 silence (`decodeAccessToken`, testé).
 
-Ce qui reste incertain : le **nom**. Mesuré côté serveur, les données existent —
-`/api/profile/user` donne `{id, email, name}` et `/api/docs/{id}/access` liste
-les collaborateurs. Avec un jeton invalide, ces endpoints répondent
-`401 Broken token` : le canal `?auth=` est donc reconnu. Mais le **périmètre
-réel** d'un jeton de document n'a pas pu être vérifié — il n'existe aucun moyen
-d'obtenir un tel jeton hors du widget (`/api/docs/{id}/tokens` → 404).
+**Le nom n'est pas accessible par l'API — mesuré, tranché.** Essai en conditions
+réelles le 2026-08-05, jeton valide émis par le widget :
 
-D'où `resolveUserIdentity()` : on **tente** `/access`, on **dégrade** en silence
-si c'est refusé. À confirmer en production. Si le chemin est fermé, la voie de
-repli reste l'annuaire dans le document (méthode TaskFlow), qui sert de toute
-façon aux règles ACL.
+```
+GET /api/docs/{id}/access?auth=<jeton>   →  403
+payload du jeton : { readOnly: true, userId: 37212, docId: …, iat, exp }
+```
+
+**403, pas 401** : le jeton est authentifié, mais la gestion du partage est hors
+de son périmètre. Les données existent pourtant côté serveur — `/api/profile/user`
+renvoie `{id, email, name}`, `/access` liste les collaborateurs — mais elles
+exigent une session, que le widget n'a pas (origine distincte).
+
+L'appel a donc été **retiré** : on ne conserve pas une requête dont l'échec est
+prouvé. `setUserIdentity()` reste le point d'entrée unique pour une future source
+de noms. La seule voie ouverte est un **annuaire dans le document** (méthode
+TaskFlow), qui servira de toute façon aux règles ACL.
+
+À retenir : `userId` est acquis et fiable — il suffit aux lots B et C ci-dessous,
+qui n'ont pas besoin de nom.
 
 ### B. Connaître ses droits à l'ouverture · FAIT (2026-08-05)
 

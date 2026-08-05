@@ -74,7 +74,6 @@ import {
   parseAtlasMode,
   resolveAccess,
   decodeAccessToken,
-  userFromAccessList,
   initialsFrom,
   canWrite,
   shouldEnableLight3d,
@@ -3617,25 +3616,19 @@ function updateUserBadge() {
 }
 
 /**
- * Résolution facultative du nom, après coup.
+ * Renseigne l'identité affichée par le badge.
  *
- * Le droit d'interroger `/access` avec un jeton de document n'est pas garanti :
- * un refus est un cas normal, pas une panne. On n'attend donc pas cet appel
- * pour démarrer, et le badge reste utile s'il échoue.
+ * Point d'entrée unique pour une future source de noms — un annuaire dans le
+ * document, à la manière de TaskFlow. L'API Grist ne convient pas : mesuré le
+ * 2026-08-05, `GET {baseUrl}/access` répond **403** avec un jeton de document
+ * (authentifié mais hors périmètre — la gestion du partage n'en fait pas
+ * partie). Voir docs/CADRAGE-IDENTITE-ACL.md §A.
+ *
+ * @param {{name?: string, email?: string}|null} u
  */
-async function resolveUserIdentity() {
-    const { apiBaseUrl, apiToken, userId } = CONFIG.grist;
-    if (!apiBaseUrl || !apiToken || userId == null) return;
-    try {
-        const r = await fetch(`${apiBaseUrl}/access?auth=${encodeURIComponent(apiToken)}`);
-        if (!r.ok) return;
-        const moi = userFromAccessList(await r.json(), userId);
-        if (!moi) return;
-        CONFIG.grist.user = { ...moi, initiales: initialsFrom(moi.name, moi.email) };
-        updateUserBadge();
-    } catch (_) {
-        /* endpoint fermé au jeton, hors ligne… : le badge de droits suffit */
-    }
+function setUserIdentity(u) {
+    CONFIG.grist.user = u ? { ...u, initiales: initialsFrom(u.name, u.email) } : null;
+    updateUserBadge();
 }
 
 function applyViewModeChrome() {
@@ -3744,20 +3737,16 @@ async function initGrist() {
         } else if (CONFIG.viewMode) {
             console.info('[Atlas] Mode lecture —', acc.reason);
         }
-        // Identité : le jeton livre l'userId. `baseUrl` ouvre en plus l'API REST
-        // du document, signée — utile pour résoudre un nom si le document porte
-        // un annuaire (cf. docs/CADRAGE-IDENTITE-ACL.md).
+        // Identité : le jeton livre l'userId — suffisant pour marquer l'auteur
+        // d'une préférence ou d'un récit. Le nom, lui, n'est pas accessible par
+        // l'API (cf. setUserIdentity et docs/CADRAGE-IDENTITE-ACL.md §A).
         try {
             const tok = await grist.docApi.getAccessToken({ readOnly: true });
             CONFIG.grist.userId = decodeAccessToken(tok?.token)?.userId ?? null;
-            CONFIG.grist.apiBaseUrl = tok?.baseUrl || null;
-            CONFIG.grist.apiToken = tok?.token || null;
         } catch (e) {
             CONFIG.grist.userId = null;
         }
         applyViewModeChrome();
-        // Sans await : la scène ne doit pas attendre une résolution facultative.
-        resolveUserIdentity();
         CONFIG.docMode = await detectDocMode(grist.docApi);
         if (CONFIG.docMode === 'scene-manifest') {
             await loadFromSceneManifest();
