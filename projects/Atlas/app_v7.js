@@ -72,7 +72,10 @@ import {
 } from './lib/viewport.js?v=20260729q';
 import {
   parseAtlasMode,
-  accessIntentFromMode,
+  resolveAccess,
+  decodeAccessToken,
+  userFromAccessList,
+  initialsFrom,
   canWrite,
   shouldEnableLight3d,
   parseNo3dParam,
@@ -3588,10 +3591,58 @@ function enterViewModeOnWriteFail(err) {
     showToast('Écriture refusée — passage en lecture' + (msg ? ` (${msg})` : ''), 'warning');
 }
 
+/**
+ * Badge de droits — dit ce qui est vrai, pas une identité inventée.
+ *
+ * Le jeton d'accès Grist ne livre qu'un `userId` : sans annuaire dans le
+ * document, on ne peut afficher ni nom ni initiales. L'information utile et
+ * disponible, c'est le droit dont on dispose sur ce document.
+ */
+function updateUserBadge() {
+    const el = $('user-badge');
+    if (!el) return;
+    const lecture = !!CONFIG.viewMode;
+    const droit = lecture ? 'Lecture seule — édition indisponible' : 'Édition autorisée';
+    const u = CONFIG.grist.user;
+    el.classList.toggle('ro', lecture);
+    if (u?.initiales) {
+        // Identité résolue : on la montre, le droit passe en infobulle.
+        el.textContent = u.initiales;
+        el.title = `${u.name || u.email} — ${droit}`;
+    } else {
+        // Rien de résolu : afficher le droit, jamais une identité inventée.
+        el.textContent = lecture ? '👁' : '✎';
+        el.title = droit + (CONFIG.grist.userId ? ` · utilisateur ${CONFIG.grist.userId}` : '');
+    }
+}
+
+/**
+ * Résolution facultative du nom, après coup.
+ *
+ * Le droit d'interroger `/access` avec un jeton de document n'est pas garanti :
+ * un refus est un cas normal, pas une panne. On n'attend donc pas cet appel
+ * pour démarrer, et le badge reste utile s'il échoue.
+ */
+async function resolveUserIdentity() {
+    const { apiBaseUrl, apiToken, userId } = CONFIG.grist;
+    if (!apiBaseUrl || !apiToken || userId == null) return;
+    try {
+        const r = await fetch(`${apiBaseUrl}/access?auth=${encodeURIComponent(apiToken)}`);
+        if (!r.ok) return;
+        const moi = userFromAccessList(await r.json(), userId);
+        if (!moi) return;
+        CONFIG.grist.user = { ...moi, initiales: initialsFrom(moi.name, moi.email) };
+        updateUserBadge();
+    } catch (_) {
+        /* endpoint fermé au jeton, hors ligne… : le badge de droits suffit */
+    }
+}
+
 function applyViewModeChrome() {
     document.body.classList.toggle('view-mode', !!CONFIG.viewMode);
     const badge = $('view-mode-badge');
     if (badge) badge.hidden = !CONFIG.viewMode;
+    updateUserBadge();
     refreshViewerControlsHud();
     refreshStoryNavChrome();
     refreshControlsDock();
@@ -3675,21 +3726,38 @@ function wireMobileNav() {
 
 async function initGrist() {
     if (typeof grist === 'undefined') { console.log('Grist indisponible — mode standalone'); return; }
-    const mode = parseAtlasMode(typeof location !== 'undefined' ? location.search : '');
-    const intent = accessIntentFromMode(mode);
+    const search = typeof location !== 'undefined' ? location.search : '';
+    // Les droits transmis par Grist font autorité ; ?mode= ne peut que restreindre.
+    const acc = resolveAccess({ search });
     try {
-        grist.ready({ requiredAccess: intent.requiredAccess });
+        grist.ready({ requiredAccess: acc.requiredAccess });
         CONFIG.grist.ready = true;
-        CONFIG.viewMode = !!intent.viewModeForced;
-        // Auto / edit : sonde réelle (viewer public ≠ widget « Full » en creator)
-        if (!CONFIG.viewMode && intent.preferFull) {
+        CONFIG.viewMode = acc.viewMode;
+        // Sonde uniquement quand Grist n'a rien transmis (ouverture hors Grist,
+        // version ancienne) : sinon on croit ce que le document annonce.
+        if (acc.needsProbe) {
             const writable = await probeCanWriteDoc(grist.docApi);
             if (!writable) {
                 CONFIG.viewMode = true;
                 console.info('[Atlas] Accès sans écriture — mode lecture');
             }
+        } else if (CONFIG.viewMode) {
+            console.info('[Atlas] Mode lecture —', acc.reason);
+        }
+        // Identité : le jeton livre l'userId. `baseUrl` ouvre en plus l'API REST
+        // du document, signée — utile pour résoudre un nom si le document porte
+        // un annuaire (cf. docs/CADRAGE-IDENTITE-ACL.md).
+        try {
+            const tok = await grist.docApi.getAccessToken({ readOnly: true });
+            CONFIG.grist.userId = decodeAccessToken(tok?.token)?.userId ?? null;
+            CONFIG.grist.apiBaseUrl = tok?.baseUrl || null;
+            CONFIG.grist.apiToken = tok?.token || null;
+        } catch (e) {
+            CONFIG.grist.userId = null;
         }
         applyViewModeChrome();
+        // Sans await : la scène ne doit pas attendre une résolution facultative.
+        resolveUserIdentity();
         CONFIG.docMode = await detectDocMode(grist.docApi);
         if (CONFIG.docMode === 'scene-manifest') {
             await loadFromSceneManifest();

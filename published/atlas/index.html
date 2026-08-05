@@ -735,7 +735,8 @@
         body.view-mode .header-actions #btn-load,
         body.view-mode .header-actions #btn-save,
         body.view-mode .header-actions #btn-export,
-        body.view-mode .header-actions .avatar { display: none !important; }
+        /* Le badge dit les droits réels : il reste visible en lecture. */
+        .avatar.ro { background: var(--surface-muted); color: var(--ink); }
         body.view-mode .dirty-dot,
         body.view-mode.dirty .dirty-dot { display: none !important; }
         body.view-mode #map-hud { display: none !important; }
@@ -930,7 +931,7 @@
                     <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 8l5-5 5 5M5 21h14"/></svg>
                     <span>Exporter</span>
                 </button>
-                <div class="avatar">MT</div>
+                <div class="avatar" id="user-badge" title="Droits sur ce document">–</div>
             </div>
         </header>
 

@@ -17,6 +17,57 @@ export function parseAtlasMode(search = '') {
 }
 
 /**
+ * Droits transmis par Grist dans l'URL du widget.
+ *
+ * Grist construit lui-même l'adresse de l'iframe et y place les droits réels de
+ * la personne sur le document : `?access=full&readonly=false&…`. C'est la seule
+ * source fiable — `?mode=` est écrit par qui ouvre la page.
+ *
+ * @param {string} [search] location.search
+ * @returns {{ readonly: boolean|null, access: string|null }} null = non transmis
+ */
+export function gristGrantFromSearch(search = '') {
+  const params = new URLSearchParams(String(search || '').replace(/^\?/, ''));
+  const ro = params.get('readonly');
+  const access = (params.get('access') || '').trim().toLowerCase() || null;
+  return {
+    readonly: ro == null ? null : /^(1|true|yes)$/i.test(ro.trim()),
+    access,
+  };
+}
+
+/**
+ * Mode d'ouverture : **les droits Grist font autorité**.
+ *
+ * `?mode=` ne peut que **restreindre** — un éditeur peut demander à prévisualiser
+ * en lecture, personne ne peut s'octroyer l'écriture par l'URL. Quand Grist ne
+ * transmet rien (widget ouvert hors Grist, version ancienne), on retombe sur
+ * l'intention et la sonde d'écriture.
+ *
+ * @param {{search?: string, mode?: 'view'|'edit'|'auto'}} opts
+ * @returns {{ viewMode: boolean, requiredAccess: 'full'|'read table', needsProbe: boolean, reason: string }}
+ */
+export function resolveAccess({ search = '', mode } = {}) {
+  const wanted = mode || parseAtlasMode(search);
+  const grant = gristGrantFromSearch(search);
+
+  // Droits insuffisants côté Grist : lecture, sans discussion ni sonde.
+  if (grant.readonly === true || grant.access === 'none' || grant.access === 'read table') {
+    return { viewMode: true, requiredAccess: 'read table', needsProbe: false, reason: 'grist-readonly' };
+  }
+  // L'utilisateur demande la lecture alors qu'il pourrait écrire : on respecte.
+  if (wanted === 'view') {
+    return { viewMode: true, requiredAccess: 'read table', needsProbe: false, reason: 'mode-view' };
+  }
+  // Grist annonce l'écriture : on lui fait confiance, sans sonder.
+  if (grant.readonly === false && grant.access === 'full') {
+    return { viewMode: false, requiredAccess: 'full', needsProbe: false, reason: 'grist-full' };
+  }
+  // Rien de transmis : ancien comportement — tenter, puis sonder.
+  return { viewMode: false, requiredAccess: 'full', needsProbe: true, reason: 'probe' };
+}
+
+/**
  * @param {'view'|'edit'|'auto'} mode
  * @returns {{ viewModeForced: boolean, preferFull: boolean, requiredAccess: 'full'|'read table' }}
  */
@@ -28,6 +79,68 @@ export function accessIntentFromMode(mode) {
     return { viewModeForced: false, preferFull: true, requiredAccess: 'full' };
   }
   return { viewModeForced: false, preferFull: true, requiredAccess: 'full' };
+}
+
+/**
+ * Charge utile d'un jeton d'accès Grist.
+ *
+ * Un JWT encode ses segments en **base64url** : `atob` attend du base64
+ * standard et échoue dès qu'apparaît un `-` ou un `_`. La conversion n'est pas
+ * cosmétique — sans elle, l'identification tombe silencieusement.
+ *
+ * @param {string} token
+ * @returns {object|null}
+ */
+export function decodeAccessToken(token) {
+  const seg = String(token || '').split('.');
+  if (seg.length !== 3) return null;
+  try {
+    const b64 = seg[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')));
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Retrouve la personne courante dans la liste de partage du document.
+ *
+ * `GET {baseUrl}/access` renvoie les collaborateurs ; l'`id` y est de même
+ * nature que le `userId` du jeton. Le droit d'appeler cet endpoint avec un
+ * jeton de document n'est **pas garanti** — l'appelant doit traiter l'échec
+ * comme un cas normal, pas comme une erreur.
+ *
+ * @param {any} payload réponse de /access
+ * @param {number|null} userId
+ * @returns {{name: string|null, email: string|null, access: string|null}|null}
+ */
+export function userFromAccessList(payload, userId) {
+  if (userId == null) return null;
+  const users = Array.isArray(payload?.users) ? payload.users : null;
+  if (!users) return null;
+  const moi = users.find((u) => u && u.id === userId);
+  if (!moi) return null;
+  return {
+    name: moi.name || null,
+    email: moi.email || null,
+    access: moi.access || moi.parentAccess || null,
+  };
+}
+
+/**
+ * Initiales d'affichage. Gère « Quentin Leroy » comme « nicolas.laval »,
+ * et retombe sur l'email quand le nom manque.
+ *
+ * @returns {string|null} une ou deux lettres majuscules
+ */
+export function initialsFrom(name, email) {
+  const source = String(name || '').trim() || String(email || '').split('@')[0] || '';
+  const mots = source.split(/[\s._-]+/).filter(Boolean);
+  if (!mots.length) return null;
+  const lettres = (mots.length >= 2 ? [mots[0], mots[1]] : [mots[0]])
+    .map((m) => m[0])
+    .join('');
+  return lettres.toUpperCase().slice(0, 2) || null;
 }
 
 /** @param {boolean} viewMode */
