@@ -13,10 +13,15 @@ import {
   loadSceneManifestLayers,
   materializeDeferredLayer,
   boundsFromVisibleLayers,
-} from './lib/scene-loader.js?v=1.0.0';
-import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.0.0';
-import { pointFallbackZoom, centroidCollection } from './lib/point-fallback.js?v=1.0.0';
-import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.0.0';
+} from './lib/scene-loader.js?v=1.1.0';
+import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.0';
+import { pointFallbackZoom, centroidCollection } from './lib/point-fallback.js?v=1.1.0';
+import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.0';
+import {
+  moveSequence, displayOrder, moveLayerInStack, insertionIndex, sortByRank,
+  dropIndex, reorderByDrop,
+} from './lib/layer-order.js?v=1.1.0';
+import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.0';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -25,7 +30,7 @@ import {
   saveFeaturesToSource,
   startScenePolling,
   refreshLayerFromTable,
-} from './lib/grist-sync.js?v=1.0.0';
+} from './lib/grist-sync.js?v=1.1.0';
 import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
@@ -34,13 +39,13 @@ import {
   normalizePropertyValue,
   parsePropertyNumber,
   resolveFeaturePropertyKey,
-} from './lib/declarative-style.js?v=1.0.0';
+} from './lib/declarative-style.js?v=1.1.0';
 import {
   scanGeoTables,
   detectGeometryColumn,
   tableToGeoJSON,
   isLinkedTableLayer,
-} from './lib/geo-tables.js?v=1.0.0';
+} from './lib/geo-tables.js?v=1.1.0';
 import {
   layerFieldNames,
   controlFieldType,
@@ -55,21 +60,21 @@ import {
   repairSelectControlFromManifest,
   applyStoryControlsToLayer,
   sanitizeBrokenSelectFilters,
-} from './lib/controls.js?v=1.0.0';
+} from './lib/controls.js?v=1.1.0';
 import {
   captureStoryState,
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=1.0.0';
+} from './lib/story.js?v=1.1.0';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
-} from './lib/manifest-binding.js?v=1.0.0';
+} from './lib/manifest-binding.js?v=1.1.0';
 import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
-} from './lib/viewport.js?v=1.0.0';
+} from './lib/viewport.js?v=1.1.0';
 import {
   parseAtlasMode,
   resolveAccess,
@@ -79,16 +84,16 @@ import {
   shouldEnableLight3d,
   parseNo3dParam,
   probeCanWriteDoc,
-} from './lib/view-mode.js?v=1.0.0';
+} from './lib/view-mode.js?v=1.1.0';
 import {
   createDefaultViewerControls,
   getViewerControl,
   setViewerExposed as setViewerExposedFn,
-} from './lib/viewer-controls.js?v=1.0.0';
+} from './lib/viewer-controls.js?v=1.1.0';
 import {
   loadScenePrefs,
   saveScenePrefs,
-} from './lib/scene-prefs.js?v=1.0.0';
+} from './lib/scene-prefs.js?v=1.1.0';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
@@ -182,6 +187,7 @@ let _storyPresenting = false;
 let _openDockPill = null;
 let _sunArcDragging = false;
 let _preStorySnapshot = null;
+let _preStoryOrder = null;
 let _persistStoryTimer = null;
 let _cameraSaveTimer = null;
 let _initialViewportApplied = false;
@@ -1273,6 +1279,8 @@ function addLayerToMap(layer) {
             console.warn('[Atlas] addLayerToMap : pas de layer MapLibre pour', layer.name, '(features:', nFeats, ')');
             return false;
         }
+        // La couche vient d'être empilée au sommet : remettre la pile d'aplomb.
+        applyLayerOrder();
         return true;
     } catch (e) {
         console.error('[Atlas] addLayerToMap échoué:', layer.name, e);
@@ -1503,6 +1511,125 @@ function reconcilePanelVisibilityToMap() {
     return { ok, fixed, missing };
 }
 
+/**
+ * Glisser-déposer de l'ordre des couches — souris, doigt et stylet.
+ *
+ * Pointer Events plutôt que mouse + touch en double : un seul code pour tous
+ * les pointeurs, et `setPointerCapture` garde le geste même si le doigt sort
+ * de la poignée. `touch-action: none` sur la poignée est indispensable, sinon
+ * le navigateur interprète le mouvement comme un défilement et vole le geste.
+ *
+ * Le glissement ne démarre qu'au-delà d'un seuil : un simple appui reste un
+ * appui, et n'empêche pas de sélectionner la couche.
+ */
+const DRAG_SEUIL_PX = 4;
+/** Appui long tactile : durée avant bascule, et tremblement toléré. */
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_TOLERANCE_PX = 8;
+
+/**
+ * Capture du pointeur, sans faire échouer le geste si elle est refusée.
+ *
+ * `setPointerCapture` lève quand le pointeur n'est plus actif — relâchement
+ * arrivé entre l'événement et son traitement. L'exception interromprait alors
+ * le gestionnaire avant même d'avoir armé le glissement.
+ */
+function capturePointer(el, pointerId) {
+    try { el?.setPointerCapture?.(pointerId); } catch (_) { /* pointeur déjà parti */ }
+}
+
+function wireLayerReorder(root) {
+    if (!root || CONFIG.viewMode) return;
+    const lignes = () => Array.from(root.querySelectorAll('.layer-item'));
+
+    root.querySelectorAll('.layer-grip').forEach((grip) => {
+        grip.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const id = grip.dataset.layer;
+            const depart = lignes().findIndex((el) => el.dataset.layer === id);
+            if (depart < 0) return;
+
+            const y0 = ev.clientY;
+            let actif = false;
+            let cible = depart;
+            let yCourant = y0;
+            let boucle = 0;
+            const ligne = lignes()[depart];
+            const repere = document.createElement('div');
+            repere.className = 'layer-drop-line';
+
+            // Position de dépôt + repère visuel, recalculés depuis la dernière
+            // ordonnée connue : le défilement automatique déplace les lignes
+            // sous un pointeur immobile.
+            const majCible = () => {
+                const rects = lignes().map((el) => el.getBoundingClientRect());
+                cible = dropIndex(rects, yCourant);
+                // Repère d'insertion : sans lui, on lâche à l'aveugle.
+                const ref = lignes()[cible];
+                if (ref) ref.parentNode.insertBefore(repere, ref);
+                else root.querySelector('.layer-list')?.appendChild(repere);
+            };
+
+            // Au doigt, aucune molette ne vient défiler pendant le glissement :
+            // sans cela, une couche ne pourrait pas sortir de la portion visible.
+            const defiler = () => {
+                if (!actif) return;
+                const pas = edgeScrollStep(root.getBoundingClientRect(), yCourant);
+                if (pas) { root.scrollTop += pas; majCible(); }
+                boucle = requestAnimationFrame(defiler);
+            };
+
+            const bouger = (e) => {
+                yCourant = e.clientY;
+                if (!actif) {
+                    if (Math.abs(e.clientY - y0) < DRAG_SEUIL_PX) return;
+                    actif = true;
+                    ligne.classList.add('dragging');
+                    boucle = requestAnimationFrame(defiler);
+                }
+                majCible();
+            };
+
+            const finir = () => {
+                cancelAnimationFrame(boucle);
+                grip.releasePointerCapture?.(ev.pointerId);
+                grip.removeEventListener('pointermove', bouger);
+                grip.removeEventListener('pointerup', finir);
+                grip.removeEventListener('pointercancel', finir);
+                repere.remove();
+                ligne.classList.remove('dragging');
+                if (!actif) return;
+                const avant = STATE.layers.map((l) => l.id).join('|');
+                STATE.layers = reorderByDrop(STATE.layers, depart, cible);
+                if (STATE.layers.map((l) => l.id).join('|') === avant) return;
+                applyLayerOrder();
+                updateLegend();
+                refreshLayersPanelIfOpen();
+                // Tous les rangs : un rang partiel se relit mal (cf. sortByRank).
+                STATE.layers.forEach((l, k) => { l._rank = k; saveLayerPrefIfSynced(l); });
+            };
+
+            capturePointer(grip, ev.pointerId);
+            grip.addEventListener('pointermove', bouger);
+            grip.addEventListener('pointerup', finir);
+            grip.addEventListener('pointercancel', finir);
+        });
+
+        // Équivalent clavier — même geste, sans pointeur.
+        grip.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+            e.preventDefault();
+            const id = grip.dataset.layer;
+            A.moveLayerRank(id, e.key === 'ArrowUp' ? 'up' : 'down', e);
+            // Le panneau est reconstruit : rendre le focus à la même poignée.
+            setTimeout(() => {
+                root.querySelector(`.layer-grip[data-layer="${id}"]`)?.focus();
+            }, 0);
+        });
+    });
+}
+
 function refreshLayersPanelIfOpen() {
     if (STATE.currentModule === 'couches' || STATE.currentModule === 'symbo') {
         renderLayersPanel(STATE.currentModule);
@@ -1510,9 +1637,24 @@ function refreshLayersPanelIfOpen() {
 }
 
 /** Resynchronise toutes les couches (rechargement, prefs Grist, sortie récit). */
+/**
+ * Rétablit l'ordre d'affichage sur la carte.
+ *
+ * À appeler après tout (re)montage : MapLibre ajoute au sommet, donc une couche
+ * remontée passerait devant les autres. Sans cela, l'ordre dépend de
+ * l'historique des clics et non de `STATE.layers`.
+ */
+function applyLayerOrder() {
+    if (!map?.isStyleLoaded()) return;
+    for (const id of moveSequence(STATE.layers, (i) => !!map.getLayer(i))) {
+        try { map.moveLayer(id); } catch (_) { /* couche retirée entre-temps */ }
+    }
+}
+
 function syncAllLayersToMap() {
     if (!map?.isStyleLoaded()) return;
     STATE.layers.forEach(syncLayerToMapState);
+    applyLayerOrder();
     reconcilePanelVisibilityToMap();
     Models3D.rebuildScene();
     updateLegend();
@@ -1606,6 +1748,9 @@ function capturePreStorySnapshot() {
         // d'origine, la scène resterait extrudée après la présentation.
         polygonMode: l.style?.polygonMode || null,
     }));
+    // Une étape peut imposer son ordre de superposition : il faut pouvoir
+    // rendre à l'utilisateur celui qu'il avait réglé.
+    _preStoryOrder = STATE.layers.map((l) => l.id);
 }
 
 function restorePreStorySnapshot() {
@@ -1625,6 +1770,11 @@ function restorePreStorySnapshot() {
             l._declarative = JSON.parse(JSON.stringify(snap.declarative));
             applyDeclarativeToLayer(l, l._declarative);
         }
+    }
+    if (_preStoryOrder) {
+        STATE.layers = sortByRank(STATE.layers,
+            Object.fromEntries(_preStoryOrder.map((id, i) => [id, i])));
+        _preStoryOrder = null;
     }
     _preStorySnapshot = null;
 }
@@ -1731,6 +1881,18 @@ function reapplyStoryFilters(state) {
 function applyStoryState(s) {
     if (!s || !map) return;
     _storyPresenting = true;
+
+    // L'ordre de superposition fait partie de l'étape : il est déjà enregistré
+    // dans la position des couches (captureStoryState les liste dans l'ordre de
+    // STATE.layers), y compris dans les récits antérieurs à cette lecture.
+    if ((s.layers || []).length) {
+        const rangs = {};
+        s.layers.forEach((ls, i) => {
+            const l = findStoryLayer(ls);
+            if (l) rangs[l.sourceTable || l.id] = i;
+        });
+        STATE.layers = sortByRank(STATE.layers, rangs);
+    }
 
     const cited = new Set();
     (s.layers || []).forEach((ls) => {
@@ -1921,11 +2083,24 @@ function renderLayersPanel(mode) {
             </div>
         </div>
         <div class="layer-list">
-            ${STATE.layers.map((l) => {
+            ${displayOrder(STATE.layers).map((l) => {
                 const is3D = l.style?.mode === 'library' || l.style?.mode === 'custom';
                 const visible = l.visible !== false;
                 const linked = isLinkedTableLayer(l);
-                return `<div class="layer-item ${STATE.selectedLayer === l.id ? 'active' : ''}" onclick="A.selectLayer('${l.id}')">
+                const sel = STATE.selectedLayer === l.id;
+                // Réordonnancement sur la seule couche sélectionnée : la ligne
+                // porte déjà cinq commandes. Désactivés aux bornes plutôt que
+                // masqués — la ligne garderait sinon une largeur changeante.
+                // Poignée dédiée : la ligne entière porte déjà la sélection, un
+                // glissement sur elle se battrait avec le clic.
+                // Poignée focalisable : le glissement seul exclurait la
+                // navigation au clavier (Tab pour l'atteindre, ↑/↓ pour déplacer).
+                const poignee = CONFIG.viewMode ? ''
+                    : `<span class="layer-grip" data-layer="${l.id}" tabindex="0" role="button"
+                        aria-label="Réordonner ${l.name} — glisser, ou flèches haut et bas"
+                        title="Glisser pour réordonner (ou ↑ ↓ au clavier)">⠿</span>`;
+                return `<div class="layer-item ${sel ? 'active' : ''}" data-layer="${l.id}" onclick="A.selectLayer('${l.id}')">
+                    ${poignee}
                     <span class="layer-vis ${visible ? 'on' : ''}" onclick="A.toggleLayer('${l.id}', event)">${visible ? '👁' : '🚫'}</span>
                     <span class="layer-swatch" style="background:${l.color}"></span>
                     <div class="layer-info">
@@ -1946,13 +2121,15 @@ function renderLayersPanel(mode) {
                 ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">🔗 Table</button>` : ''}
             </div>
         </div>`;
+    wireLayerReorder(body);
 }
 
 /** Liste couches en lecture : légende + zoom, sans paramétrage. */
 function renderLayersPanelLecture() {
     $('module-title').textContent = 'Légende';
     const body = $('module-body');
-    const visible = STATE.layers.filter((l) => l.visible !== false);
+    // Même sens de lecture que le panneau d'édition : le dessus en premier.
+    const visible = displayOrder(STATE.layers).filter((l) => l.visible !== false);
     if (!visible.length) {
         body.innerHTML = `<div class="empty"><div class="ic">🗺️</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
         return;
@@ -2655,7 +2832,8 @@ function buildLayerLegendHtml(layer) {
 
 function updateLegend() {
     const body = $('legend-body');
-    const vis = STATE.layers.filter((l) => l.visible !== false);
+    // La légende énumère dans le même sens que les panneaux : dessus d'abord.
+    const vis = displayOrder(STATE.layers).filter((l) => l.visible !== false);
     if (vis.length === 0) { body.innerHTML = '<div class="legend-empty">Aucune couche visible</div>'; return; }
     const html = vis.map(buildLayerLegendHtml).join('');
     body.innerHTML = html || '<div class="legend-empty">Aucun objet visible</div>';
@@ -3134,17 +3312,17 @@ function hitLayerIds() {
     return STATE.layers.filter((l) => map.getLayer(l.id)).map((l) => l.id);
 }
 function setupInteraction() {
-    let boxStart = null, boxEl = null, boxing = false;
+    let boxStart = null, boxEl = null, boxing = false, boxJustEnded = false;
 
     map.on('mousemove', (e) => {
-        if (boxing || locationPickMode) return;
+        if (boxing || boxJustEnded || locationPickMode) return;
         const ids = hitLayerIds();
         const feats = ids.length ? map.queryRenderedFeatures(e.point, { layers: ids }) : [];
         map.getCanvas().style.cursor = feats.length ? (STATE.selection.mode ? 'crosshair' : 'pointer') : (STATE.selection.mode ? 'crosshair' : '');
     });
 
     map.on('click', (e) => {
-        if (boxing) return;
+        if (boxing || boxJustEnded) return;
         if (locationPickMode) { onLocationPick(e); return; }
         const ids = hitLayerIds();
         const feats = ids.length ? map.queryRenderedFeatures(e.point, { layers: ids }) : [];
@@ -3171,34 +3349,93 @@ function setupInteraction() {
         }
     });
 
+    // Sélection rectangulaire — Maj + glisser à la souris, appui long au doigt.
+    //
+    // Le doigt n'a pas de touche Maj, et un simple glissement doit rester le
+    // déplacement de la carte : on attend donc une pression immobile avant de
+    // prendre la main. C'est le geste habituel pour « saisir » sur mobile.
     const cc = map.getCanvasContainer();
-    cc.addEventListener('mousedown', (e) => {
-        if (CONFIG.viewMode) return;
-        if (!STATE.selection.mode || !e.shiftKey) return;
-        map.dragPan.disable(); boxing = true;
-        boxStart = { x: e.clientX, y: e.clientY };
-        boxEl = document.createElement('div'); boxEl.className = 'selection-box';
-        document.body.appendChild(boxEl); e.preventDefault();
+    let boxLast = null, longPress = 0, armeDepuis = null;
+
+    const annulerAppuiLong = () => {
+        clearTimeout(longPress);
+        longPress = 0;
+        armeDepuis = null;
+    };
+
+    const demarrerBox = (x, y, pointerId) => {
+        map.dragPan.disable();
+        boxing = true;
+        boxStart = { x, y };
+        boxLast = { x, y };
+        boxEl = document.createElement('div');
+        boxEl.className = 'selection-box';
+        document.body.appendChild(boxEl);
+        capturePointer(cc, pointerId);
+    };
+
+    cc.addEventListener('pointerdown', (e) => {
+        if (CONFIG.viewMode || !STATE.selection.mode) return;
+        if (!e.isPrimary) { annulerAppuiLong(); return; } // deux doigts = zoom
+
+        if (e.pointerType === 'mouse') {
+            if (!e.shiftKey) return;
+            demarrerBox(e.clientX, e.clientY, e.pointerId);
+            e.preventDefault();
+            return;
+        }
+
+        armeDepuis = { x: e.clientX, y: e.clientY, id: e.pointerId };
+        longPress = setTimeout(() => {
+            if (!armeDepuis) return;
+            demarrerBox(armeDepuis.x, armeDepuis.y, armeDepuis.id);
+            annulerAppuiLong();
+            // Le rectangle naissant est invisible : sans retour, rien ne dit que
+            // le geste a basculé du déplacement vers la sélection.
+            try { navigator.vibrate?.(15); } catch (_) { /* non supporté */ }
+            showToast('Sélection rectangulaire — glissez', 'info');
+        }, LONG_PRESS_MS);
     });
-    cc.addEventListener('mousemove', (e) => {
+
+    cc.addEventListener('pointermove', (e) => {
+        if (armeDepuis) {
+            // Le doigt part en promenade : c'est un déplacement de carte.
+            const d = Math.hypot(e.clientX - armeDepuis.x, e.clientY - armeDepuis.y);
+            if (d > LONG_PRESS_TOLERANCE_PX) annulerAppuiLong();
+            return;
+        }
         if (!boxing || !boxEl) return;
+        boxLast = { x: e.clientX, y: e.clientY };
         const x0 = Math.min(boxStart.x, e.clientX), y0 = Math.min(boxStart.y, e.clientY);
         boxEl.style.left = x0 + 'px'; boxEl.style.top = y0 + 'px';
         boxEl.style.width = Math.abs(e.clientX - boxStart.x) + 'px';
         boxEl.style.height = Math.abs(e.clientY - boxStart.y) + 'px';
     });
-    const endBox = (e) => {
+
+    // La fin lit la dernière position connue : `pointercancel` n'en porte pas.
+    const endBox = () => {
+        annulerAppuiLong();
         if (!boxing) return;
+        // Fermer tout de suite : la capture livre le `pointerup` à `cc`, d'où il
+        // remonte jusqu'à `window` — sans garde, la sélection serait rejouée.
+        boxing = false;
         map.dragPan.enable();
         const rect = map.getContainer().getBoundingClientRect();
-        const a = [Math.min(boxStart.x, e.clientX) - rect.left, Math.min(boxStart.y, e.clientY) - rect.top];
-        const b = [Math.max(boxStart.x, e.clientX) - rect.left, Math.max(boxStart.y, e.clientY) - rect.top];
+        const fin = boxLast || boxStart;
+        const a = [Math.min(boxStart.x, fin.x) - rect.left, Math.min(boxStart.y, fin.y) - rect.top];
+        const b = [Math.max(boxStart.x, fin.x) - rect.left, Math.max(boxStart.y, fin.y) - rect.top];
         if (boxEl) { boxEl.remove(); boxEl = null; }
         if (b[0] - a[0] > 4 && b[1] - a[1] > 4) selectInBox(a, b);
-        setTimeout(() => { boxing = false; }, 60);
+        // Le `click` de fin de geste arrive après : le laisser passer viderait
+        // la sélection qu'on vient tout juste de faire.
+        boxJustEnded = true;
+        setTimeout(() => { boxJustEnded = false; }, 60);
     };
-    cc.addEventListener('mouseup', endBox);
-    document.addEventListener('mouseup', (e) => { if (boxing) { map.dragPan.enable(); if (boxEl) { boxEl.remove(); boxEl = null; } boxing = false; } });
+    cc.addEventListener('pointerup', endBox);
+    cc.addEventListener('pointercancel', endBox);
+    // Filet : un relâchement hors carte (fenêtre, iframe voisine) doit rendre
+    // la main au déplacement plutôt que de laisser la carte figée.
+    window.addEventListener('pointerup', endBox);
 }
 
 let _viewPopup = null;
@@ -3468,7 +3705,9 @@ function makeLayer(name, geomType, geojson, category, modelId) {
     return layer;
 }
 function finalizeNewLayer(layer) {
-    STATE.layers.push(layer);
+    // Empiler au sommet mettrait un bâti importé après un réseau par-dessus lui.
+    // On insère sous les géométries plus fines : surfaces, puis lignes, puis points.
+    STATE.layers.splice(insertionIndex(STATE.layers, layer.geometryType), 0, layer);
     addLayerToMap(layer);
     updateRailBadge();
     fitToLayer(layer);
@@ -3846,6 +4085,11 @@ async function loadFromSceneManifest() {
             }
         }
         STATE.layers.push(...layers);
+        // Rangs enregistrés : les prefs priment sur l'ordre du manifest, comme
+        // pour le reste du style. Sans rang, l'ordre du manifest est conservé.
+        STATE.layers = sortByRank(STATE.layers, Object.fromEntries(
+            STATE.layers.filter((l) => Number.isFinite(l._rank)).map((l) => [l.sourceTable || l.id, l._rank])
+        ));
         layers.forEach((layer) => {
             (layer.controls || []).forEach((c) => repairSelectControlFromManifest(layer, c));
             sanitizeBrokenSelectFilters(layer);
@@ -4482,6 +4726,31 @@ const A = {
             renderLayersPanel(STATE.currentModule);
         }
     },
+    /**
+     * Déplace une couche d'un cran dans la pile.
+     * `direction` est visuelle : 'up' = passer au-dessus.
+     */
+    moveLayerRank(id, direction, e) {
+        e?.stopPropagation?.();
+        if (CONFIG.viewMode) {
+            showToast('Mode lecture — ordre figé par l’éditeur', 'warning');
+            return;
+        }
+        const avant = STATE.layers.map((l) => l.id).join('|');
+        STATE.layers = moveLayerInStack(STATE.layers, id, direction);
+        if (STATE.layers.map((l) => l.id).join('|') === avant) return; // borne
+        applyLayerOrder();
+        updateLegend();
+        refreshLayersPanelIfOpen();
+        // Enregistrer TOUS les rangs, pas seulement les deux couches échangées :
+        // un rang partiel se relit mal, les couches sans rang étant reléguées
+        // après celles qui en ont — donc au-dessus, ce qui inverserait la scène.
+        STATE.layers.forEach((l, k) => {
+            l._rank = k;
+            saveLayerPrefIfSynced(l);
+        });
+    },
+
     toggleLayer(id, e) {
         if (CONFIG.viewMode) {
             e?.stopPropagation?.();
@@ -4565,7 +4834,10 @@ const A = {
     editLayerObjects(id) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         enterSelectionMode(id);
-        showToast('Cliquez un objet à éditer · Maj+glisser = zone · ✓ Tout = toute la couche', 'info');
+        // L'astuce du geste dépend du matériel : l'annoncer au doigt évite de
+        // chercher une touche Maj qui n'existe pas.
+        const zone = matchMedia?.('(pointer: coarse)')?.matches ? 'Appui long = zone' : 'Maj+glisser = zone';
+        showToast(`Cliquez un objet à éditer · ${zone} · ✓ Tout = toute la couche`, 'info');
     },
     setModelSet(set) {
         MODEL_LIBRARY.set = set; STATE.settings.modelSet = set;
@@ -4919,32 +5191,25 @@ function wireMapControlsDock() {
             updateLighting();
             if (STATE.currentModule === 'soleil') renderSoleil();
         };
-        host.addEventListener('mousedown', (e) => {
+        // Pointer Events : un seul jeu d'écouteurs pour souris, doigt et stylet.
+        // La capture est prise sur l'hôte, pas sur l'arc : `renderDockSlotHost`
+        // peut reconstruire l'arc en cours de geste, ce qui perdrait la capture.
+        host.addEventListener('pointerdown', (e) => {
             const arc = e.target.closest('.sun-arc');
             if (!arc) return;
             _sunArcDragging = true;
+            capturePointer(host, e.pointerId);
             arcSet(e.clientX, arc);
             e.preventDefault();
         });
-        host.addEventListener('touchstart', (e) => {
-            const arc = e.target.closest('.sun-arc');
-            if (!arc || !e.touches[0]) return;
-            _sunArcDragging = true;
-            arcSet(e.touches[0].clientX, arc);
-            e.preventDefault();
-        }, { passive: false });
-        window.addEventListener('mousemove', (e) => {
+        host.addEventListener('pointermove', (e) => {
             if (!_sunArcDragging) return;
             const arc = host.querySelector('.sun-arc');
             if (arc) arcSet(e.clientX, arc);
         });
-        window.addEventListener('touchmove', (e) => {
-            if (!_sunArcDragging || !e.touches[0]) return;
-            const arc = host.querySelector('.sun-arc');
-            if (arc) arcSet(e.touches[0].clientX, arc);
-        }, { passive: true });
-        window.addEventListener('mouseup', () => { _sunArcDragging = false; });
-        window.addEventListener('touchend', () => { _sunArcDragging = false; });
+        const finArc = () => { _sunArcDragging = false; };
+        host.addEventListener('pointerup', finArc);
+        host.addEventListener('pointercancel', finArc);
     }
 }
 

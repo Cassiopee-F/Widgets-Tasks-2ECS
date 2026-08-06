@@ -86,6 +86,9 @@ export function layerPrefsPayload(layer) {
     // Rendu surfacique (à plat / en volume) : réglage d'apparence à part
     // entière, il doit survivre au rechargement comme le reste du style.
     polygonMode: layer.style?.polygonMode || null,
+    // Rang de superposition. Sans lui, un ordre réglé se perdrait au
+    // rechargement — le réglage ne servirait qu'à la session en cours.
+    rank: Number.isFinite(layer._rank) ? layer._rank : null,
     symbolization: layer.style?.symbolization || null,
     controls: controlsPrefsPayload(layer),
     declarative: declarativeFromAtlasLayer(layer),
@@ -118,6 +121,9 @@ export function applyLayerPrefsBinding(layer, prefs) {
     if (payload.polygonMode) {
       layer.style = { ...layer.style, polygonMode: payload.polygonMode };
     }
+
+    // Le tri effectif revient à l'appelant, qui voit toutes les couches.
+    if (Number.isFinite(payload.rank)) layer._rank = payload.rank;
 
     if (payload.controls?.length) {
       applyControlsFromPrefs(layer, payload.controls);

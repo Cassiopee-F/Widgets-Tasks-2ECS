@@ -76,6 +76,36 @@ Interop **qgis2grist → Scene Manifest → Atlas** (style + contrôles + récit
 - [ ] Contrôle géolocalisation MapLibre utilisable
 - [ ] `?no3d=1` : pas de rebuild Models3D lourd
 
+## 9. Gestes — souris, doigt, stylet
+
+Atlas passe partout par les **Pointer Events** : un seul chemin de code pour les
+trois matériels. Les points ci-dessous se vérifient à la souris, mais seuls un
+écran tactile ou l'émulation tactile de DevTools montrent le comportement du
+doigt — les tests unitaires n'en voient rien.
+
+### Ordre des couches (panneau Couches)
+
+- [ ] Poignée ⠿ : glisser une couche → repère d'insertion, dépôt, carte repeinte
+- [ ] L'ordre survit au rechargement (rangs enregistrés dans `Atlas_LayerPrefs`)
+- [ ] Liste plus haute que le panneau : glisser vers le bord **fait défiler**
+- [ ] Poignée au clavier (Tab puis ↑ ↓) : même déplacement
+- [ ] Au doigt, le glissement sur la poignée ne fait pas défiler la page
+
+### Arc solaire (dock carte)
+
+- [ ] Poser puis glisser sur l'arc règle l'heure ; relâcher arrête le suivi
+- [ ] Au doigt, le geste ne déplace ni ne zoome la carte (`touch-action: none`)
+
+### Sélection rectangulaire (mode édition d'objets)
+
+- [ ] Souris : **Maj + glisser** trace le rectangle et sélectionne
+- [ ] Doigt : un glissement simple **déplace la carte** (comportement inchangé)
+- [ ] Doigt : **appui long immobile (~0,5 s)** → vibration + toast, puis le
+      glissement trace le rectangle
+- [ ] Doigt : appui long puis relâchement sans bouger → rien de sélectionné
+- [ ] Deux doigts (zoom) pendant l'appui long → pas de rectangle
+- [ ] Après un rectangle, la sélection n'est pas vidée par le clic de fin de geste
+
 ---
 
 ## Critères d’acceptation

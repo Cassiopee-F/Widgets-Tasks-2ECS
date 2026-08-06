@@ -389,6 +389,9 @@
         .sun-arc {
             position: relative; width: 168px; height: 34px;
             cursor: ew-resize; flex-shrink: 0; overflow: hidden;
+            /* Le geste règle l'heure : le navigateur ne doit ni faire défiler
+               ni zoomer pendant qu'on parcourt l'arc au doigt. */
+            touch-action: none;
         }
         .sun-arc svg { display: block; }
         .sun-dot {
@@ -737,6 +740,24 @@
         body.view-mode .header-actions #btn-export,
         /* Le badge dit les droits réels : il reste visible en lecture. */
         .avatar.ro { background: var(--surface-muted); color: var(--ink); }
+
+        /* Poignée de réordonnancement — souris, doigt et stylet.
+           `touch-action:none` est indispensable : sans lui le navigateur
+           interprète le glissement comme un défilement et vole le geste.
+           La cible fait 28px de large pour rester atteignable au doigt. */
+        .layer-grip {
+            flex: 0 0 auto; width: 28px; min-height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: grab; touch-action: none; user-select: none;
+            color: var(--muted); font-size: 15px; line-height: 1;
+        }
+        .layer-grip:active { cursor: grabbing; }
+        .layer-item.dragging { opacity: 0.45; }
+        /* Repère d'insertion : on doit voir où la couche va atterrir. */
+        .layer-drop-line {
+            height: 2px; margin: 1px 6px; border-radius: 2px;
+            background: var(--accent); pointer-events: none;
+        }
         body.view-mode .dirty-dot,
         body.view-mode.dirty .dirty-dot { display: none !important; }
         body.view-mode #map-hud { display: none !important; }
@@ -1084,6 +1105,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app.js?v=1.0.0"></script>
+    <script type="module" src="./app.js?v=1.1.0"></script>
 </body>
 </html>

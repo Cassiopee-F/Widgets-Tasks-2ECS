@@ -12,7 +12,13 @@ const root = path.join(__dirname, '..');
 const src = path.join(root, 'projects', 'Atlas');
 const pub = path.join(root, 'published', 'atlas');
 
-const VERSION = '1.0.0';
+/**
+ * La version vient du package.json publie, elle n'est pas figee ici : ecrite en
+ * dur, elle restait a 1.0.0 d'une publication a l'autre et le `?v=` ne changeait
+ * jamais — les navigateurs servaient l'ancien app.js apres chaque deploiement.
+ * Publier une correction impose donc de monter la version.
+ */
+const VERSION = JSON.parse(fs.readFileSync(path.join(pub, 'package.json'), 'utf8')).version;
 /** Les query strings de cache de dev (?v=2026...) deviennent la version publiee. */
 const normaliserVersions = (code) => code.replace(/\?v=2026[0-9a-z]+/g, `?v=${VERSION}`);
 

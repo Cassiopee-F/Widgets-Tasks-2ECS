@@ -162,6 +162,54 @@ sur une surface, une ligne ou un point rendu en cercle 2D.
   (943, 1906, 1944, 2770, 2865, 2903, 2944), dont **1906, 1944 et 2944 sans la
   condition ponctuelle**. À remplacer par `isModelLayer`.
 
+## Ordre des couches (`lib/layer-order.js`, `lib/edge-scroll.js`)
+
+MapLibre empile dans l’ordre d’ajout et Atlas ajoute toujours au sommet : sans
+remise en ordre, une couche remontée (bascule de visibilité, chargement différé,
+changement de style, repli en points) repasse **devant** les autres. L’ordre
+observé dépendait donc de l’historique des clics.
+
+- **Sens** : la **dernière** couche de `STATE.layers` est peinte **au-dessus**.
+  C’est la sémantique historique — la redéfinir inverserait la superposition de
+  toutes les scènes déjà enregistrées. Seul l’**affichage** est retourné
+  (`displayOrder`), pour respecter l’usage des SIG : le dessus en premier.
+- `applyLayerOrder()` rejoue `moveSequence` après tout (re)montage. Les
+  habillages d’une couche (`-outline`, `-pts`, `-label`) se déplacent **d’un
+  bloc** : séparés, un contour passerait sous son propre remplissage.
+- **Persistance** : `rank` dans le StyleJSON des prefs, relu par `sortByRank`.
+  Une couche sans rang se range **après** celles qui en ont un — d’où
+  l’enregistrement de **tous** les rangs à chaque déplacement, pas seulement des
+  couches déplacées. Un rang partiel donne un ordre faux au rechargement.
+- `insertionIndex` place une nouvelle couche au-dessus des géométries de même
+  rang ou plus grossier, sous les plus fines (surface < ligne < point) — sinon un
+  bâti importé recouvre la voirie.
+- **Glisser-déposer** : poignée ⠿ (`.layer-grip`), Pointer Events avec capture,
+  seuil de 4 px avant bascule, repère d’insertion, équivalent clavier ↑ ↓ sur la
+  poignée focalisable. `edgeScrollStep` fait défiler le panneau quand le pointeur
+  approche d’un bord : au doigt, aucune molette ne vient défiler pendant le
+  geste, et une couche ne pourrait pas sortir de la portion visible.
+
+## Gestes tactiles
+
+Tout passe par les **Pointer Events** — un seul jeu d’écouteurs pour la souris,
+le doigt et le stylet, avec `setPointerCapture` (via `capturePointer`, qui avale
+l’exception si le pointeur est déjà parti) plutôt que des écouteurs `window`.
+
+| Geste | Souris | Doigt |
+|---|---|---|
+| Ordre des couches | glisser la poignée (ou ↑ ↓) | idem + défilement de bord |
+| Arc solaire | glisser | idem, `touch-action: none` sur `.sun-arc` |
+| Sélection rectangulaire | **Maj** + glisser | **appui long** immobile puis glisser |
+
+- L’appui long (`LONG_PRESS_MS`, `LONG_PRESS_TOLERANCE_PX`) est le seul moyen de
+  distinguer « sélectionner » de « déplacer la carte » sans touche Maj. Un
+  mouvement avant l’échéance, ou un second doigt (zoom), annule.
+- Le rectangle naissant étant invisible, la bascule s’annonce par une vibration
+  et un toast — sans quoi rien ne dit que le geste a changé de nature.
+- `boxJustEnded` (et non `boxing`) absorbe le `click` de fin de geste : la garde
+  doit fermer `boxing` **immédiatement**, car la capture livre le `pointerup` à
+  `cc` d’où il remonte jusqu’à `window` — sinon la sélection est rejouée.
+
 ## Repli en points (`lib/point-fallback.js`)
 
 Une maille d’analyse de 200 m mesure moins d’un pixel en vue régionale : le
