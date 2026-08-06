@@ -1,0 +1,18 @@
+{
+  "name": "grist-forms",
+  "version": "1.0.0",
+  "description": "Form Builder Grist — composer, prévisualiser et publier des formulaires intra-doc",
+  "authors": [
+    {
+      "name": "nic01asfr",
+      "url": "https://github.com/nic01asfr"
+    }
+  ],
+  "grist": {
+    "widgetId": "grist-forms-builder",
+    "name": "Form Builder — essence formulaires Grist",
+    "url": "builder.html",
+    "accessLevel": "full",
+    "description": "Questionnaires liés aux tables Grist : conditions, audience, chemins, publication figée intra-doc"
+  }
+}
