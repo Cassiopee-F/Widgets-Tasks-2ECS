@@ -124,7 +124,12 @@ saupoudrer :
    le style détruit toutes les couches)
 4. fin de `applyStoryState()` (lot 3)
 
-## 6. Lot 2 — réordonnancement dans le panneau Couches
+## 6. Lot 2 — réordonner, et que ça tienne
+
+> **Réordonnancement et persistance sont livrés ensemble.** Séparés, on livrerait
+> un réglage qui s'évapore : l'ordre serait perdu au rechargement, et une
+> présentation le casserait — `restorePreStorySnapshot` ne le mémorise pas encore.
+> Le §7 (persistance) fait donc partie de ce lot.
 
 La liste affiche déjà `STATE.layers` dans l'ordre : il n'y a qu'à la rendre
 manipulable.
@@ -149,7 +154,26 @@ incohérente d'un endroit à l'autre :
 - `renderLayersPanelLecture` (mode lecture — ordre respecté, aucun contrôle)
 - `updateLegend` (la légende énumère `STATE.layers` dans l'ordre du tableau)
 
-## 7. Lot 3 — persistance, récit, manifest
+**État des boutons** — à figer maintenant, pas pendant :
+
+| Cas | ▲ | ▼ |
+|---|---|---|
+| couche au sommet de la liste | désactivé (`disabled`, visible) | actif |
+| couche au bas de la liste | actif | désactivé |
+| couche unique | désactivés tous deux | — |
+| mode lecture | absents | absents |
+
+Désactivés plutôt que masqués : une commande qui disparaît fait douter de son
+existence, et la ligne changerait de largeur d'une couche à l'autre.
+
+**Défaut par géométrie à l'insertion** — appartient à ce lot (la convention est
+posée au §4). Les quatre points d'insertion (`app_v7.js` 3439, 3761, 3847, 3927)
+font un `push`, donc placent la nouveauté au-dessus : correct pour une couche
+ajoutée, sauf conflit de type. Un bâti importé après un réseau doit s'insérer
+**sous** les lignes — c'est exactement le cas rencontré à l'étape 9 du récit CRESO,
+où 38 848 bâtiments recouvraient la voirie.
+
+## 7. Lot 2 (suite) — persistance, récit, manifest
 
 **Préférences** : ajouter `rank` (entier) à `layerPrefsPayload`. `Atlas_LayerPrefs`
 porte une ligne par couche, donc le champ y est naturel. Au chargement,
@@ -209,8 +233,11 @@ Dans `tests/layer-order.test.js`, sur le module pur (avec un faux `map` exposant
 - insertion par géométrie : un bâti importé après un réseau passe **sous** lui
 - capture puis restitution de l'ordre par le récit
 - tri par `rank` au chargement des prefs
+- `moveLayerRank` aux bornes : ▲ sur la couche du sommet ne change rien et ne
+  sort pas du tableau ; idem ▼ au bas
+- une couche masquée garde son rang (elle n'est pas peinte, mais elle compte)
 
-À ajouter au harnais existant (129 tests verts aujourd'hui).
+À ajouter au harnais existant (**167 tests verts** aujourd'hui).
 
 ## 10. Risques
 
@@ -224,15 +251,24 @@ Dans `tests/layer-order.test.js`, sur le module pur (avec un faux `map` exposant
 | Coût de rendu | ~7 couches × ≤4 habillages = moins de 30 appels par synchro, négligeable |
 | Surcharge visuelle du panneau | ▲▼ sur la seule couche sélectionnée |
 
-## 11. Séquencement proposé
+## 11. Séquencement
 
-**Lot 1** — module + `applyLayerOrder()` + 3 points d'appel + tests. Corrige à lui
-seul le défaut révélé par le récit ; aucun changement visible d'interface.
+**Lot 1 — l'ordre devient déterministe.** Module testable + `applyLayerOrder()` +
+ses points d'appel. Corrige à lui seul le défaut de fond — l'ordre qui se
+réorganise au gré des clics — sans rien changer à l'interface. Livrable et
+vérifiable seul.
 
-**Lot 2** — ▲▼ sur la couche sélectionnée + défaut par géométrie à l'insertion.
+**Lot 2 — l'ordre devient réglable et durable.** ▲▼ sur la couche sélectionnée,
+inversion des trois surfaces d'affichage, défaut par géométrie à l'insertion,
+`rank` dans les préférences, ordre appliqué et restauré par le récit (§7).
 
-**Lot 3** — `rank` dans les prefs, ordre appliqué et restauré par le récit.
+Ces deux étapes suffisent. Ce qui était appelé « lot 3 » est intégré au lot 2 :
+livrer le réglage sans la persistance donnerait un ordre perdu au rechargement et
+cassé par la première présentation — une fonctionnalité qui déçoit plutôt qu'elle
+ne sert.
 
-Les lots 1 et 2 suffisent à un fonctionnement correct **dans la session**. Le lot 3
-apporte la persistance et rend l'étape 9 du récit CRESO capable de montrer bâti et
-réseau superposés.
+Volume attendu : ~60 lignes pour le lot 1, ~110 pour le lot 2, plus les tests.
+
+**Vérification obligatoire à l'écran** pour le lot 2 : les tests unitaires ne
+voient pas un ordre de peinture. Rejouer le récit CRESO — et en particulier
+l'étape 9, où bâti et réseau devront enfin coexister.
