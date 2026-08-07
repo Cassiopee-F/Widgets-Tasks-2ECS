@@ -162,6 +162,50 @@ sur une surface, une ligne ou un point rendu en cercle 2D.
   (943, 1906, 1944, 2770, 2865, 2903, 2944), dont **1906, 1944 et 2944 sans la
   condition ponctuelle**. À remplacer par `isModelLayer`.
 
+## Montage des couches — `isStyleLoaded()` n’est pas le bon prérequis
+
+`map.isStyleLoaded()` signifie « le style **et toutes ses sources** sont
+chargés ». Le montage d’une couche volumineuse (42 182 polygones, cas CRESO) le
+fait retomber à faux le temps d’indexer sa source. L’utiliser comme garde pour
+*ajouter* une couche, dans une boucle qui ajoute des couches, **fait abandonner
+tout ce qui suit la première couche lourde** — et la reprogrammation rejoue le
+même ordre, donc le même abandon. Résultat observé : sur sept couches, une seule
+peinte, la légende annonçant trois couches visibles que la carte ne montrait pas.
+
+- `mapStyleUsable()` remplace ce garde partout où l’on monte ou réordonne des
+  couches. Elle suit `_styleUsable`, posé par `onStyleReady` (donc sur `load` et
+  après chaque `setStyle`) et levé juste avant un changement de fond.
+- **`map.once('load', …)` posé après le démarrage ne part jamais** : `load` ne
+  survient qu’une fois. `scheduleMapLayersSync` attend désormais `idle`, qui
+  revient à chaque stabilisation — sans quoi la reprise était définitivement
+  perdue après un changement de fond.
+- Le garde-fou `reconcilePanelVisibilityToMap` était lui-même désarmé par le
+  même test : il ne voyait rien à réparer. C’est ce qui a laissé le défaut
+  invisible.
+
+Repère : le défaut ne se manifeste que si une couche est assez lourde pour
+occuper le style d’une passe à l’autre. Sur une scène légère, tout finit par
+monter — d’où des années sans le voir.
+
+## Scan des tables géo — métadonnées seulement
+
+`scanGeoTables` détecte les colonnes géométriques dans `_grist_Tables_column`,
+**jamais en lisant les données**. Télécharger chaque table pour y chercher un nom
+de colonne rapatriait le document entier : **≈ 126 Mo mesurés** sur la scène
+CRESO, dont 68 Mo pour une table pourtant déclarée masquée, et le balayage était
+répété deux à trois fois. Après correction : **≈ 27 Mo**, et plus aucune table
+non géographique.
+
+- Conséquence assumée : le scan ne connaît ni le nombre d’entités ni le type de
+  géométrie. `geoTableMeta()` ne les affiche donc pas — annoncer « 0 obj. »
+  serait faux. `linkTableFromGrist` charge la table au clic, seul moment où elle
+  est nécessaire.
+- Le scan ne tourne plus au chargement de scène : il ne sert qu’à la liste
+  « tables géo du document · à afficher » du panneau Couches, et se déclenche à
+  son ouverture.
+- Tests : `tests/geo-tables-scan.test.js` — le faux `docApi` **lève** si on lit
+  autre chose que les deux tables de métadonnées. C’est la garde anti-régression.
+
 ## Ordre des couches (`lib/layer-order.js`, `lib/edge-scroll.js`)
 
 MapLibre empile dans l’ordre d’ajout et Atlas ajoute toujours au sommet : sans

@@ -172,6 +172,12 @@ const STATE = {
 };
 
 let map = null;
+/**
+ * Le style de base est-il posé ? Vrai dès `load`, faux le temps d'un
+ * changement de fond. Sert de prérequis au montage des couches — voir
+ * `mapStyleUsable()`.
+ */
+let _styleUsable = false;
 let dirty = false;
 let _scenePollTimer = null;
 let _syncPaused = false;
@@ -1024,6 +1030,9 @@ function applyProjection() {
 }
 
 function onStyleReady() {
+    // Le style de base est en place : les couches peuvent être montées, même
+    // si des sources sont encore en cours de chargement.
+    _styleUsable = true;
     // Projection (globe façon Google Earth, bascule auto vers mercator en zoom)
     applyProjection();
     // 3D buildings come with the Liberty style (fill-extrusion). Toggle visibility.
@@ -1249,7 +1258,7 @@ function removeLayerGfx(layer) {
 }
 
 function addLayerToMap(layer) {
-    if (!map || !map.isStyleLoaded()) return false;
+    if (!mapStyleUsable()) return false;
     try {
         indexFeatures(layer);
         removeLayerGfx(layer);
@@ -1431,9 +1440,28 @@ function prepareLayerFilters(layer) {
 }
 
 /** Aligne une couche MapLibre sur layer.visible + filtres (source de vérité = STATE.layers). */
+/**
+ * Le style est-il en état d'accueillir des sources et des couches ?
+ *
+ * `map.isStyleLoaded()` répond « le style **et toutes ses sources** sont
+ * chargés » — un état que le montage d'une couche volumineuse fait retomber à
+ * faux le temps d'indexer sa source. L'utiliser comme prérequis pour *ajouter*
+ * une couche, dans une boucle qui ajoute des couches, revient à se couper
+ * l'herbe sous le pied : tout ce qui suit la première couche lourde est
+ * abandonné, et la reprogrammation rejoue le même ordre — donc le même abandon.
+ *
+ * Le prérequis réel de `addSource`/`addLayer` est que le style soit *défini*,
+ * ce que MapLibre garantit dès l'événement `load` et jusqu'au prochain
+ * `setStyle`. C'est ce que suit ce drapeau.
+ */
+function mapStyleUsable() {
+    if (!map) return false;
+    return _styleUsable || map.isStyleLoaded();
+}
+
 function syncLayerToMapState(layer) {
     if (!map) return;
-    if (!map.isStyleLoaded()) {
+    if (!mapStyleUsable()) {
         scheduleMapLayersSync();
         return;
     }
@@ -1485,7 +1513,7 @@ function syncLayerToMapState(layer) {
  * Si œil ouvert mais pas de layer MapLibre → remount forcé.
  */
 function reconcilePanelVisibilityToMap() {
-    if (!map?.isStyleLoaded()) return { ok: 0, fixed: 0, missing: [] };
+    if (!mapStyleUsable()) return { ok: 0, fixed: 0, missing: [] };
     let ok = 0;
     let fixed = 0;
     const missing = [];
@@ -1645,14 +1673,14 @@ function refreshLayersPanelIfOpen() {
  * l'historique des clics et non de `STATE.layers`.
  */
 function applyLayerOrder() {
-    if (!map?.isStyleLoaded()) return;
+    if (!mapStyleUsable()) return;
     for (const id of moveSequence(STATE.layers, (i) => !!map.getLayer(i))) {
         try { map.moveLayer(id); } catch (_) { /* couche retirée entre-temps */ }
     }
 }
 
 function syncAllLayersToMap() {
-    if (!map?.isStyleLoaded()) return;
+    if (!mapStyleUsable()) return;
     STATE.layers.forEach(syncLayerToMapState);
     applyLayerOrder();
     reconcilePanelVisibilityToMap();
@@ -1675,13 +1703,16 @@ function scheduleMapLayersSync(afterSync) {
         if (typeof cb === 'function') cb();
         // 2e passe : premier idle parfois trop tôt (style OSM / globe / pitch)
         _mapSyncTimer = setTimeout(() => {
-            if (!map?.isStyleLoaded()) return;
+            if (!mapStyleUsable()) return;
             syncAllLayersToMap();
             updateLegend();
         }, 500);
     };
-    if (!map.isStyleLoaded()) {
-        map.once('load', () => map.once('idle', run));
+    if (!mapStyleUsable()) {
+        // `load` ne survient qu'une fois : y revenir après le démarrage — ou
+        // après un changement de fond — poserait un rappel qui ne partirait
+        // jamais. `idle` revient à chaque stabilisation.
+        map.once('idle', run);
         return;
     }
     if (typeof map.loaded === 'function' && map.loaded()) {
@@ -1711,7 +1742,7 @@ function applyMapLayerVisibility(layer, visible) {
  */
 const DEFERRED_OPTS = {
     onReady: (l) => {
-        if (!map?.isStyleLoaded()) return;
+        if (!mapStyleUsable()) return;
         syncLayerToMapState(l);
         updateLegend();
     },
@@ -1916,6 +1947,11 @@ function applyStoryState(s) {
         if (!l) return;
         syncStoryLayerToMap(l);
     });
+    // Le tri ci-dessus ne touche que `STATE.layers` ; la pile MapLibre, elle, ne
+    // bouge que si une couche est remontée — ce qui n'arrive pas d'une étape à
+    // l'autre quand toutes sont déjà en place. Sans cet appel, le panneau
+    // affiche l'ordre de l'étape et la carte peint l'ordre précédent.
+    applyLayerOrder();
     Models3D.rebuildScene();
     updateLegend();
     if (s.projection && s.projection !== STATE.settings.projection) {
@@ -1974,6 +2010,8 @@ function openModule(name) {
     $('module-foot').style.display = 'none';
 
     if (name === 'lieu') renderLieu();
+    // Le scan des tables géo ne sert qu'à la liste « à afficher » de ce
+    // panneau : il est fait ici, pas au chargement de la scène.
     else if (name === 'couches') { renderLayersPanel(name); refreshGeoTables(); }
     else if (name === 'symbo') renderLayersPanel(name);
     else if (name === 'controles') renderControles();
@@ -2036,6 +2074,17 @@ function renderLieu() {
 }
 
 // ---- Couches ----
+/**
+ * Métadonnées d'une table candidate. Le scan ne lit que les noms de colonnes :
+ * annoncer « 0 obj. » serait faux — mieux vaut ne rien annoncer que du faux.
+ */
+function geoTableMeta(g) {
+    const bits = [];
+    if (Number.isFinite(g.count)) bits.push(`<span>${g.count} obj.</span>`);
+    bits.push(`<span class="badge3d">${g.geomType || 'géo'}</span>`);
+    return bits.join('');
+}
+
 async function refreshGeoTables() {
     if (!CONFIG.grist.ready) { _geoTables = []; return; }
     try { _geoTables = await scanGeoTables(grist.docApi); } catch (e) { _geoTables = []; }
@@ -2050,7 +2099,7 @@ function availableTablesSection() {
     return `<div class="section"><div class="section-title">Tables géo du document · à afficher</div><div class="layer-list">${avail.map((g) => `
         <div class="layer-item" onclick="A.showGeoTable('${String(g.table).replace(/'/g, "\\'")}')">
             <span class="layer-vis" title="Afficher comme couche">＋</span>
-            <div class="layer-info"><div class="layer-name">${g.table}</div><div class="layer-meta"><span>${g.count} obj.</span><span class="badge3d">${g.geomType}</span></div></div>
+            <div class="layer-info"><div class="layer-name">${g.table}</div><div class="layer-meta">${geoTableMeta(g)}</div></div>
             <button class="layer-act" title="Afficher">👁</button>
         </div>`).join('')}</div></div>`;
 }
@@ -3997,7 +4046,6 @@ async function initGrist() {
         await syncStoryFromGrist();
         await syncScenePrefsFromGrist();
         refreshControlsDock();
-        await refreshGeoTables();
         if (CONFIG.viewMode) {
             showToast('Mode lecture — consultation seule', 'warning');
         }
@@ -4017,7 +4065,6 @@ async function initGrist() {
                     await loadLayersFromGrist();
                 }
                 await syncStoryFromGrist();
-                await refreshGeoTables();
                 showToast('Accès limité — mode lecture', 'warning');
             } catch (e2) {
                 console.warn('Grist init lecture:', e2.message);
@@ -4045,7 +4092,7 @@ function mountLoadedLayers(bounds) {
     scheduleMapLayersSync(() => {
         applyInitialViewport(bounds || computeLayersBounds());
         const remount = () => {
-            if (!map?.isStyleLoaded()) return;
+            if (!mapStyleUsable()) return;
             syncAllLayersToMap();
             const r = reconcilePanelVisibilityToMap();
             if (r.fixed) updateLegend();
@@ -4102,7 +4149,6 @@ async function loadFromSceneManifest() {
         }
         const bounds = boundsFromVisibleLayers(layers) || rawBounds;
         mountLoadedLayers(bounds);
-        await refreshGeoTables();
         const visCount = layers.filter((l) => l.visible !== false).length;
         const hiddenBasemap = layers.filter((l) => l.visible === false);
         if (hiddenBasemap.length) {
@@ -4130,7 +4176,7 @@ function startSceneManifestPolling() {
         intervalMs: CONFIG.pollIntervalMs,
         isPaused: () => _syncPaused || dirty || _storyPresenting,
         onLayerUpdated(layer) {
-            if (!map?.isStyleLoaded()) return;
+            if (!mapStyleUsable()) return;
             syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(initSymbolization(layer).color, layer));
             if (_storyPresenting && STATE.story[_storyIdx]?.state) {
                 const stepLayer = STATE.story[_storyIdx].state.layers?.find(
@@ -4436,7 +4482,7 @@ const A = {
         body.innerHTML = `<div class="section-title">Tables géo détectées</div><div class="layer-list">${_linkChoices.map((g, i) => `
             <div class="layer-item" onclick="A.linkTableChoice(${i})">
                 <div class="layer-info"><div class="layer-name">${g.table}${already.has(g.table) ? ' ✓' : ''}</div>
-                <div class="layer-meta"><span>${g.count} obj.</span><span class="badge3d">${g.geomType}</span></div></div>
+                <div class="layer-meta">${geoTableMeta(g)}</div></div>
                 <button class="layer-act" title="Lier comme couche">🔗</button>
             </div>`).join('')}</div>${back}`;
     },
@@ -4921,6 +4967,7 @@ const A = {
         }
         STATE.settings.basemap = k; renderVues();
         const b = BASEMAPS[k];
+        _styleUsable = false; // le style est remplacé : plus rien à monter d'ici là
         map.setStyle(b.style ? b.style() : b.url);
         map.once('idle', onStyleReady);
         refreshControlsDock();

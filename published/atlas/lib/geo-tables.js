@@ -79,28 +79,52 @@ export function tableToGeoJSON(columnar, geomCol) {
   return { type: 'FeatureCollection', features };
 }
 
-/** Scanne le document : tables avec colonne géométrie. */
+/**
+ * Scanne le document : tables portant une colonne géométrie.
+ *
+ * La détection se fait sur les **métadonnées de colonnes**, jamais sur les
+ * données. Télécharger chaque table pour y chercher un nom de colonne revenait
+ * à rapatrier le document entier à chaque ouverture — mesuré à une centaine de
+ * mégaoctets sur une scène de production, dont 68 Mo pour une seule table
+ * déclarée masquée. Ici, deux lectures de tables système suffisent, quel que
+ * soit le volume du document.
+ *
+ * En contrepartie, le nombre d'entités et le type de géométrie ne sont pas
+ * connus : ils demandent les données. L'appelant les affiche donc comme
+ * inconnus, et `linkTableFromGrist` charge la table au moment où l'utilisateur
+ * la choisit — c'est le seul instant où elle est réellement nécessaire.
+ */
 export async function scanGeoTables(docApi, skipTables = GEO_SKIP_TABLES) {
   const out = [];
   if (!docApi) return out;
-  let tables = [];
-  try { tables = await docApi.listTables(); } catch (_) { return out; }
-  for (const t of tables) {
-    if (skipTables.has(t)) continue;
-    try {
-      const data = await docApi.fetchTable(t);
-      const gc = detectGeometryColumn(data);
-      if (!gc) continue;
-      const fc = tableToGeoJSON(data, gc);
-      if (!fc.features.length) continue;
-      out.push({
-        table: t,
-        geometryColumn: gc,
-        geomType: fc.features[0].geometry.type,
-        count: fc.features.length,
-        _data: data,
-      });
-    } catch (_) { /* table illisible */ }
+  let tables;
+  let cols;
+  try {
+    [tables, cols] = await Promise.all([
+      docApi.fetchTable('_grist_Tables'),
+      docApi.fetchTable('_grist_Tables_column'),
+    ]);
+  } catch (_) {
+    return out;
+  }
+
+  const nomParRef = {};
+  (tables?.id || []).forEach((rowId, i) => { nomParRef[rowId] = tables.tableId[i]; });
+
+  const colonnesParTable = {};
+  (cols?.id || []).forEach((_, i) => {
+    const table = nomParRef[cols.parentId[i]];
+    const col = cols.colId[i];
+    if (!table || !col) return;
+    (colonnesParTable[table] = colonnesParTable[table] || {})[col] = true;
+  });
+
+  for (const [table, colonnes] of Object.entries(colonnesParTable)) {
+    // Les tables système ne sont pas des couches candidates.
+    if (skipTables.has(table) || table.startsWith('_grist_') || table.startsWith('GristHidden_')) continue;
+    const gc = detectGeometryColumn(colonnes);
+    if (!gc) continue;
+    out.push({ table, geometryColumn: gc, geomType: null, count: null });
   }
   return out;
 }
