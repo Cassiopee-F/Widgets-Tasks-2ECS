@@ -83,7 +83,15 @@ for (const entry of entries) {
             console.log(`  + ${widget.name} (${widget.widgetId})`);
         }
     } catch (err) {
-        console.error(`  Error reading ${entry.name}/package.json:`, err.message);
+        // Un package.json illisible faisait disparaître son widget du manifest
+        // sans que rien ne s'y oppose : le catalogue partait amputé en
+        // production, et les utilisateurs perdaient le widget de leur sélecteur.
+        // C'est arrivé — des marqueurs de conflit laissés dans
+        // published/qgis2grist/package.json ont retiré deux widgets du
+        // manifest. Mieux vaut ne pas générer de catalogue qu'en générer un faux.
+        console.error(`\nÉchec : ${entry.name}/package.json illisible — ${err.message}`);
+        console.error('Le manifest n\'a pas été régénéré (il serait amputé de ce widget).');
+        process.exit(1);
     }
 }
 
