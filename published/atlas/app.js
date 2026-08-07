@@ -2279,11 +2279,15 @@ function listDockPills() {
     if (edit || getViewerControl(vcs, 'sun')?.exposed) {
         pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
     }
+    // Icônes du dock : s'en tenir aux emoji, avec leur sélecteur de variante
+    // (U+FE0F). Un glyphe symbolique rare — ici `▦` U+25A6 — n'existe pas dans
+    // les polices système courantes, et un emoji sans sélecteur bascule en
+    // rendu texte : dans les deux cas la pastille s'affiche vide, sans erreur.
     if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
-        pills.push({ id: 'view3d', kind: 'env', icon: '▦', label: '2D / 3D' });
+        pills.push({ id: 'view3d', kind: 'env', icon: '🏙️', label: '2D / 3D' });
     }
     if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
-        pills.push({ id: 'basemap', kind: 'env', icon: '🗺', label: 'Fonds' });
+        pills.push({ id: 'basemap', kind: 'env', icon: '🗺️', label: 'Fonds' });
     }
     for (const { layer, c } of collectPublishedControls()) {
         pills.push({
