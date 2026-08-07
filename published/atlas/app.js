@@ -22,6 +22,7 @@ import {
   dropIndex, reorderByDrop,
 } from './lib/layer-order.js?v=1.1.0';
 import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.0';
+import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.0';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -1122,21 +1123,27 @@ function applyInitialViewport(bounds) {
     }
 }
 
+/** Applique une visibilité aux couches du fond d'un type donné. */
+function setBasemapLayersVisibility(type, vis) {
+    for (const id of basemapLayerIds(map.getStyle().layers, type)) {
+        try { map.setLayoutProperty(id, 'visibility', vis); } catch (e) { /* couche retirée */ }
+    }
+}
+
+/**
+ * Bâti en volume du **fond de carte**. Ne touche pas aux couches de données :
+ * une couche Atlas surfacique rendue en volume est elle aussi une
+ * `fill-extrusion`, mais sa visibilité appartient au panneau Couches.
+ */
 function applyBuildingVisibility() {
     const vis = STATE.settings.buildings3D ? 'visible' : 'none';
-    (map.getStyle().layers || []).forEach((l) => {
-        if (l.type === 'fill-extrusion') {
-            try { map.setLayoutProperty(l.id, 'visibility', vis); } catch (e) {}
-        }
-    });
+    setBasemapLayersVisibility('fill-extrusion', vis);
 }
+
+/** Libellés du fond (rues, villes) — pas les étiquettes des couches Atlas. */
 function applyLabelsVisibility() {
     const vis = STATE.settings.labels ? 'visible' : 'none';
-    (map.getStyle().layers || []).forEach((l) => {
-        if (l.type === 'symbol' && !l.id.startsWith('layer-')) {
-            try { map.setLayoutProperty(l.id, 'visibility', vis); } catch (e) {}
-        }
-    });
+    setBasemapLayersVisibility('symbol', vis);
 }
 function addTerrainSource() {
     const cfg = TERRAIN_SOURCES[STATE.settings.terrainSource] || TERRAIN_SOURCES.terrarium;
@@ -2814,7 +2821,7 @@ function renderVues() {
         </div>
         <div class="section">
             <div class="section-title">Rendu 3D</div>
-            <div class="toggle-row"><span class="tlabel">🏢 Bâtiments 3D</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏢 Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')"></div></div>
             <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')"></div></div>
             <label class="input-label" style="margin-top:6px">Source du relief</label>
             <select class="input" onchange="A.setTerrainSource(this.value)">
@@ -2822,7 +2829,7 @@ function renderVues() {
             </select>
             <div class="slider-head" style="margin-top:8px"><span class="lbl">Exagération relief</span><span class="val" id="v-exag">${s.terrainExaggeration}×</span></div>
             <input type="range" class="rng" min="1" max="3" step="0.1" value="${s.terrainExaggeration}" oninput="A.setExag(this.value)">
-            <div class="toggle-row"><span class="tlabel">🏷️ Étiquettes</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏷️ Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')"></div></div>
             <div class="toggle-row"><span class="tlabel">🌫️ Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')"></div></div>
         </div>
         <button class="btn btn-soft btn-full" onclick="A.resetView()">🔄 Réinitialiser la vue</button>`;
