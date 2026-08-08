@@ -24,8 +24,8 @@ import {
 import { edgeScrollStep } from './lib/edge-scroll.js?v=20260806a';
 import { basemapLayerIds } from './lib/basemap-layers.js?v=20260807a';
 import {
-  applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase,
-} from './lib/terrain-base.js?v=20260808a';
+  applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
+} from './lib/terrain-base.js?v=20260808c';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -43,7 +43,9 @@ import {
   normalizePropertyValue,
   parsePropertyNumber,
   resolveFeaturePropertyKey,
-} from './lib/declarative-style.js?v=20260729m';
+  graduatedStops,
+  recolorStops,
+} from './lib/declarative-style.js?v=20260808a';
 import {
   scanGeoTables,
   detectGeometryColumn,
@@ -1408,7 +1410,7 @@ function applyLineStyle(layer) {
  */
 function poserCoucheSurTerrain(layer) {
     const t0 = performance.now();
-    const n = applyTerrainBase(layer.geojson, (lng, lat) => Models3D.elevRaw(lng, lat), featureCentroid);
+    const n = applyTerrainBase(layer.geojson, (lng, lat) => Models3D.elevRaw(lng, lat), pointsSondes);
     if (!n) return 0;
     syncLayerSourceData(layer);
     const ms = Math.round(performance.now() - t0);
@@ -5077,11 +5079,43 @@ const A = {
         if (field && param === 'model' && sym.model.mode === 'categorized') sym.model.categories = [];
         syncLayerDeclarative(l); applyLayerStyle(l); renderInspector();
     },
-    setSymMethod(id, param, method) { const l = STATE.layers.find((x) => x.id === id); if (!l) return; initSymbolization(l)[param].method = method; syncLayerDeclarative(l); applyLayerStyle(l); renderInspector(); },
+    setSymMethod(id, param, method) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        const sym = initSymbolization(l);
+        sym[param].method = method;
+        // La repartition est justement ce que la methode change. Des bornes
+        // figees rendaient le reglage sans effet : Log et Racine affichaient la
+        // meme carte que Lineaire.
+        if (param === 'color' && sym.color.mode === 'graduated' && sym.color.field) {
+            const r = getNumericRange(l, sym.color.field);
+            const pal = COLOR_PALETTES[sym.color.colorRamp || sym.color.palette] || [];
+            if (r.count && pal.length) {
+                l._declarative = {
+                    ...(l._declarative || {}),
+                    kind: 'graduated',
+                    field: l._declarative?.field || sym.color.field,
+                    method,
+                    stops: graduatedStops(r.min, r.max, pal, method),
+                };
+            }
+        }
+        syncLayerDeclarative(l); applyLayerStyle(l); renderInspector();
+    },
     setSymPalette(id, param, palette) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         const sym = initSymbolization(l); sym[param].palette = palette; if (param === 'color') sym.color.colorRamp = palette;
         if (sym[param].categories) regenCategories(l, param);
+        // Le rendu gradue lit la couleur des classes du declaratif, pas la
+        // rampe nommee : sans recoloriage, le choix de palette n'atteignait
+        // jamais la carte — la legende passait au bleu, les mailles restaient
+        // vertes. Les bornes, elles, portent le decoupage de la donnee et
+        // doivent survivre au changement de couleurs.
+        if (param === 'color' && l._declarative?.stops?.length) {
+            l._declarative = {
+                ...l._declarative,
+                stops: recolorStops(l._declarative.stops, COLOR_PALETTES[palette] || []),
+            };
+        }
         syncLayerDeclarative(l); applyLayerStyle(l); renderInspector();
     },
     setSymColorValue(id, v) {
