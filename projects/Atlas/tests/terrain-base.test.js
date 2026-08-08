@@ -54,19 +54,26 @@ test('la base ne repose jamais exactement sur le sol', () => {
   assert.ok(base.includes(DECALAGE_ANTI_SCINTILLEMENT), 'décalage absent de la base');
 });
 
-test('le décalage suit le zoom, et décroît quand on s’approche', () => {
-  // La précision du tampon se dégrade avec la distance : il faut plus de marge
-  // de loin. De près, quelques décimètres suffisent et restent invisibles.
-  const e = DECALAGE_ANTI_SCINTILLEMENT;
-  assert.equal(e[0], 'interpolate');
-  assert.deepEqual(e[2], ['zoom']);
-  const paliers = [];
-  for (let i = 3; i < e.length; i += 2) paliers.push([e[i], e[i + 1]]);
-  for (let i = 1; i < paliers.length; i++) {
-    assert.ok(paliers[i][0] > paliers[i - 1][0], 'zooms croissants');
-    assert.ok(paliers[i][1] < paliers[i - 1][1], 'décalage décroissant');
-  }
-  assert.ok(paliers[paliers.length - 1][1] > 0, 'jamais nul, sinon le scintillement revient');
+test('le décalage est une constante, jamais une expression de zoom', () => {
+  // MapLibre n'autorise ["zoom"] qu'à la racine d'une expression de propriété.
+  // Imbriquée dans un ["+"], elle invalide l'expression entière et
+  // setPaintProperty la rejette SANS RIEN SIGNALER : la base retombait à sa
+  // valeur par défaut, annulant tout le calage. Vérifié à l'écran —
+  // getPaintProperty renvoyait 0.
+  assert.equal(typeof DECALAGE_ANTI_SCINTILLEMENT, 'number');
+  assert.ok(DECALAGE_ANTI_SCINTILLEMENT > 0, 'jamais nul, sinon le scintillement revient');
+  assert.ok(DECALAGE_ANTI_SCINTILLEMENT < 2, 'assez petit pour rester invisible');
+});
+
+test('aucune sous-expression de zoom dans les expressions produites', () => {
+  // Garde anti-régression : la même erreur, ailleurs dans l'expression, serait
+  // tout aussi silencieuse.
+  const { base, height } = extrusionExpressions(0, 12, true);
+  const contientZoom = (e) => Array.isArray(e)
+    ? (e[0] === 'zoom' || e.some(contientZoom))
+    : false;
+  assert.equal(contientZoom(base), false, 'zoom imbriqué dans la base');
+  assert.equal(contientZoom(height), false, 'zoom imbriqué dans la hauteur');
 });
 
 test('sans terrain, aucun décalage : le rendu d’origine est intact', () => {

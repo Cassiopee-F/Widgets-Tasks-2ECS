@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Banc — surfaces extrudées sur relief</title>
+<script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui; }
+  #map { position: absolute; inset: 0; }
+  #hud { position: absolute; z-index: 9; top: 8px; left: 8px; background: #fff;
+         padding: 8px 10px; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,.3); }
+  b { font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="hud">opacité <b id="op">?</b> · terrain <b id="tr">?</b></div>
+<script>
+/**
+ * BANC MANUEL — à ouvrir dans un navigateur, hors Grist.
+ *   http://localhost:8766/Atlas/tests/manuel/relief-extrusion.html
+ *
+ * Reproduit le cas CRESO : une grille de cellules JOINTIVES, extrudées, sur un
+ * relief réel (Cagliari, de -3 m à +144 m dans l'emprise).
+ *
+ * Ce que les tests unitaires ne peuvent pas voir — il faut un rendu WebGL :
+ *   - avec `fill-extrusion-base: 0`, le relief TRAVERSE les mailles : le fond
+ *     de carte transparaît par plaques déchiquetées sur les hauteurs ;
+ *   - poser la base sur l'altitude du sol supprime ces plaques.
+ *
+ * C'est aussi ce banc qui a montré qu'un décalage anti-scintillement exprimé
+ * en fonction du zoom **invalide silencieusement** toute l'expression :
+ * `getPaintProperty('fill-extrusion-base')` renvoyait alors `0`, et le calage
+ * ne s'appliquait pas. Voir `lib/terrain-base.js`.
+ *
+ * Depuis la console : `testPoser(opacite, terrain)` pour rejouer un cas.
+ */
+const N = 40, PAS = 0.002, LNG0 = 9.05, LAT0 = 39.20;
+const features = [];
+for (let i = 0; i < N; i++) {
+  for (let j = 0; j < N; j++) {
+    const x = LNG0 + i * PAS, y = LAT0 + j * PAS;
+    features.push({
+      type: 'Feature',
+      properties: { h: 6 + ((i * 7 + j * 13) % 20) },
+      geometry: { type: 'Polygon', coordinates: [[
+        [x, y], [x + PAS, y], [x + PAS, y + PAS], [x, y + PAS], [x, y],
+      ]] },
+    });
+  }
+}
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [LNG0 + N * PAS / 2, LAT0 + N * PAS / 2],
+  zoom: 12.5, pitch: 55, bearing: 20,
+});
+
+function poser(opacite, terrain) {
+  document.getElementById('op').textContent = opacite;
+  document.getElementById('tr').textContent = terrain ? 'oui' : 'non';
+  if (map.getLayer('grille')) map.removeLayer('grille');
+  if (map.getSource('grille')) map.removeSource('grille');
+  map.addSource('grille', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+  map.addLayer({
+    id: 'grille', type: 'fill-extrusion', source: 'grille',
+    paint: {
+      'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'h'], 6, '#deebf7', 26, '#084594'],
+      'fill-extrusion-height': ['get', 'h'],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': opacite,
+    },
+  });
+}
+
+map.on('load', () => {
+  poser(0.85, false);
+  // `const map` ne cree pas de propriete globale — et `window.map` designe
+  // deja le <div id="map">. On expose donc sous un autre nom.
+  window.carte = map;
+  window.testPoser = poser;
+  window.pret = true;
+});
+</script>
+</body>
+</html>
