@@ -15,7 +15,7 @@ import {
   boundsFromVisibleLayers,
 } from './lib/scene-loader.js?v=1.1.1';
 import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.1';
-import { pointFallbackZoom, centroidCollection } from './lib/point-fallback.js?v=1.1.1';
+import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.1';
 import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.1';
 import {
   moveSequence, displayOrder, moveLayerInStack, insertionIndex, sortByRank,
@@ -23,6 +23,9 @@ import {
 } from './lib/layer-order.js?v=1.1.1';
 import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.1';
 import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.1';
+import {
+  applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase,
+} from './lib/terrain-base.js?v=1.1.1';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -792,13 +795,25 @@ const Models3D = {
 
     setOrigin(lng, lat) { this.origin = [lng, lat]; this.originMC = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0); this.originScale = this.originMC.meterInMercatorCoordinateUnits(); },
     localMeters(lng, lat) { const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0), s = this.originScale; return { x: (mc.x - this.originMC.x) / s, y: -(mc.y - this.originMC.y) / s }; },
-    elevAt(lng, lat) {
-        if (!STATE.settings.terrain3D || !map) return 0;
+    /**
+     * Altitude du sol, ou `null` si la tuile MNT n'est pas encore chargee.
+     * La distinction compte : `0` est une altitude valide en bord de mer, et
+     * la confondre avec « pas de donnee » collerait les entites au niveau zero
+     * sans jamais les relever.
+     */
+    elevRaw(lng, lat) {
+        if (!STATE.settings.terrain3D || !map) return null;
         const k = ((lng * 1e4) | 0) + ',' + ((lat * 1e4) | 0);
         if (this.elevCache.has(k)) return this.elevCache.get(k);
-        const v = map.queryTerrainElevation([lng, lat]) || 0;
+        const v = map.queryTerrainElevation([lng, lat]);
+        if (!Number.isFinite(v)) return null; // pas de cache : la tuile viendra
         if (this.elevCache.size > 8000) this.elevCache.clear();
         this.elevCache.set(k, v); return v;
+    },
+    /** Contrat historique : un nombre, zero a defaut. Utilise par le placement. */
+    elevAt(lng, lat) {
+        const v = this.elevRaw(lng, lat);
+        return Number.isFinite(v) ? v : 0;
     },
 
     // matrice de placement (espace local mètres, Y up) pour une feature
@@ -1166,6 +1181,7 @@ function setTerrainSource(src) {
     addTerrainSource();
     if (STATE.settings.terrain3D) applyTerrain();
     Models3D.recomputeAll();
+    setTimeout(refreshTerrainBases, 250); // le MNT doit d'abord se charger
 }
 function applySky() {
     if (typeof map.setSky !== 'function') return;
@@ -1383,6 +1399,53 @@ function applyLineStyle(layer) {
     addLabelLayer(layer);
 }
 
+/**
+ * Pose les entites d'une couche sur le relief.
+ *
+ * L'echantillonnage passe par `Models3D.elevRaw` — le meme que celui qui place
+ * les modeles 3D, cache compris. Un lampadaire et le bati sous lui reposent
+ * ainsi a la meme altitude par construction, quelle que soit l'exageration.
+ */
+function poserCoucheSurTerrain(layer) {
+    const t0 = performance.now();
+    const n = applyTerrainBase(layer.geojson, (lng, lat) => Models3D.elevRaw(lng, lat), featureCentroid);
+    if (!n) return 0;
+    syncLayerSourceData(layer);
+    const ms = Math.round(performance.now() - t0);
+    if (ms > 500) console.warn(`[Atlas terrain] ${layer.name} : ${n} entites posees en ${ms} ms`);
+    return n;
+}
+
+/**
+ * Rejoue le calage sur le relief pour toutes les couches concernees.
+ *
+ * A appeler quand le relief change d'etat, de source ou d'exageration, et quand
+ * ses tuiles arrivent : `queryTerrainElevation` ne repond qu'une fois le MNT
+ * charge, donc le premier passage laisse souvent des entites non posees.
+ */
+function refreshTerrainBases() {
+    if (!map || !mapStyleUsable()) return;
+    const actif = !!STATE.settings.terrain3D;
+    let touchees = 0;
+    for (const l of STATE.layers) {
+        const surfaciqueVolume = (l.geometryType === 'Polygon' || l.geometryType === 'MultiPolygon')
+            && l.style?.polygonMode !== 'flat';
+        if (!surfaciqueVolume) continue;
+        if (!actif && clearTerrainBase(l.geojson)) {
+            // Relief coupe : sans nettoyage les entites resteraient en
+            // levitation au-dessus d'une carte redevenue plate.
+            syncLayerSourceData(l);
+            touchees++;
+        }
+        // Un seul passage : `applyLayerStyle` -> `applyPolygonStyle` pose les
+        // entites quand le relief est actif, et choisit les expressions selon
+        // son etat. Poser ici en plus doublait le cout — mesure a 2,3 s sur la
+        // grille de 42 182 mailles au lieu de 1,1 s.
+        if (map.getLayer(l.id)) { applyLayerStyle(l); touchees++; }
+    }
+    if (touchees) applyLayerOrder(); // applyLayerStyle remonte les couches au sommet
+}
+
 function applyPolygonStyle(layer) {
     ['', '-outline'].forEach((sfx) => { if (map.getLayer(layer.id + sfx)) map.removeLayer(layer.id + sfx); });
     const s = layer.style; const sym = initSymbolization(layer);
@@ -1394,10 +1457,16 @@ function applyPolygonStyle(layer) {
             if (r.count) height = buildNumGraduated(sym.size.field, [r.min, r.max], sym.size.outputRange, sym.size.method);
         } else if (layer.heightField) height = ['to-number', ['get', layer.heightField]];
         const base = Number.isFinite(sym.extrusion?.base) ? sym.extrusion.base : 0;
+        // Sur relief, l'extrusion se compte depuis le niveau de la mer : sans
+        // decalage, une maille de 12 m posee sur une colline de 50 m est
+        // enfouie. On pose donc chaque entite sur le sol.
+        const surTerrain = needsTerrainBase(layer, !!STATE.settings.terrain3D);
+        if (surTerrain) poserCoucheSurTerrain(layer);
+        const ext = extrusionExpressions(base, height, surTerrain);
         map.addLayer({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
             'fill-extrusion-color': layerPaintColor(layer),
-            'fill-extrusion-height': height,
-            'fill-extrusion-base': base,
+            'fill-extrusion-height': ext.height,
+            'fill-extrusion-base': ext.base,
             'fill-extrusion-opacity': Number.isFinite(sym.opacity) ? sym.opacity : 0.85,
         }});
     } else {
@@ -1968,7 +2037,7 @@ function applyStoryState(s) {
     if (s.terrain3D != null && s.terrain3D !== STATE.settings.terrain3D) {
         STATE.settings.terrain3D = s.terrain3D;
         applyTerrain();
-        setTimeout(() => Models3D.recomputeAll(), 250);
+        setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250);
     }
     if (s.timeOfDay != null) STATE.settings.timeOfDay = s.timeOfDay;
     if (s.date) STATE.settings.date = new Date(s.date);
@@ -2492,7 +2561,7 @@ function renderEnvControlsSection() {
         return `<div class="section">
             <div class="toggle-row">
                 <span class="tlabel">${vc.label}</span>
-                <div class="toggle ${on ? 'on' : ''}" onclick="A.setViewerExposed('${vc.id}', ${!on})" title="Visible en lecture"></div>
+                <div class="toggle ${on ? 'on' : ''}" onclick="A.setViewerExposed('${vc.id}', ${!on})" role="switch" tabindex="0" aria-checked="${on}" aria-label="Exposer ${vc.label || vc.id} en lecture" title="Visible en lecture"></div>
             </div>
             <div style="font-size:10.5px;color:var(--muted);margin-top:-4px">Visible en lecture · pastille carte</div>
             ${sub}
@@ -2514,7 +2583,7 @@ function renderDataControlRow(layer, field, type, c) {
             <span class="tlabel">${icon} <input class="input" style="display:inline;width:auto;min-width:120px;padding:2px 6px;font-size:12px;font-weight:600"
                 value="${labelVal}" onchange="A.setControlLabel('${layer.id}','${esc(field)}',this.value)" placeholder="${field}">
                 <span style="font-weight:400;color:var(--muted);font-size:10.5px"> · ${controlTypeLabel(type)}</span>${sim}</span>
-            <div class="toggle ${active ? 'on' : ''}" onclick="A.toggleControl('${layer.id}','${esc(field)}','${type}')" title="Afficher en lecture"></div>
+            <div class="toggle ${active ? 'on' : ''}" onclick="A.toggleControl('${layer.id}','${esc(field)}','${type}')" role="switch" tabindex="0" aria-checked="${active}" aria-label="Publier le contrôle ${esc(field)}" title="Afficher en lecture"></div>
         </div>
         <div class="control-variant-row">
             <label class="control-variant-label" for="ctl-var-${esc(layer.id)}-${esc(field)}">Type de contrôle</label>
@@ -2781,7 +2850,7 @@ function renderSoleil() {
             <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
         </div>
         <div class="section">
-            <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')"></div></div>
+            <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')" role="switch" tabindex="0" aria-checked="${!!STATE.settings.shadows}" aria-label="Ombres portées"></div></div>
             <div class="hint" style="margin-top:8px">💡 Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
         </div>`;
 }
@@ -2821,16 +2890,16 @@ function renderVues() {
         </div>
         <div class="section">
             <div class="section-title">Rendu 3D</div>
-            <div class="toggle-row"><span class="tlabel">🏢 Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')"></div></div>
-            <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏢 Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')" role="switch" tabindex="0" aria-checked="${!!s.buildings3D}" aria-label="Bâti du fond de carte"></div></div>
+            <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')" role="switch" tabindex="0" aria-checked="${!!s.terrain3D}" aria-label="Terrain 3D"></div></div>
             <label class="input-label" style="margin-top:6px">Source du relief</label>
             <select class="input" onchange="A.setTerrainSource(this.value)">
                 ${Object.entries(TERRAIN_SOURCES).map(([k, t]) => `<option value="${k}" ${s.terrainSource === k ? 'selected' : ''}>${t.label}</option>`).join('')}
             </select>
             <div class="slider-head" style="margin-top:8px"><span class="lbl">Exagération relief</span><span class="val" id="v-exag">${s.terrainExaggeration}×</span></div>
             <input type="range" class="rng" min="1" max="3" step="0.1" value="${s.terrainExaggeration}" oninput="A.setExag(this.value)">
-            <div class="toggle-row"><span class="tlabel">🏷️ Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')"></div></div>
-            <div class="toggle-row"><span class="tlabel">🌫️ Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏷️ Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')" role="switch" tabindex="0" aria-checked="${!!s.labels}" aria-label="Libellés du fond"></div></div>
+            <div class="toggle-row"><span class="tlabel">🌫️ Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')" role="switch" tabindex="0" aria-checked="${!!s.sky}" aria-label="Ciel et atmosphère"></div></div>
         </div>
         <button class="btn btn-soft btn-full" onclick="A.resetView()">🔄 Réinitialiser la vue</button>`;
 }
@@ -3244,7 +3313,7 @@ function commonTransform(layer) {
 }
 function symLabelPanel(layer, sym) {
     const l = sym.label;
-    return `<div class="section"><div class="toggle-row"><span class="tlabel">Afficher les étiquettes</span><div class="toggle ${l.enabled ? 'on' : ''}" onclick="A.toggleLabel('${layer.id}')"></div></div></div>
+    return `<div class="section"><div class="toggle-row"><span class="tlabel">Afficher les étiquettes</span><div class="toggle ${l.enabled ? 'on' : ''}" onclick="A.toggleLabel('${layer.id}')" role="switch" tabindex="0" aria-checked="${!!l.enabled}" aria-label="Afficher les étiquettes"></div></div></div>
         ${l.enabled ? `<div class="section"><div class="section-title">Champ texte</div>${fieldSelect(layer, 'label', l.field, null)}</div>
         <div class="section">
             <div class="slider-head"><span class="lbl">Taille du texte</span><span class="val">${l.size ?? 12} px</span></div>
@@ -4953,7 +5022,7 @@ const A = {
     toggleSetting(key) {
         STATE.settings[key] = !STATE.settings[key];
         if (key === 'buildings3D') applyBuildingVisibility();
-        else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => Models3D.recomputeAll(), 250); }
+        else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250); }
         else if (key === 'labels') applyLabelsVisibility();
         else if (key === 'sky') applySky();
         else if (key === 'shadows') { updateLighting(); $('shadow-toggle')?.classList.toggle('on', STATE.settings.shadows); }
@@ -4967,7 +5036,7 @@ const A = {
     },
     setPitch(v) { map.setPitch(+v); $('v-pitch').textContent = Math.round(v) + '°'; },
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
-    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => Models3D.recomputeAll(), 200); } },
+    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 200); } },
     setBasemap(k) {
         if (CONFIG.viewMode) {
             const allowed = basemapChoicesForDock();
@@ -5275,6 +5344,16 @@ function wireEvents() {
     updateMobileLayout();
     wireMobileNav();
     wireLegendClicks();
+    // Les bascules sont des `div` : `tabindex` les rend atteignables, mais
+    // seul un vrai bouton réagit à Espace et Entrée. On le fait ici, une fois
+    // pour toutes, plutôt que sur chaque bascule.
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== ' ' && e.key !== 'Enter') return;
+        const bascule = e.target?.closest?.('[role="switch"]');
+        if (!bascule) return;
+        e.preventDefault();
+        bascule.click();
+    });
     $('viewer-story-fab')?.addEventListener('click', () => {
         if ((STATE.story?.length || 0) > 0) A.storyPlay(0);
     });

@@ -162,6 +162,34 @@ sur une surface, une ligne ou un point rendu en cercle 2D.
   (943, 1906, 1944, 2770, 2865, 2903, 2944), dont **1906, 1944 et 2944 sans la
   condition ponctuelle**. À remplacer par `isModelLayer`.
 
+## Surfaces en volume posées sur le relief (`lib/terrain-base.js`)
+
+`fill-extrusion-base` et `fill-extrusion-height` se comptent depuis le **niveau
+de la mer**, pas depuis le sol. Une maille extrudée de 0 à 12 m était donc
+ancrée à l’altitude zéro : sur un relief à 50 m elle disparaissait, à 10 m seuls
+deux mètres dépassaient — d’où les interférences entre la donnée et le terrain.
+
+- Chaque entité reçoit l’altitude du sol sous son centre (`_sol`), et les
+  expressions deviennent `['+', sol, base]` / `['+', sol, base, height]`. Le
+  sommet **inclut la base**, sinon l’épaisseur repartirait du sol.
+- L’échantillonnage passe par **`Models3D.elevRaw`**, le même que celui qui pose
+  les modèles 3D, cache compris : un lampadaire et le bâti sous lui reposent à
+  la même altitude par construction. Avant, seuls les modèles étaient posés —
+  un bâtiment extrudé traversait la colline.
+- **`0` est une altitude valide** (bord de mer) : `elevRaw` renvoie `null` quand
+  la tuile MNT manque, et l’entité est laissée intacte plutôt que collée au
+  niveau zéro. `elevAt` conserve son contrat historique (nombre, zéro à défaut).
+- **`queryTerrainElevation` retourne l’altitude exagérée** — vérifié à l’écran à
+  ×3. Le calage doit donc être rejoué à chaque changement d’exagération, de
+  source, de bascule du relief, et sur les étapes de récit qui l’activent.
+- Couper le relief **nettoie** `_sol` : sans cela les entités resteraient en
+  lévitation au-dessus d’une carte redevenue plate.
+- Seules les surfaces **en volume** sont concernées : à plat, MapLibre drape
+  déjà le remplissage, comme pour les points et les lignes.
+- Coût mesuré : **~1,1 s pour 42 182 mailles**, sur action explicite seulement.
+  Ne pas poser les entités dans `refreshTerrainBases` **et** dans
+  `applyLayerStyle` — le doublon coûtait 2,3 s.
+
 ## Montage des couches — `isStyleLoaded()` n’est pas le bon prérequis
 
 `map.isStyleLoaded()` signifie « le style **et toutes ses sources** sont
