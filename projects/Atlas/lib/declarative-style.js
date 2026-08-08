@@ -423,3 +423,85 @@ export function applyDeclarativeToLayer(layer, declarative) {
 }
 
 export { GEOM_FROM_MANIFEST };
+
+/* ------------------------------------------------------------------ *
+ * Classes graduées — bornes et couleurs.
+ *
+ * Un style gradué porte deux informations de nature différente : les **bornes**
+ * de classes, qui disent comment la donnée est découpée (choix d'analyse), et
+ * les **couleurs**, qui disent comment ce découpage se lit (choix graphique).
+ *
+ * Les confondre a produit un défaut visible : choisir une palette dans
+ * l'inspecteur mettait à jour la légende sans jamais atteindre la carte, parce
+ * que le rendu lisait la couleur des classes existantes. Les deux réglages sont
+ * donc traités séparément ci-dessous.
+ * ------------------------------------------------------------------ */
+
+/** Transformation d'échelle appliquée aux bornes. */
+function transformer(v, method) {
+  if (method === 'log') return Math.log(Math.max(0, v) + 1);
+  if (method === 'sqrt') return Math.sqrt(Math.max(0, v));
+  return v;
+}
+
+/** Transformation inverse, pour revenir aux valeurs de la donnée. */
+function detransformer(v, method) {
+  if (method === 'log') return Math.exp(v) - 1;
+  if (method === 'sqrt') return v * v;
+  return v;
+}
+
+/**
+ * Bornes de `n` classes entre `min` et `max`, selon la méthode de répartition.
+ *
+ * En linéaire les classes sont d'égale largeur ; en log ou en racine elles le
+ * sont dans l'espace transformé, ce qui resserre les petites valeurs. Sur une
+ * distribution asymétrique — la plupart des mailles à 1 ou 2 bâtiments,
+ * quelques-unes à 134 — c'est ce qui rend la carte lisible.
+ *
+ * @returns {Array<{lower: number, upper: number}>}
+ */
+export function classBounds(min, max, n, method = 'linear') {
+  const nb = Math.max(1, Math.floor(n) || 1);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
+  if (max <= min) return [{ lower: min, upper: min }];
+  const a = transformer(min, method);
+  const b = transformer(max, method);
+  const pas = (b - a) / nb;
+  const out = [];
+  for (let i = 0; i < nb; i++) {
+    out.push({
+      lower: i === 0 ? min : detransformer(a + pas * i, method),
+      upper: i === nb - 1 ? max : detransformer(a + pas * (i + 1), method),
+    });
+  }
+  return out;
+}
+
+/**
+ * Ré-applique une palette aux classes existantes, **sans toucher aux bornes**.
+ *
+ * C'est ce que veut dire « changer de palette » : le découpage de la donnée est
+ * un choix d'analyse, il ne doit pas être perdu parce qu'on change de couleurs.
+ */
+export function recolorStops(stops, paletteHex) {
+  const list = Array.isArray(stops) ? stops : [];
+  const pal = Array.isArray(paletteHex) ? paletteHex.filter(Boolean) : [];
+  if (!list.length || !pal.length) return list;
+  const dernier = Math.max(1, list.length - 1);
+  return list.map((s, i) => ({
+    ...s,
+    color: pal[Math.min(pal.length - 1, Math.round((i * (pal.length - 1)) / dernier))],
+  }));
+}
+
+/** Classes complètes — bornes selon la méthode, couleurs selon la palette. */
+export function graduatedStops(min, max, paletteHex, method = 'linear') {
+  const pal = Array.isArray(paletteHex) ? paletteHex.filter(Boolean) : [];
+  if (!pal.length) return [];
+  return classBounds(min, max, pal.length, method).map((b, i) => ({
+    ...b,
+    color: pal[Math.min(pal.length - 1, i)],
+    opacity: 1,
+  }));
+}

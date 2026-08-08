@@ -6,9 +6,21 @@ import {
   clearTerrainBase,
   extrusionExpressions,
   needsTerrainBase,
+  pointsSondes,
+  DECALAGE_ANTI_SCINTILLEMENT,
 } from '../lib/terrain-base.js';
 
-const centre = (f) => f?.geometry?.coordinates || null;
+const centre = (f) => (f?.geometry?.coordinates ? [f.geometry.coordinates] : []);
+const maille200 = (lng, lat, cote = 0.002) => ({
+  type: 'Feature',
+  geometry: {
+    type: 'Polygon',
+    coordinates: [[
+      [lng, lat], [lng + cote, lat], [lng + cote, lat + cote], [lng, lat + cote], [lng, lat],
+    ]],
+  },
+  properties: {},
+});
 const maille = (lng, lat, props = {}) => ({
   type: 'Feature',
   geometry: { type: 'Point', coordinates: [lng, lat] },
@@ -26,16 +38,49 @@ test('sans terrain : les valeurs passent telles quelles', () => {
 test('sur terrain : base et sommet décalés de l’altitude du sol', () => {
   const { base, height } = extrusionExpressions(0, 12, true);
   const sol = ['coalesce', ['get', TERRAIN_BASE_PROP], 0];
-  assert.deepEqual(base, ['+', sol, 0]);
+  const eps = DECALAGE_ANTI_SCINTILLEMENT;
+  assert.deepEqual(base, ['+', sol, eps, 0]);
   // Le sommet doit inclure la base : sinon une entité posée à 50 m avec une
   // base de 3 m aurait une épaisseur de 12 m à partir de 50 m, pas de 53 m.
-  assert.deepEqual(height, ['+', sol, 0, 12]);
+  assert.deepEqual(height, ['+', sol, eps, 0, 12]);
+});
+
+/* ---------- anti-scintillement ---------- */
+
+test('la base ne repose jamais exactement sur le sol', () => {
+  // Coplanaires, terrain et face inférieure se disputent le tampon de
+  // profondeur : c'est le scintillement observé à l'écran.
+  const { base } = extrusionExpressions(0, 12, true);
+  assert.ok(base.includes(DECALAGE_ANTI_SCINTILLEMENT), 'décalage absent de la base');
+});
+
+test('le décalage suit le zoom, et décroît quand on s’approche', () => {
+  // La précision du tampon se dégrade avec la distance : il faut plus de marge
+  // de loin. De près, quelques décimètres suffisent et restent invisibles.
+  const e = DECALAGE_ANTI_SCINTILLEMENT;
+  assert.equal(e[0], 'interpolate');
+  assert.deepEqual(e[2], ['zoom']);
+  const paliers = [];
+  for (let i = 3; i < e.length; i += 2) paliers.push([e[i], e[i + 1]]);
+  for (let i = 1; i < paliers.length; i++) {
+    assert.ok(paliers[i][0] > paliers[i - 1][0], 'zooms croissants');
+    assert.ok(paliers[i][1] < paliers[i - 1][1], 'décalage décroissant');
+  }
+  assert.ok(paliers[paliers.length - 1][1] > 0, 'jamais nul, sinon le scintillement revient');
+});
+
+test('sans terrain, aucun décalage : le rendu d’origine est intact', () => {
+  const { base, height } = extrusionExpressions(2, 12, false);
+  assert.equal(base, 2);
+  assert.equal(height, 12);
 });
 
 test('une hauteur graduée reste composable', () => {
   const graduee = ['interpolate', ['linear'], ['get', 'nb_bat'], 0, 2, 134, 40];
   const { height } = extrusionExpressions(3, graduee, true);
-  assert.deepEqual(height, ['+', ['coalesce', ['get', TERRAIN_BASE_PROP], 0], 3, graduee]);
+  assert.deepEqual(height, [
+    '+', ['coalesce', ['get', TERRAIN_BASE_PROP], 0], DECALAGE_ANTI_SCINTILLEMENT, 3, graduee,
+  ]);
 });
 
 test('sol absent : l’entité retombe au niveau de la mer, pas d’erreur', () => {
@@ -71,9 +116,54 @@ test('altitude négative (dépression, bathymétrie) acceptée', () => {
   assert.equal(fc.features[0].properties[TERRAIN_BASE_PROP], -8);
 });
 
-test('entité sans centre calculable : ignorée', () => {
+test('entité sans géométrie : ignorée', () => {
   const fc = { features: [{ type: 'Feature', geometry: null, properties: {} }] };
   assert.equal(applyTerrainBase(fc, () => 10, centre), 0);
+});
+
+/* ---------- points sondés : le cœur de la correction ---------- */
+
+test('une surface est sondée sur ses sommets, pas seulement son centre', () => {
+  // Une facette plane posée à l'altitude de son centre traverse tout terrain
+  // en pente : bord amont enfoui, bord aval en lévitation.
+  const pts = pointsSondes(maille200(9.1, 39.2));
+  assert.ok(pts.length >= 4, `attendu au moins les 4 coins, obtenu ${pts.length}`);
+});
+
+test('on retient l’altitude la plus haute sous l’entité', () => {
+  const fc = { features: [maille200(9.1, 39.2)] };
+  // Terrain en pente : l'altitude croît avec la longitude.
+  applyTerrainBase(fc, (lng) => (lng - 9.1) * 5000, pointsSondes);
+  // Le point le plus haut est le coin est (+0,002° → 10 m). Comparaison
+  // approchée : soustraire deux longitudes voisines n'est pas exact en flottant.
+  const z = fc.features[0].properties[TERRAIN_BASE_PROP];
+  assert.ok(Math.abs(z - 10) < 1e-6, `attendu ~10, obtenu ${z}`);
+});
+
+test('le nombre de points sondés reste borné', () => {
+  // Un contour très détaillé ne doit pas faire exploser le coût.
+  const anneau = Array.from({ length: 500 }, (_, i) => [9 + i * 1e-5, 39]);
+  const f = { geometry: { type: 'Polygon', coordinates: [anneau] } };
+  assert.ok(pointsSondes(f).length <= 8);
+});
+
+test('un point n’a qu’un seul point sondé', () => {
+  assert.deepEqual(pointsSondes(maille(9.1, 39.2)), [[9.1, 39.2]]);
+});
+
+test('MultiPolygon : l’anneau extérieur du premier polygone', () => {
+  const f = {
+    geometry: {
+      type: 'MultiPolygon',
+      coordinates: [[[[9, 39], [9.1, 39], [9.1, 39.1], [9, 39]]]],
+    },
+  };
+  assert.equal(pointsSondes(f).length, 4);
+});
+
+test('géométrie inexploitable : aucun point', () => {
+  assert.deepEqual(pointsSondes({ geometry: { type: 'Polygon', coordinates: [] } }), []);
+  assert.deepEqual(pointsSondes(null), []);
 });
 
 test('entrées invalides', () => {
