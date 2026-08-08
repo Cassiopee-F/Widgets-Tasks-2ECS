@@ -22,20 +22,17 @@ export const TERRAIN_BASE_PROP = '_sol';
  *
  * Posée exactement à l'altitude du terrain, la face inférieure du prisme est
  * coplanaire avec lui : les deux se disputent le tampon de profondeur et la
- * surface scintille (*z-fighting*). Un décalage suffit à les départager.
+ * surface scintille (*z-fighting*). Un demi-mètre suffit à les départager, et
+ * reste invisible à toute échelle.
  *
- * Il dépend du zoom parce que la précision du tampon se dégrade avec la
- * distance : quelques décimètres suffisent au zoom rue, où ils sont invisibles,
- * alors qu'il en faut une dizaine de mètres en vue régionale — où ils restent
- * sous le pixel.
+ * **Constante, et non expression de zoom.** MapLibre n'autorise `["zoom"]`
+ * qu'à la racine d'une expression de propriété : imbriquée dans un `["+"]`,
+ * elle invalide l'expression entière — et `setPaintProperty` la rejette
+ * **sans rien signaler**. La base retombait alors à sa valeur par défaut, ce
+ * qui annulait tout le calage sur le relief. Mesuré : avec un décalage
+ * dépendant du zoom, `getPaintProperty('fill-extrusion-base')` renvoyait `0`.
  */
-export const DECALAGE_ANTI_SCINTILLEMENT = [
-  'interpolate', ['linear'], ['zoom'],
-  6, 12,
-  11, 4,
-  15, 1,
-  19, 0.3,
-];
+export const DECALAGE_ANTI_SCINTILLEMENT = 0.5;
 
 /**
  * Expressions d'extrusion posées sur le sol.
