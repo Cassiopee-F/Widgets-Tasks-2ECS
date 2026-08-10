@@ -25,7 +25,7 @@ import { edgeScrollStep } from './lib/edge-scroll.js?v=20260806a';
 import { basemapLayerIds } from './lib/basemap-layers.js?v=20260807a';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
-} from './lib/terrain-base.js?v=20260808e';
+} from './lib/terrain-base.js?v=20260808f';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
