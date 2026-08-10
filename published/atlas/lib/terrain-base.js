@@ -50,9 +50,23 @@ export function extrusionExpressions(base, height, surTerrain) {
   const eps = DECALAGE_ANTI_SCINTILLEMENT;
   return {
     base: ['+', sol, eps, base],
-    height: ['+', sol, eps, base, height],
+    // Épaisseur plancher : une hauteur graduée part souvent de zéro pour la
+    // plus petite valeur, et un prisme d'épaisseur nulle a ses faces
+    // supérieure et inférieure confondues — elles se disputent le tampon de
+    // profondeur quoi qu'on fasse. Aucune base ni marge ne corrige cela ; seule
+    // une épaisseur non nulle le peut.
+    height: ['+', sol, eps, base, ['max', height, EPAISSEUR_MIN_M]],
   };
 }
+
+/**
+ * Épaisseur minimale d'une surface en volume, en mètres.
+ *
+ * Assez pour que les deux faces ne soient jamais confondues, assez peu pour ne
+ * pas fausser la lecture d'une hauteur graduée : la plus petite classe reste
+ * visuellement la plus basse.
+ */
+export const EPAISSEUR_MIN_M = 0.5;
 
 /** Nombre maximal de points sondés par entité. */
 export const MAX_POINTS_SONDES = 8;

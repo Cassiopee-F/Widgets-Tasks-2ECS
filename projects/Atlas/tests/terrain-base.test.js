@@ -9,6 +9,7 @@ import {
   pointsSondes,
   DECALAGE_ANTI_SCINTILLEMENT,
   MARGE_MAX_M,
+  EPAISSEUR_MIN_M,
   margeRelief,
 } from '../lib/terrain-base.js';
 
@@ -44,7 +45,29 @@ test('sur terrain : base et sommet décalés de l’altitude du sol', () => {
   assert.deepEqual(base, ['+', sol, eps, 0]);
   // Le sommet doit inclure la base : sinon une entité posée à 50 m avec une
   // base de 3 m aurait une épaisseur de 12 m à partir de 50 m, pas de 53 m.
-  assert.deepEqual(height, ['+', sol, eps, 0, 12]);
+  assert.deepEqual(height, ['+', sol, eps, 0, ['max', 12, EPAISSEUR_MIN_M]]);
+});
+
+/* ---------- épaisseur plancher ---------- */
+
+test('une épaisseur nulle est relevée au plancher', () => {
+  // Cas réel CRESO : la hauteur est graduée de 0 à 500 m sur ln(nb_bat+1).
+  // Les mailles à nb_bat = 1 recevaient donc une épaisseur ZÉRO — faces
+  // supérieure et inférieure confondues, donc scintillement que ni la base ni
+  // la marge ne peuvent corriger.
+  const { height } = extrusionExpressions(0, 0, true);
+  assert.deepEqual(height[height.length - 1], ['max', 0, EPAISSEUR_MIN_M]);
+});
+
+test('le plancher n’écrase pas les hauteurs réelles', () => {
+  // La plus petite classe doit rester visuellement la plus basse.
+  assert.ok(EPAISSEUR_MIN_M > 0);
+  assert.ok(EPAISSEUR_MIN_M < 1, 'assez petit pour ne pas fausser une graduation');
+});
+
+test('sans terrain, aucun plancher : le rendu d’origine est intact', () => {
+  const { height } = extrusionExpressions(0, 0, false);
+  assert.equal(height, 0);
 });
 
 /* ---------- anti-scintillement ---------- */
@@ -88,7 +111,8 @@ test('une hauteur graduée reste composable', () => {
   const graduee = ['interpolate', ['linear'], ['get', 'nb_bat'], 0, 2, 134, 40];
   const { height } = extrusionExpressions(3, graduee, true);
   assert.deepEqual(height, [
-    '+', ['coalesce', ['get', TERRAIN_BASE_PROP], 0], DECALAGE_ANTI_SCINTILLEMENT, 3, graduee,
+    '+', ['coalesce', ['get', TERRAIN_BASE_PROP], 0], DECALAGE_ANTI_SCINTILLEMENT, 3,
+    ['max', graduee, EPAISSEUR_MIN_M],
   ]);
 });
 
