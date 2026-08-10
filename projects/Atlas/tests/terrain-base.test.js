@@ -8,6 +8,8 @@ import {
   needsTerrainBase,
   pointsSondes,
   DECALAGE_ANTI_SCINTILLEMENT,
+  MARGE_MAX_M,
+  margeRelief,
 } from '../lib/terrain-base.js';
 
 const centre = (f) => (f?.geometry?.coordinates ? [f.geometry.coordinates] : []);
@@ -103,8 +105,9 @@ test('pose l’altitude sur chaque entité', () => {
   const fc = { features: [maille(9.1, 39.2), maille(9.2, 39.3)] };
   const n = applyTerrainBase(fc, (lng) => (lng === 9.1 ? 12.5 : 47), centre);
   assert.equal(n, 2);
-  assert.equal(fc.features[0].properties[TERRAIN_BASE_PROP], 12.5);
-  assert.equal(fc.features[1].properties[TERRAIN_BASE_PROP], 47);
+  // Un seul point sondé : amplitude nulle, donc marge plancher.
+  assert.equal(fc.features[0].properties[TERRAIN_BASE_PROP], 12.5 + DECALAGE_ANTI_SCINTILLEMENT);
+  assert.equal(fc.features[1].properties[TERRAIN_BASE_PROP], 47 + DECALAGE_ANTI_SCINTILLEMENT);
 });
 
 test('altitude indisponible : l’entité est laissée intacte', () => {
@@ -120,7 +123,7 @@ test('altitude indisponible : l’entité est laissée intacte', () => {
 test('altitude négative (dépression, bathymétrie) acceptée', () => {
   const fc = { features: [maille(9.1, 39.2)] };
   applyTerrainBase(fc, () => -8, centre);
-  assert.equal(fc.features[0].properties[TERRAIN_BASE_PROP], -8);
+  assert.equal(fc.features[0].properties[TERRAIN_BASE_PROP], -8 + DECALAGE_ANTI_SCINTILLEMENT);
 });
 
 test('entité sans géométrie : ignorée', () => {
@@ -137,14 +140,39 @@ test('une surface est sondée sur ses sommets, pas seulement son centre', () => 
   assert.ok(pts.length >= 4, `attendu au moins les 4 coins, obtenu ${pts.length}`);
 });
 
-test('on retient l’altitude la plus haute sous l’entité', () => {
+test('on retient l’altitude la plus haute sous l’entité, plus une marge', () => {
   const fc = { features: [maille200(9.1, 39.2)] };
-  // Terrain en pente : l'altitude croît avec la longitude.
+  // Terrain en pente : l'altitude croît avec la longitude, de 0 à 10 m.
   applyTerrainBase(fc, (lng) => (lng - 9.1) * 5000, pointsSondes);
-  // Le point le plus haut est le coin est (+0,002° → 10 m). Comparaison
-  // approchée : soustraire deux longitudes voisines n'est pas exact en flottant.
+  // Point culminant à 10 m, amplitude 10 m → marge de 5 m.
   const z = fc.features[0].properties[TERRAIN_BASE_PROP];
-  assert.ok(Math.abs(z - 10) < 1e-6, `attendu ~10, obtenu ${z}`);
+  assert.ok(Math.abs(z - 15) < 1e-3, `attendu ~15 (10 + marge 5), obtenu ${z}`);
+});
+
+/* ---------- marge adaptative ---------- */
+
+test('terrain plat : la marge se réduit au décalage minimal', () => {
+  assert.equal(margeRelief(0), DECALAGE_ANTI_SCINTILLEMENT);
+  assert.equal(margeRelief(0.2), DECALAGE_ANTI_SCINTILLEMENT);
+});
+
+test('la marge croît avec la rugosité du terrain', () => {
+  // MapLibre simplifie le maillage du relief selon la distance, et cette
+  // simplification CHANGE pendant la navigation : l'altitude rendue s'écarte
+  // de celle mesurée. C'est ce qui faisait encore traverser les prismes plats.
+  assert.ok(margeRelief(10) > margeRelief(4));
+  assert.equal(margeRelief(10), 5);
+});
+
+test('la marge est plafonnée : pas de lévitation visible sur une falaise', () => {
+  assert.equal(margeRelief(200), MARGE_MAX_M);
+  assert.ok(MARGE_MAX_M > DECALAGE_ANTI_SCINTILLEMENT);
+});
+
+test('amplitude invalide : plancher', () => {
+  assert.equal(margeRelief(NaN), DECALAGE_ANTI_SCINTILLEMENT);
+  assert.equal(margeRelief(undefined), DECALAGE_ANTI_SCINTILLEMENT);
+  assert.equal(margeRelief(-6), 3, 'une amplitude négative est une amplitude');
 });
 
 test('le nombre de points sondés reste borné', () => {

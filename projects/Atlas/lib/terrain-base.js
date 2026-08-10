@@ -114,17 +114,42 @@ export function applyTerrainBase(geojson, echantillonner, points = pointsSondes)
   if (!Array.isArray(feats) || typeof echantillonner !== 'function') return 0;
   let posees = 0;
   for (const f of feats) {
-    let z = null;
+    let haut = null;
+    let bas = null;
     for (const p of (points?.(f) || [])) {
       const v = echantillonner(p[0], p[1]);
-      if (Number.isFinite(v) && (z === null || v > z)) z = v;
+      if (!Number.isFinite(v)) continue;
+      if (haut === null || v > haut) haut = v;
+      if (bas === null || v < bas) bas = v;
     }
-    if (z === null) continue;
-    (f.properties = f.properties || {})[TERRAIN_BASE_PROP] = z;
+    if (haut === null) continue;
+    (f.properties = f.properties || {})[TERRAIN_BASE_PROP] = haut + margeRelief(haut - bas);
     posees++;
   }
   return posees;
 }
+
+/**
+ * Marge au-dessus du point culminant, en mètres.
+ *
+ * MapLibre simplifie le maillage du relief selon la distance, et cette
+ * simplification **change pendant la navigation** : l'altitude effectivement
+ * rendue s'écarte de celle que `queryTerrainElevation` a donnée. Une marge fixe
+ * ne suffit donc pas — c'est ce qui faisait encore traverser les prismes les
+ * plus plats, ceux des faibles valeurs, dès qu'on déplaçait la caméra.
+ *
+ * L'écart de simplification suit la rugosité locale : on prend donc la moitié
+ * de l'amplitude mesurée sous l'entité, avec un plancher pour le terrain plat
+ * et un plafond pour ne pas faire léviter visiblement une maille posée sur une
+ * falaise.
+ */
+export function margeRelief(amplitude) {
+  const a = Number.isFinite(amplitude) ? Math.abs(amplitude) : 0;
+  return Math.min(MARGE_MAX_M, Math.max(DECALAGE_ANTI_SCINTILLEMENT, a * 0.5));
+}
+
+/** Plafond de la marge adaptative, en mètres. */
+export const MARGE_MAX_M = 8;
 
 /**
  * Retire l'altitude injectée.
