@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  /* ---- Tokens & thème (identité partagée de la suite) ------------------ */
+  :root{
+    --paper:#f6f7f9; --ink:#171a21; --muted:#6b7280; --line:#e6e9ef;
+    --indigo:#3d5afe; --green:#0f8a5f; --red:#d14343; --warn:#b9742a;
+    --card:#fff; --soft:#eef0f4; --shadow:0 1px 2px rgba(20,22,28,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --paper:#14161b; --ink:#e8eaee; --muted:#9aa1ad; --line:#2a2e37;
+      --card:#1b1e25; --soft:#22262f; --shadow:0 1px 2px rgba(0,0,0,.4); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
+  /* segments / boutons */
+  .seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:none;border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:.12s}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  /* cartes / hero / barres */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px}
+  /* hero : panneau volontairement TOUJOURS sombre (ne pas utiliser var(--ink) qui
+     bascule en clair en thème sombre et rendrait le texte blanc illisible). */
+  .hero{background:#161a23;border-radius:16px;padding:20px 22px;color:#fff;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end}
+  .hero .rav{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1.05;margin-top:4px}
+  .hero .lab{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa1ad}
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:2px}
+  .fill{position:absolute;left:0;top:0;height:100%;border-radius:5px;transition:width .35s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:12px}
+  /* champs / puces / notes */
+  .inp{border:1px solid var(--indigo);border-radius:8px;padding:6px 9px;font-size:13px;outline:none;background:var(--card);color:var(--ink)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;border-radius:20px;padding:3px 9px}
+  .note{font-size:11px;color:var(--muted)}
+  .msg{max-width:620px;margin:60px auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:14px;line-height:1.6}
+  /* barre de navigation (mode single-page) */
+  .topnav{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:20}
+  .topnav .brand{font-weight:800;letter-spacing:-.01em;margin-right:6px}
+  .topnav .tab{border:none;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}
+  .topnav .tab.on{background:var(--soft);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<!-- ===================================================================== -->
+<!-- CŒUR PARTAGÉ : en dev via <script src>, inliné par build-budget.js.    -->
+<!-- <budget-inline:core> -->
+<script src="core/budget-core.js"></script>
+<!-- </budget-inline> -->
+
+<script>
+/* =======================================================================
+   SHELL — contrat de module, couche données (Store), routeur + nav.
+   Un module s'enregistre via BUDGET.register(id, def) où :
+     def = {
+       title:  string,                       // libellé nav
+       access: 'full' | 'read table' | 'none' (défaut 'full'),
+       mount(root, ctx)                       // rend le module dans `root`
+     }
+   ctx = {
+     BP,               // cœur (window.BP)
+     grist,            // API Grist (null en démo)
+     demo,             // bool
+     store,            // couche données partagée (cf. Store)
+     el(html),         // template -> Element
+     navigate(id),     // bascule de module (single-page)
+   }
+   Store (données partagées, chargées une fois) :
+     store.rows       [{ rowId, date, ym, day, lib, montant, cat, sous, exclu }]
+     store.catRows    [{ rowId, cat, type, color, budget, mode, lisser, prov }]
+     store.catMap     { [cat]: catRow }
+     store.typeOf(c)  -> 'revenu'|'depense'|'epargne'|'exclu'
+     store.regles     [{ rowId, motif, cat, sous, prio }]
+     store.sousMap    { [famille]: [sous...] }
+     store.months     ['YYYY-MM', ...] triés
+     store.hasProvision  bool (colonne Categories.Provision présente)
+     await store.load()             (re)charge tout
+     await store.apply(actions)     applyUserActions puis reload + notify
+     store.onChange(cb)             s'abonne aux rechargements
+   ======================================================================= */
+window.BUDGET = window.BUDGET || { modules: {} };
+BUDGET.register = (id, def) => { BUDGET.modules[id] = def; };
+
+(function () {
+  const HAS_GRIST = typeof grist !== 'undefined';
+  const BP = window.BP;
+  const el = html => { const t = document.createElement('template'); t.innerHTML = (html || '').trim(); return t.content.firstElementChild; };
+
+  /* ---- Store : couche données partagée -------------------------------- */
+  const col = (t, n) => (t && t[n]) || [];
+  const Store = {
+    rows: [], catRows: [], catMap: {}, regles: [], sousMap: {}, months: [], hasProvision: false,
+    _subs: [],
+    typeOf(c) { return (this.catMap[c] && this.catMap[c].type) || 'depense'; },
+    onChange(cb) { this._subs.push(cb); },
+    _notify() { this._subs.forEach(cb => { try { cb(); } catch (e) { console.error(e); } }); },
+    async load() {
+      if (!HAS_GRIST) return;
+      const want = ['Transactions', 'Categories', 'Regles', 'Sous_categories'];
+      const got = {};
+      await Promise.all(want.map(async n => { try { got[n] = await grist.docApi.fetchTable(n); } catch (e) { got[n] = null; } }));
+      const cats = got.Categories || {};
+      this.catRows = (cats.id || []).map((rowId, i) => ({
+        rowId, cat: col(cats, 'Categorie')[i],
+        type: (col(cats, 'Type')[i] || 'depense'), color: col(cats, 'Couleur')[i] || '#5b6470',
+        budget: +(col(cats, 'Budget_mensuel')[i] || 0), mode: col(cats, 'Budget_mode')[i] || '',
+        lisser: !!col(cats, 'Lisser')[i], prov: +(col(cats, 'Provision')[i] || 0),
+        nature: col(cats, 'Nature')[i] || '',
+        actifDebut: col(cats, 'Actif_debut')[i] || '', actifFin: col(cats, 'Actif_fin')[i] || ''
+      })).filter(c => c.cat);
+      this.catMap = {}; this.catRows.forEach(c => this.catMap[c.cat] = c);
+      this.hasProvision = Object.prototype.hasOwnProperty.call(cats, 'Provision');
+
+      const tx = got.Transactions || {};
+      this.rows = (tx.id || []).map((rowId, i) => {
+        const date = col(tx, 'Date')[i]; const d = BP.gristToDate(date);
+        return {
+          rowId, date, ym: d ? BP.ym(d) : null, day: d ? d.getDate() : null,
+          lib: col(tx, 'Libelle')[i] || '', montant: +(col(tx, 'Montant')[i] || 0),
+          cat: col(tx, 'Categorie')[i] || 'À catégoriser', sous: col(tx, 'Sous_categorie')[i] || '',
+          exclu: !!col(tx, 'Exclu')[i]
+        };
+      }).filter(r => r.date != null && isFinite(r.montant));
+      this.months = [...new Set(this.rows.map(r => r.ym).filter(Boolean))].sort();
+
+      const reg = got.Regles || {};
+      this.regles = (reg.id || []).map((rowId, i) => ({
+        rowId, motif: col(reg, 'Motif')[i] || '', cat: col(reg, 'Categorie')[i] || '',
+        sous: col(reg, 'Sous_categorie')[i] || '', prio: +(col(reg, 'Priorite')[i] || 0)
+      })).filter(r => r.motif).sort((a, b) => b.prio - a.prio);
+
+      const sc = got.Sous_categories || {}; this.sousMap = {};
+      (sc.id || []).forEach((_, i) => {
+        const f = col(sc, 'Categorie')[i], s = col(sc, 'Sous_categorie')[i];
+        if (f && s) (this.sousMap[f] = this.sousMap[f] || []).push(s);
+      });
+    },
+    async apply(actions) {
+      if (!HAS_GRIST || !actions || !actions.length) return;
+      try { await grist.docApi.applyUserActions(actions); }
+      catch (e) { alert('Écriture refusée : ' + (e && e.message || e)); }
+      await this.load(); this._notify();
+    }
+  };
+
+  /* ---- Routeur + nav --------------------------------------------------- */
+  // Ordre canonique de la nav (tableau de bord d'abord). Les ids hors liste suivent.
+  const ORDER = ['suivi', 'classement', 'import'];
+  const orderedIds = () => Object.keys(BUDGET.modules).slice()
+    .sort((a, b) => (ORDER.indexOf(a) < 0 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(b) < 0 ? 99 : ORDER.indexOf(b)));
+  // Vue pinnée par le build (per-module) OU ?view= OU 1re vue de l'ordre.
+  const PIN = window.__BUDGET_VIEW__ || null;
+  function currentView() {
+    if (PIN) return PIN;
+    const q = new URLSearchParams(location.search).get('view');
+    if (q && BUDGET.modules[q]) return q;
+    return orderedIds()[0];
+  }
+  let VIEW = null;
+  const ctxBase = { BP, grist: HAS_GRIST ? grist : null, demo: !HAS_GRIST, store: Store, el, navigate };
+
+  function renderNav() {
+    const nav = document.getElementById('nav');
+    const ids = orderedIds();
+    if (PIN || ids.length < 2) { nav.innerHTML = ''; return; }   // pas de nav si pinné ou module unique
+    nav.innerHTML = '';
+    const bar = el('<div class="topnav"><span class="brand">Budget</span></div>');
+    ids.forEach(id => {
+      const b = el('<button class="tab">' + (BUDGET.modules[id].title || id) + '</button>');
+      if (id === VIEW) b.classList.add('on');
+      b.onclick = () => navigate(id);
+      bar.appendChild(b);
+    });
+    nav.appendChild(bar);
+  }
+
+  function mountView() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    const def = BUDGET.modules[VIEW];
+    if (!def) { root.innerHTML = '<div class="msg">Module introuvable : ' + VIEW + '</div>'; return; }
+    if (HAS_GRIST) { try { grist.ready({ requiredAccess: def.access || 'full' }); } catch (e) {} }
+    def.mount(root, Object.assign({}, ctxBase, { view: VIEW }));
+  }
+
+  function navigate(id) {
+    if (!BUDGET.modules[id]) return;
+    VIEW = id;
+    if (!PIN) { const u = new URL(location.href); u.searchParams.set('view', id); history.replaceState(null, '', u); }
+    renderNav(); mountView();
+  }
+
+  /* ---- Boot ------------------------------------------------------------ */
+  async function boot() {
+    if (!Object.keys(BUDGET.modules).length) {
+      document.getElementById('root').innerHTML = '<div class="msg">Aucun module chargé.</div>'; return;
+    }
+    VIEW = currentView();
+    if (HAS_GRIST) { try { await Store.load(); } catch (e) {} }
+    renderNav(); mountView();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+
+<!-- ===================================================================== -->
+<!-- MODULES : en dev via <script src>, inlinés/filtrés par build-budget.js. -->
+<!-- <budget-inline:modules> -->
+<script src="modules/suivi.js"></script>
+<script src="modules/classement.js"></script>
+<script src="modules/import.js"></script>
+<!-- </budget-inline> -->
+
+</body>
+</html>

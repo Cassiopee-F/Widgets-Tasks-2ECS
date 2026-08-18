@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://widgets-grist.local/grist_forms/survey-manifest.schema.json",
+  "title": "Survey Manifest",
+  "description": "Projection enquête du FormDef (contrat Form Builder). FormDef reste canonique.",
+  "type": "object",
+  "required": ["manifest_version", "id", "title", "sections"],
+  "additionalProperties": true,
+  "properties": {
+    "manifest_version": { "type": "string" },
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "classification": { "type": "string" },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/section" }
+    },
+    "choices": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "section": {
+      "type": "object",
+      "required": ["id", "label", "questions"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "gate": {
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "questions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/question" }
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["colId", "label", "type"],
+      "additionalProperties": true,
+      "properties": {
+        "colId": { "type": "string" },
+        "label": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "text", "choice", "choice_list", "bool", "datetime",
+            "date", "number", "likert5", "attachment"
+          ]
+        },
+        "required": { "type": "boolean" },
+        "condition": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["field", "operator", "value"],
+              "properties": {
+                "field": { "type": "string" },
+                "operator": { "type": "string" },
+                "value": {}
+              }
+            }
+          ]
+        },
+        "profile": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "theme": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "polarity": { "type": "string" },
+        "options": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "grist": {
+          "type": "object",
+          "description": "Méta hors SM strict (Ref, etc.)",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

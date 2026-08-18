@@ -43,3 +43,15 @@ backups/
 
 # Outil de coordination local
 .wikichat/
+
+# Worktrees git poses dans le depot
+.worktrees/
+
+# Artefacts de travail d'outillage (ephemeres, propres au poste)
+.superpowers/
+
+# Brouillons et sorties de commandes laisses a la racine
+.git-commit-msg*.txt
+output.txt
+UUID
+*.zip

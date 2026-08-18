@@ -1,0 +1,13 @@
+{
+  "name": "zebra-validation",
+  "version": "1.0.0",
+  "grist": {
+    "widgetId": "zebra-validation",
+    "name": "ZEBRA — Révision",
+    "url": "index.html",
+    "accessLevel": "full",
+    "description": "Révision PP sur carte MapLibre : dangerosité, LOM, statut terrain. Coordonné avec les 3 autres widgets ZEBRA."
+  },
+  "source": "../../Passerelle/examples/zebra/service/widget/review.html",
+  "note": "index.html est une copie maintenue en sync avec la source ci-dessus. La source est déployée sur zebra-bridge SSPCloud."
+}

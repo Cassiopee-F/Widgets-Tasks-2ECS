@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZEBRA — Inférence</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    :root {
+      --rf-blue:#000091;--rf-blue-l:#e3e3fd;
+      --green:#2a9d8f;--orange:#f57c00;--red:#d32f2f;
+      --grey-50:#f6f6f6;--grey-100:#eee;--grey-700:#444;
+      --t:150ms ease;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;font-size:13px;color:#161616;
+         background:var(--grey-50);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+    /* ── Header ── */
+    header{background:white;padding:8px 16px;border-bottom:2px solid var(--rf-blue);
+           display:flex;align-items:center;gap:10px;flex-shrink:0}
+    header strong{color:var(--rf-blue);font-size:14px}
+    .badge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--rf-blue);color:white}
+    .status-dot{width:8px;height:8px;border-radius:50%;background:var(--grey-100);margin-left:auto}
+    .status-dot.ok{background:var(--green)}
+    .status-dot.err{background:var(--red)}
+
+    /* ── Stepper ── */
+    .stepper{background:white;border-bottom:1px solid var(--grey-100);
+             padding:10px 16px;display:flex;align-items:center;gap:0;flex-shrink:0}
+    .step{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--grey-700);
+          flex:1;position:relative}
+    .step:not(:last-child)::after{content:'›';position:absolute;right:-4px;color:var(--grey-100);
+                                   font-size:16px;top:50%;transform:translateY(-50%)}
+    .step .s-num{width:20px;height:20px;border-radius:50%;background:var(--grey-100);
+                 color:var(--grey-700);font-size:10px;font-weight:700;
+                 display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .step.active .s-num{background:var(--rf-blue);color:white}
+    .step.done .s-num{background:var(--green);color:white}
+    .step .s-label{line-height:1.2}
+    .step .s-sub{font-size:9px;color:var(--grey-700)}
+    .step.active .s-label{color:var(--rf-blue);font-weight:600}
+    .step.done .s-label{color:var(--green)}
+
+    /* ── Corps ── */
+    main{display:grid;grid-template-columns:260px 1fr;flex:1;overflow:hidden}
+
+    /* Sidebar communes */
+    .sidebar{background:white;border-right:1px solid var(--grey-100);
+             display:flex;flex-direction:column;overflow:hidden}
+    .sidebar-head{padding:10px 12px;border-bottom:1px solid var(--grey-100)}
+    .sidebar-head h3{font-size:11px;text-transform:uppercase;color:var(--grey-700);margin-bottom:4px}
+    .commune-list{flex:1;overflow-y:auto;padding:6px}
+    .commune-btn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;
+                 margin-bottom:4px;background:var(--grey-50);border:1px solid var(--grey-100);
+                 border-radius:4px;cursor:pointer;text-align:left;transition:var(--t);font-size:12px}
+    .commune-btn:hover{border-color:var(--rf-blue);background:var(--rf-blue-l)}
+    .commune-btn.selected{background:var(--rf-blue-l);border-color:var(--rf-blue);
+                          color:var(--rf-blue);font-weight:600}
+    .commune-btn .c-icon{font-size:16px}
+    .commune-btn .c-meta{font-size:10px;color:var(--grey-700);margin-top:1px}
+    .commune-btn.selected .c-meta{color:var(--rf-blue)}
+    .commune-btn .c-status{margin-left:auto;font-size:10px;padding:2px 6px;border-radius:8px}
+    .c-status.ready{background:#e8f5e9;color:var(--green)}
+    .c-status.new{background:var(--rf-blue-l);color:var(--rf-blue)}
+
+    .sidebar-sep{padding:8px 12px;font-size:11px;color:var(--grey-700);
+                 border-top:1px solid var(--grey-100);font-weight:600}
+    .new-inference-input{display:flex;gap:4px;padding:8px 12px;border-top:1px solid var(--grey-100)}
+    .new-inference-input input{flex:1;padding:5px 8px;border:1px solid var(--grey-100);
+                                border-radius:4px;font:inherit;font-size:12px}
+    .new-inference-input input:focus{outline:none;border-color:var(--rf-blue)}
+    .btn-new{padding:5px 10px;background:var(--grey-50);border:1px solid var(--grey-100);
+             border-radius:4px;cursor:pointer;font-size:11px;transition:var(--t)}
+    .btn-new:hover{border-color:var(--orange);color:var(--orange)}
+
+    .sidebar-actions{padding:10px 12px;border-top:1px solid var(--grey-100)}
+    .btn-primary{width:100%;padding:9px;background:var(--rf-blue);color:white;border:none;
+                 border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;transition:var(--t)}
+    .btn-primary:disabled{opacity:.45;cursor:not-allowed}
+    .btn-primary:not(:disabled):hover{background:#1212ff}
+
+    /* Contenu principal */
+    .content{padding:20px;overflow-y:auto}
+
+    /* Empty + états */
+    .empty-state{text-align:center;padding:50px 20px;color:var(--grey-700)}
+    .empty-state .icon{font-size:40px;margin-bottom:12px}
+    .empty-state p{font-size:13px;line-height:1.6;max-width:340px;margin:0 auto}
+
+    /* Job card */
+    .job-card{background:white;border:1px solid var(--grey-100);border-radius:6px;
+              padding:16px;margin-bottom:16px}
+    .job-card h3{font-size:14px;margin-bottom:4px}
+    .job-card .meta{font-size:11px;color:var(--grey-700);margin-bottom:12px}
+    .job-status{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:8px}
+    .s-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .s-running{background:var(--orange);animation:pulse 1s infinite}
+    .s-done{background:var(--green)}
+    .s-failed{background:var(--red)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .progress-bar{height:6px;background:var(--grey-100);border-radius:3px;overflow:hidden}
+    .progress-fill{height:100%;background:var(--rf-blue);transition:width .4s;border-radius:3px}
+    .step-label{font-size:11px;color:var(--grey-700);margin-top:6px}
+
+    .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+    .stat-box{background:var(--grey-50);border-radius:4px;padding:8px;text-align:center}
+    .stat-box .val{font-size:24px;font-weight:700;color:var(--rf-blue)}
+    .stat-box .lbl{font-size:10px;color:var(--grey-700);margin-top:2px}
+
+    /* CTA suivant */
+    .cta-next{background:#e8f5e9;border:1px solid var(--green);border-radius:6px;
+              padding:14px 16px;margin-top:16px;display:flex;align-items:center;gap:12px}
+    .cta-next .cta-text{flex:1;font-size:12px;color:#1b6b5a}
+    .cta-next .cta-text strong{display:block;font-size:13px;margin-bottom:2px;color:var(--green)}
+    .btn-cta{padding:7px 16px;background:var(--green);color:white;border:none;border-radius:4px;
+             cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap}
+
+    .btn-secondary{padding:6px 14px;background:white;border:1px solid var(--rf-blue);
+                   color:var(--rf-blue);border-radius:4px;cursor:pointer;font-size:12px;
+                   font-weight:500;margin-top:8px;transition:var(--t)}
+    .btn-secondary:hover{background:var(--rf-blue-l)}
+
+    .import-status{font-size:11px;min-height:16px;margin-top:6px}
+
+    /* History */
+    .history{margin-top:20px}
+    .history h3{font-size:11px;text-transform:uppercase;color:var(--grey-700);margin-bottom:8px}
+    .history-row{display:flex;align-items:center;gap:8px;padding:6px 0;
+                 border-bottom:1px solid var(--grey-100);font-size:12px}
+    .history-row:last-child{border:none}
+
+    /* Alerte GPU down */
+    .gpu-notice{background:#fff8e1;border:1px solid #fbc02d;border-radius:4px;
+                padding:8px 12px;font-size:11px;color:#5d4037;margin:8px 12px 0;display:none}
+    .gpu-notice.show{display:block}
+  </style>
+</head>
+<body>
+<header>
+  <strong>ZEBRA</strong>
+  <span>Passages piétons</span>
+  <span class="badge">① Charger</span>
+  <span class="status-dot" id="api-dot" title="Service ZEBRA"></span>
+</header>
+
+<!-- Stepper workflow -->
+<div class="stepper">
+  <div class="step active" id="step-1">
+    <div class="s-num">1</div>
+    <div>
+      <div class="s-label">Charger</div>
+      <div class="s-sub">Importer les PP</div>
+    </div>
+  </div>
+  <div class="step" id="step-2">
+    <div class="s-num">2</div>
+    <div>
+      <div class="s-label">Réviser</div>
+      <div class="s-sub">Valider sur carte</div>
+    </div>
+  </div>
+  <div class="step" id="step-3">
+    <div class="s-num">3</div>
+    <div>
+      <div class="s-label">LOM</div>
+      <div class="s-sub">Phase 2 stationn.</div>
+    </div>
+  </div>
+  <div class="step" id="step-4">
+    <div class="s-num">4</div>
+    <div>
+      <div class="s-label">Terrain</div>
+      <div class="s-sub">Validation in situ</div>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="sidebar">
+    <div class="sidebar-head">
+      <h3>Résultats disponibles</h3>
+      <div id="commune-meta" style="font-size:11px;color:var(--grey-700)">Chargement…</div>
+    </div>
+    <div class="commune-list" id="commune-list">
+      <div style="padding:20px;text-align:center;color:var(--grey-700)">⏳</div>
+    </div>
+
+    <div id="gpu-notice" class="gpu-notice">
+      ⚠ GPU SAMGeo3 indisponible — seul l'import de résultats existants est possible.
+    </div>
+
+    <div class="sidebar-sep">Rechercher et inférer</div>
+    <div class="new-inference-input" style="flex-direction:column;gap:4px">
+      <div style="display:flex;gap:4px">
+        <input id="new-commune-input" type="text" placeholder="Rechercher une commune…"
+               oninput="searchCommunes(this.value)" autocomplete="off"
+               style="flex:1;padding:5px 8px;border:1px solid var(--grey-100);border-radius:4px;font:inherit;font-size:12px" />
+        <button class="btn-new" onclick="launchNewInference()" id="btn-new-inf" 
+                style="padding:5px 10px;background:var(--grey-50);border:1px solid var(--grey-100);border-radius:4px;cursor:pointer;font-size:11px;transition:var(--t)"
+                title="Lancer la détection SAMGeo3">▶</button>
+      </div>
+      <div id="commune-search-results" style="display:none;background:white;border:1px solid var(--grey-100);
+           border-radius:4px;max-height:120px;overflow-y:auto;font-size:12px"></div>
+    </div>
+
+    <div class="sidebar-actions">
+      <button class="btn-primary" id="btn-load" disabled onclick="loadSelected()">
+        ⬇ Charger dans Grist
+      </button>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <div class="empty-state">
+      <div class="icon">🗂️</div>
+      <p>Sélectionnez une commune à gauche pour charger ses passages piétons détectés dans Grist.</p>
+      <p style="margin-top:12px;font-size:11px;color:var(--grey-700)">
+        Les résultats existants (SAMGeo3 + classifiers INSERM) sont directement importables.
+      </p>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  const ZEBRA_API = window.location.origin;
+  let selected = null, gristMode = false, jobHistory = [], currentJobId = null;
+
+  // ── Variables user/doc pour queue persistante ─────────────────────────────
+  let gristUserId = null, gristDocId = null;
+
+  async function resumeJobIfAny() {
+    if (!gristUserId) return;
+    try {
+      const uid = encodeURIComponent(gristUserId);
+      const did = encodeURIComponent(gristDocId || 'unknown');
+      const r = await fetch(`${ZEBRA_API}/api/user-job?user_id=${uid}&doc_id=${did}`);
+      const entry = await r.json();
+      if (!entry.job_id) return;
+      if (!['completed','failed','cancelled'].includes(entry.job_status)) {
+        // Job en cours → reprendre le polling
+        currentJobId = entry.job_id;
+        jobHistory.unshift({ commune: entry.commune, started: new Date(entry.created_at * 1000).toISOString() });
+        document.getElementById('btn-load').disabled = true;
+        document.getElementById('btn-load').textContent = '⏳ Reprise inférence…';
+        pollJob(entry.job_id, entry.commune);
+      } else if (entry.can_dismiss) {
+        await fetch(`${ZEBRA_API}/api/user-job?user_id=${uid}&doc_id=${did}`, { method: 'DELETE' });
+        loadCommunes();
+      }
+    } catch (_) {}
+  }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+  async function init() {
+    const inGrist = typeof grist !== 'undefined' && window.parent !== window;
+    if (inGrist) {
+      gristMode = true;
+      try { grist.ready({ requiredAccess: 'full' }); } catch (_) {}
+      // Récupérer user_id depuis le token Grist
+      try {
+        const tok = await grist.getAccessToken({ readOnly: true });
+        if (tok?.token) {
+          const payload = JSON.parse(atob(tok.token.split('.')[1]));
+          gristUserId = String(payload.userId || payload.sub || '');
+        }
+        // doc_id depuis l'URL iframe parent (https://grist.../doc/DOCID/...)
+        const parentUrl = document.referrer || '';
+        const docMatch = parentUrl.match(/\/doc\/([a-zA-Z0-9]+)/);
+        if (docMatch) gristDocId = docMatch[1];
+      } catch (_) {}
+      autoInitSchema();
+      updateStepperFromGrist();
+      setTimeout(resumeJobIfAny, 2000); // Reprise job existant
+    }
+    checkService();
+    loadCommunes();
+  }
+
+  async function autoInitSchema() {
+    try {
+      const { ensureTables } = await import('/widget/shared/grist_schema.js');
+      await ensureTables(['Pp','Etudes','Campagnes','Corrections','Pp_vision']);
+    } catch (e) { console.warn('[ZEBRA] schema init:', e.message); }
+  }
+
+  async function updateStepperFromGrist() {
+    if (!gristMode) return;
+    try {
+      const pp = await grist.docApi.fetchTable('Pp');
+      const nPp = (pp?.id || []).length;
+      if (nPp > 0) {
+        document.getElementById('step-1').className = 'step done';
+        document.getElementById('step-2').className = 'step active';
+        showLoadedState(nPp);
+      }
+    } catch (_) {}
+  }
+
+  async function checkService() {
+    const dot = document.getElementById('api-dot');
+    try {
+      const r = await fetch(`${ZEBRA_API}/api/health`, { signal: AbortSignal.timeout(5000) });
+      const d = await r.json();
+      dot.className = `status-dot ${d.status === 'healthy' ? 'ok' : 'err'}`;
+      const gpuOk = d.gpu_ok && d.samgeo3_loaded;
+      document.getElementById('btn-new-inf').disabled = !gpuOk;
+      document.getElementById('btn-new-inf').title = gpuOk ? 'Lancer une détection' : 'GPU SAMGeo3 non disponible';
+      if (!gpuOk) document.getElementById('gpu-notice').classList.add('show');
+    } catch {
+      dot.className = 'status-dot err';
+    }
+  }
+
+  async function loadCommunes() {
+    const list = document.getElementById('commune-list');
+    const meta = document.getElementById('commune-meta');
+    try {
+      const r = await fetch(`${ZEBRA_API}/api/available`);
+      const communes = await r.json();
+      meta.textContent = `${communes.length} jeu(x) disponible(s)`;
+      if (!communes.length) {
+        list.innerHTML = `<div style="padding:14px;color:var(--grey-700);font-size:11px;text-align:center">
+          Aucun résultat — GPU + inférence requis.
+        </div>`;
+        return;
+      }
+      list.innerHTML = communes.map(c => {
+        const label = c.name.replace(/_/g,' ').replace(/ (maskrcnn|samgeo3|GT_5cm|20cm)$/,'');
+        const det = c.name.includes('samgeo3') ? 'SAMGeo3' : c.name.includes('maskrcnn') ? 'MaskRCNN' : 'Détecteur';
+        return `<button class="commune-btn" onclick="selectCommune('${c.name}',this)" data-name="${c.name}">
+          <span class="c-icon">📍</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+            <div class="c-meta">${det} · ${c.geojson?.length||0} fichier(s)</div>
+          </div>
+          <span class="c-status ready">Prêt</span>
+        </button>`;
+      }).join('');
+    } catch(e) {
+      meta.textContent = 'Service inaccessible'; list.innerHTML = '';
+    }
+  }
+
+  function selectCommune(name, btn) {
+    selected = name;
+    document.querySelectorAll('.commune-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    document.getElementById('btn-load').disabled = false;
+    showPreviewState(name);
+  }
+
+  function showPreviewState(name) {
+    const label = name.replace(/_/g,' ').replace(/ (maskrcnn|samgeo3|GT_5cm|20cm)$/,'');
+    document.getElementById('content').innerHTML = `
+      <div class="job-card">
+        <h3>📍 ${label}</h3>
+        <div class="meta">Prêt à charger · SAMGeo3 + 14 classifiers INSERM ResNeXt</div>
+        <div style="font-size:12px;color:var(--grey-700);line-height:1.7;background:var(--grey-50);
+                    padding:10px;border-radius:4px;margin-top:8px">
+          <div>🔍 Passages piétons détectés (SAMGeo3 prompt "crosswalk")</div>
+          <div>📊 14 classifiers INSERM : feux, BEV, éclairage, arrêts TC…</div>
+          <div>🎯 Score de dangerosité calculé (0→3)</div>
+          <div>📌 Géométrie WGS84, prête pour la révision</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn-secondary" onclick="loadSelected()">⬇ Charger dans Grist</button>
+          <button class="btn-secondary" onclick="downloadGpkg('${name}')">📦 GPKG</button>
+        </div>
+        <div class="import-status" id="import-status"></div>
+      </div>
+      ${renderHistory()}`;
+  }
+
+  function showLoadedState(nPp) {
+    document.getElementById('content').innerHTML = `
+      <div class="job-card" style="border-color:var(--green)">
+        <div class="job-status">
+          <span class="s-dot s-done"></span>
+          <span style="color:var(--green);font-weight:600">✅ ${nPp} PP chargés dans Grist</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="val">${nPp}</div><div class="lbl">PP détectés</div></div>
+          <div class="stat-box"><div class="val" id="n-valide">—</div><div class="lbl">Validés</div></div>
+          <div class="stat-box"><div class="val" id="n-lom">—</div><div class="lbl">Non conformes LOM</div></div>
+        </div>
+      </div>
+      <div class="cta-next">
+        <div style="font-size:24px">🗺️</div>
+        <div class="cta-text">
+          <strong>Étape 2 — Réviser les passages piétons</strong>
+          Ouvrez le widget "Zebra review" pour visualiser les PP sur la carte et les valider.
+        </div>
+      </div>
+      <div class="cta-next" style="background:#e3f2fd;border-color:#1976d2;margin-top:8px">
+        <div style="font-size:24px">⬇</div>
+        <div class="cta-text">
+          <strong style="color:#1565c0">Charger d'autres communes</strong>
+          Sélectionnez une autre commune à gauche pour enrichir le jeu de données.
+        </div>
+      </div>
+      ${renderHistory()}`;
+    // Charger les stats depuis Grist
+    loadGristStats();
+  }
+
+  async function loadGristStats() {
+    if (!gristMode) return;
+    try {
+      const pp = await grist.docApi.fetchTable('Pp');
+      const ids = pp?.id || [];
+      const statuts = pp?.statut_terrain || [];
+      const lom = pp?.lom_infraction || [];
+      const nValide = statuts.filter(s => s === 'Valide').length;
+      const nLom = lom.filter(l => l === 'Non_conforme').length;
+      const el1 = document.getElementById('n-valide');
+      const el2 = document.getElementById('n-lom');
+      if (el1) el1.textContent = nValide || '0';
+      if (el2) el2.textContent = nLom || '0';
+    } catch (_) {}
+  }
+
+  // ── Chargement dans Grist ─────────────────────────────────────────────────
+
+  // ── Recherche commune (autocomplete via /api/communes) ───────────────────
+  window.searchCommunes = async function(q) {
+    const box = document.getElementById('commune-search-results');
+    const inp = document.getElementById('new-commune-input');
+    const btnInf = document.getElementById('btn-new-inf');
+    if (!q || q.length < 2) { box.style.display='none'; return; }
+    try {
+      const r = await fetch(`${ZEBRA_API}/api/communes?q=${encodeURIComponent(q)}&limit=6`);
+      const communes = await r.json();
+      if (!communes.length) { box.style.display='none'; return; }
+      box.style.display = 'block';
+      box.innerHTML = communes.map(c => `
+        <div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--grey-100)"
+             onmouseover="this.style.background='var(--grey-50)'" 
+             onmouseout="this.style.background=''"
+             onclick="selectSearchResult('${c.nom.replace(/'/g,"'")}','${c.dept_code}')">
+          <div style="font-weight:500">${c.nom}</div>
+          <div style="font-size:10px;color:var(--grey-700)">${c.code_postal} · ${c.departement} · ${c.population?.toLocaleString('fr')||'?'} hab.</div>
+        </div>`).join('');
+    } catch(_) { box.style.display='none'; }
+  };
+
+  window.selectSearchResult = function(nom, dept) {
+    const inp = document.getElementById('new-commune-input');
+    const box = document.getElementById('commune-search-results');
+    const btnInf = document.getElementById('btn-new-inf');
+    inp.value = nom;
+    box.style.display = 'none';
+    // Activer le bouton d'inférence si GPU dispo
+    const gpuOk = !document.getElementById('btn-new-inf').disabled || false;
+    // Afficher un preview dans le panneau droit
+    document.getElementById('content').innerHTML = `
+      <div class="job-card">
+        <h3>🔍 ${nom} <span style="font-size:11px;color:var(--grey-700);font-weight:400">· dép. ${dept}</span></h3>
+        <div class="meta">Prête à détecter les passages piétons</div>
+        <div style="font-size:12px;color:var(--grey-700);line-height:1.7;background:var(--grey-50);padding:10px;border-radius:4px">
+          <div>🔍 Détection SAMGeo3 + 14 classifiers INSERM</div>
+          <div>⏱️ Durée estimée : 10-30 min selon la taille</div>
+          <div>🎯 Résultat : PP géolocalisés + scores de dangerosité</div>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn-primary" onclick="window.launchNewInference()" 
+                  style="width:auto;padding:8px 20px" 
+                  ${document.getElementById('btn-new-inf').disabled ? 'disabled' : ''}>
+            ▶ Lancer la détection sur ${nom}
+          </button>
+          ${document.getElementById('btn-new-inf').disabled ? 
+            '<div style="font-size:11px;color:var(--orange);margin-top:6px">⚠ GPU SAMGeo3 non disponible</div>' : ''}
+        </div>
+      </div>`;
+  };
+
+  window.loadSelected = async function() {
+    if (!selected) return;
+    const status = document.getElementById('import-status');
+    const btn = document.getElementById('btn-load');
+    btn.disabled = true;
+    btn.textContent = '⏳ Import…';
+    if (status) status.innerHTML = `<span style="color:var(--rf-blue)">⏳ Récupération…</span>`;
+
+    try {
+      const resp = await fetch(`${ZEBRA_API}/api/results/${encodeURIComponent(selected)}`);
+      if (resp.status === 404) {
+        if (status) status.innerHTML = `<span style="color:var(--red)">❌ Aucun résultat pour cette commune.</span>`;
+        btn.disabled = false; btn.textContent = '⬇ Charger dans Grist';
+        return;
+      }
+      const fc = await resp.json();
+      const features = fc.features || [];
+      if (!features.length) { if(status) status.textContent = 'Aucune géométrie.'; btn.disabled=false; btn.textContent='⬇ Charger dans Grist'; return; }
+
+      if (status) status.innerHTML = `<span style="color:var(--rf-blue)">⏳ Import de ${features.length} PP…</span>`;
+
+      if (gristMode) {
+        // Préparer les colonnes
+        const now = new Date().toISOString();
+        const communeLabel = selected.replace(/_/g,' ').replace(/ (maskrcnn|samgeo3|GT_5cm|20cm)$/,'');
+        const DEG = 0.00004;
+        const ppIds=[],communes=[],geomJsons=[],lats=[],lngs=[],idZebras=[],scores=[],dangCodes=[],dangs=[];
+        const reviewStatuts=[],statutTerrains=[],phase2Statuts=[],createdAts=[];
+        const filterStatuts=[],filterReasons=[],distRoads=[],distBatis=[];
+        const clFields={};
+        const CL=['valide_evaluable_sat','valide_evaluable_street','ralentisseurs_trapezoidal_plateau',
+          'manque_visibilite','feu','ligne_effet_sas_cycliste','eclairage_public_moins_20m',
+          'coherence_longueur_passage_pieton','places_stationnement','presence_ilot',
+          'ilot_refuge_inferieur_2m','ilot_refuge_franchissable','arret_de_bus','bande_d_eveil_de_vigilance'];
+        CL.forEach(k=>{clFields[`cl_${k}`]=[]});
+
+        for (const feat of features) {
+          const p=feat.properties||{}, g=feat.geometry||{};
+          let coords=g.type==='Polygon'?g.coordinates[0]:g.type==='Point'?(([px,py])=>[[px-DEG,py-DEG],[px+DEG,py-DEG],[px+DEG,py+DEG],[px-DEG,py+DEG],[px-DEG,py-DEG]])(g.coordinates):null;
+          const ring=coords?JSON.stringify(coords):'';
+          const cLng=coords?coords.reduce((s,c)=>s+c[0],0)/coords.length:(p.lng||null);
+          const cLat=coords?coords.reduce((s,c)=>s+c[1],0)/coords.length:(p.lat||null);
+          ppIds.push(crypto.randomUUID?.()??Math.random().toString(36).slice(2));
+          communes.push(communeLabel);
+          geomJsons.push(ring); lats.push(cLat); lngs.push(cLng); idZebras.push(p.id_zebra||p.id_zebra_str||String(p.id||""));
+          scores.push(+(p.score_detection ?? p.score ?? p.confidence ?? 0));
+          dangCodes.push(+(p.dangerosite_code ?? -1));
+          dangs.push(p.dangerosite || 'Non_evaluable');
+          reviewStatuts.push('pending'); statutTerrains.push('A_voir');
+          phase2Statuts.push('not_run'); createdAts.push(now);
+          filterStatuts.push(p.filter_status || 'valid');
+          filterReasons.push(p.filter_reason || 'ok');
+          distRoads.push(p.dist_road != null ? +p.dist_road : null);
+          distBatis.push(p.dist_bati != null ? +p.dist_bati : null);
+          // Mapping GeoJSON field names → colonne Grist (le pipeline SAMGeo3 n'ajoute pas le préfixe cl_)
+          const GEO_CL = {
+            'valide_evaluable_sat':'valide_evaluable_SAT','valide_evaluable_street':'valide_evaluable_STREET',
+            'ralentisseurs_trapezoidal_plateau':'ralentisseurs_trapezoidal_plateau',
+            'manque_visibilite':'manque_visibilite','feu':'feu',
+            'ligne_effet_sas_cycliste':'ligne_effet_SAS_cycliste',
+            'eclairage_public_moins_20m':'eclairage_public_moins_20m',
+            'coherence_longueur_passage_pieton':'coherence_longueur_passage_pieton',
+            'places_stationnement':'places_stationnement','presence_ilot':'presence_ilot',
+            'ilot_refuge_inferieur_2m':'ilot_refuge_inferieur_2m',
+            'ilot_refuge_franchissable':'ilot_refuge_franchissable',
+            'arret_de_bus':'arret_de_bus','bande_d_eveil_de_vigilance':'bande_d_eveil_de_vigilance',
+          };
+          CL.forEach(k => {
+            const v = p[GEO_CL[k]] ?? p[`cl_${k}`] ?? null;
+            clFields[`cl_${k}`].push(v !== null ? +v : 0);
+          });
+          // id_zebra depuis le GeoJSON
+          ppIds[ppIds.length-1] = ppIds[ppIds.length-1]; // pp_id déjà poussé
+          if (!communes[communes.length-1]) communes[communes.length-1] = communeLabel;
+        }
+
+        const colData = {
+          pp_id:ppIds, id_zebra:idZebras, commune:communes,
+          campaign_ortho_id:Array(features.length).fill('samgeo3_ortho_20cm'),
+          detector:Array(features.length).fill('samgeo3'),
+          model_version:Array(features.length).fill('samgeo3-2026'),
+          source_type:Array(features.length).fill('ortho'),
+          origin:Array(features.length).fill('model_inference'),
+          created_at:createdAts, geometry_json:geomJsons, lat:lats, lng:lngs,
+          score_detection:scores, dangerosite_code:dangCodes, dangerosite:dangs,
+          review_status:reviewStatuts, statut_terrain:statutTerrains,
+          phase2_status:phase2Statuts,
+          filter_status:filterStatuts, filter_reason:filterReasons,
+          dist_road:distRoads, dist_bati:distBatis,
+          lom_decree_distance_m:Array(features.length).fill(5.0),
+          ...clFields,
+        };
+
+        try {
+          await grist.docApi.applyUserActions([['BulkAddRecord','Pp',Array(features.length).fill(null),colData]]);
+        } catch(e) {
+          if (e.message?.includes('Pp')) {
+            const { PP_COLUMNS } = await import('/widget/shared/grist_schema.js');
+            await grist.docApi.applyUserActions([
+              ['AddTable','Pp',PP_COLUMNS],
+              ['BulkAddRecord','Pp',Array(features.length).fill(null),colData],
+            ]);
+          } else throw e;
+        }
+
+        // Enregistrer dans Campagnes
+        const etudeId = crypto.randomUUID?.()??Date.now().toString(36);
+        try {
+          await grist.docApi.applyUserActions([['BulkAddRecord','Campagnes',[null],{
+            campagne_id:[etudeId], nom:[communeLabel], commune:[communeLabel],
+            source_type:['ortho'], status:['chargé'], n_pp_detectes:[features.length],
+            created_at:[now],
+          }]]);
+        } catch(_) {}
+
+        jobHistory.unshift({ commune:communeLabel, n:features.length, at:now });
+        document.getElementById('step-1').className='step done';
+        document.getElementById('step-2').className='step active';
+        showLoadedState(features.length);
+      } else {
+        if(status) status.innerHTML=`<span style="color:var(--green)">✅ ${features.length} PP (mode démo, Grist non connecté)</span>`;
+      }
+    } catch(e) {
+      if(status) status.innerHTML=`<span style="color:var(--red)">❌ ${e.message}</span>`;
+      btn.disabled=false; btn.textContent='⬇ Charger dans Grist';
+    }
+  };
+
+  // ── Nouvelle inférence (GPU) ──────────────────────────────────────────────
+  window.launchNewInference = async function() {
+    const commune = document.getElementById('new-commune-input').value.trim();
+    if (!commune) return;
+    document.getElementById('btn-new-inf').disabled = true;
+    try {
+      const r = await fetch(`${ZEBRA_API}/api/process`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ commune, source:'20cm', grist_user_id: gristUserId||null, grist_doc_id: gristDocId||null }),
+      });
+      const data = await r.json();
+      if (r.status===429) { alert('Un job est déjà en cours.'); return; }
+      if (!data.job_id) throw new Error(data.detail||'Pas de job_id');
+      currentJobId = data.job_id;
+      pollJob(data.job_id, commune);
+    } catch(e) {
+      document.getElementById('content').innerHTML=`<div style="color:var(--red);padding:20px">${e.message}</div>`;
+      document.getElementById('btn-new-inf').disabled=false;
+    }
+  };
+
+  function pollJob(jobId, commune) {
+    renderJobRunning(jobId, commune, 0, 'Initialisation…');
+    const poll = async () => {
+      try {
+        const r = await fetch(`${ZEBRA_API}/api/status/${jobId}`);
+        const job = await r.json();
+        const pct = job.progress_pct??0, label = job.step_label||'En cours…';
+        if (job.status==='completed') {
+          loadCommunes();
+          // Sélectionner automatiquement la commune terminée
+          setTimeout(()=>{
+            const btn = [...document.querySelectorAll('.commune-btn')]
+              .find(b=>b.dataset.name?.includes(commune.replace(/ /g,'_')));
+            if (btn) btn.click();
+          }, 500);
+          return;
+        }
+        if (['failed','cancelled','interrupted'].includes(job.status)) {
+          document.getElementById('content').innerHTML=`<div class="job-card" style="border-color:var(--red)">
+            <div style="color:var(--red);font-weight:600">❌ Échec : ${job.error||job.status}</div>
+          </div>`;
+          document.getElementById('btn-new-inf').disabled=false; return;
+        }
+        renderJobRunning(jobId, commune, pct, label);
+        setTimeout(poll, 2500);
+      } catch(_) { setTimeout(poll, 5000); }
+    };
+    poll();
+  }
+
+  function renderJobRunning(jobId, commune, pct, label) {
+    document.getElementById('content').innerHTML=`
+      <div class="job-card">
+        <h3>🔍 Détection en cours — ${commune}</h3>
+        <div class="meta">Job ${jobId.slice(0,8)}…</div>
+        <div class="job-status">
+          <span class="s-dot s-running"></span>
+          <span>SAMGeo3 + classifiers INSERM…</span>
+          <span style="margin-left:auto;font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <div class="step-label">${label}</div>
+      </div>`;
+  }
+
+  function renderHistory() {
+    if (!jobHistory.length) return '';
+    return `<div class="history"><h3>Imports récents</h3>
+      ${jobHistory.slice(0,5).map(j=>`
+        <div class="history-row">
+          <span>📍 ${j.commune}</span>
+          <span style="color:var(--green);margin-left:4px">${j.n} PP</span>
+          <span style="margin-left:auto;color:var(--grey-700)">${j.at.slice(0,16).replace('T',' ')}</span>
+        </div>`).join('')}</div>`;
+  }
+
+  window.downloadGpkg = c => window.open(`${ZEBRA_API}/api/export/gpkg?commune=${encodeURIComponent(c)}`, '_blank');
+
+  function elapsed(iso) {
+    if(!iso) return '—';
+    const s=Math.floor((Date.now()-new Date(iso))/1000);
+    return s<60?`${s}s`:`${Math.floor(s/60)}min`;
+  }
+
+  // Exposer sur window (module scope isolé)
+  window.selectCommune = selectCommune;
+
+  init();
+</script>
+</body>
+</html>

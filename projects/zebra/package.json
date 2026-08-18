@@ -1,0 +1,47 @@
+{
+  "name": "zebra",
+  "version": "1.0.0",
+  "description": "ZEBRA — Diagnostic sécurité passages piétons (CEREMA × INSERM DSR)",
+  "grist": [
+    {
+      "widgetId": "zebra-inference",
+      "name": "ZEBRA — Détection",
+      "url": "inference/",
+      "accessLevel": "full",
+      "renderAfterReady": true,
+      "description": "Lance une détection de passages piétons par IA (SAMGeo3 + classifiers ResNeXt) sur une commune. Suit le job en temps réel via SSE.",
+      "authors": [{ "name": "CEREMA Méditerranée", "url": "https://github.com/nic01asfr/Widgets-Grist" }]
+    },
+    {
+      "widgetId": "zebra-validation",
+      "name": "ZEBRA — Révision",
+      "url": "validation/",
+      "accessLevel": "full",
+      "renderAfterReady": true,
+      "description": "Carte interactive pour réviser les PP détectés : dangerosité, conformité LOM, statut terrain. Coordonné avec les autres widgets ZEBRA.",
+      "authors": [{ "name": "CEREMA Méditerranée", "url": "https://github.com/nic01asfr/Widgets-Grist" }]
+    },
+    {
+      "widgetId": "zebra-terrain",
+      "name": "ZEBRA — Terrain",
+      "url": "terrain/",
+      "accessLevel": "full",
+      "renderAfterReady": true,
+      "description": "App terrain pour les agents : photo → détection IA des équipements (feux, BEV, lampadaires) + géoréférencement XY automatique. Validation manuelle des 14 critères INSERM. Fonctionne hors-ligne.",
+      "authors": [{ "name": "CEREMA Méditerranée", "url": "https://github.com/nic01asfr/Widgets-Grist" }]
+    },
+    {
+      "widgetId": "zebra-atlas",
+      "name": "ZEBRA — Atlas 3D",
+      "url": "atlas/",
+      "accessLevel": "full",
+      "renderAfterReady": true,
+      "description": "Maquette 3D territoriale : dangerosité PP, conformité LOM, équipements OSM auto-chargés, sélection de campagnes. Déclenchement de l'inférence depuis la carte.",
+      "authors": [{ "name": "CEREMA Méditerranée", "url": "https://github.com/nic01asfr/Widgets-Grist" }]
+    }
+  ],
+  "scripts": {
+    "promote": "node ../../scripts/promote.js zebra",
+    "manifest": "node ../../scripts/generate-manifest.js"
+  }
+}

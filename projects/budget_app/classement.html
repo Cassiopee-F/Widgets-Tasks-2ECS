@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso — Classement</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--paper:#f6f7f9;--ink:#171a21;--muted:#6b7280;--line:#e6e9ef;--indigo:#3d5afe;--violet:#7c4dff;--green:#0f8a5f;--red:#d14343;--warn:#b9742a}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1000px;margin:0 auto}
+  .card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:10px}
+  .sel{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;background:#fff;max-width:100%}
+  .btn{border:none;border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .btn-go{background:var(--violet);color:#fff}
+  .btn-ghost{background:#fafbfc;border:1px solid var(--line);color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px;text-transform:uppercase;letter-spacing:.03em}
+  .note{font-size:11px;color:#9aa1ad}
+  .msg{max-width:620px;margin:50px auto;padding:24px;background:#fff;border:1px solid var(--line);border-radius:14px;line-height:1.6;text-align:center}
+  .line{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f2f4f8;font-size:12.5px}
+  .hd{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<script>
+/* ===================================================================== */
+/* <budget-core> — sous-ensemble inliné de core/budget-core.js (canonique) */
+/* ===================================================================== */
+const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+const eur = (v,d=2)=>(v<0?'\u2212':'')+Math.abs(v).toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d})+' \u20ac';
+const eur0 = v=>eur(v,0);
+const gristToDate = ts=>ts?new Date(ts*1000):null;
+function merchantKey(lib){
+  let s=norm(lib);
+  s=s.replace(/\bPRLV SEPA\b|\bVIR INST\b|\bVIR\b|\bPRLV\b|\bPAIEMENT\b|\bACHAT\b|\bFACTURE\b|\bSEPA\b|\bCB\b|\bCARTE\b/g,' ');
+  s=s.replace(/\*+\d+/g,' ').replace(/\b\d{2}\/\d{2}(\/\d{2,4})?\b/g,' ').replace(/\b\d{6,}\b/g,' ');
+  s=s.replace(/\d+[.,]\d{2}\s?EUR/g,' ').replace(/\bEUR\b/g,' ').replace(/\b\d{2,5}[A-Z][A-Z]{2,}\b/g,' ');
+  s=s.replace(/[^A-Z0-9& ]/g,' ').replace(/\s+/g,' ').trim();
+  const toks=s.split(' ').filter(t=>t.length>1);
+  return toks.slice(0,2).join(' ')||s||norm(lib).slice(0,12);
+}
+// taxonomie de secours (cold start) : motif -> famille
+const TAXO=[
+  [/CARREFOUR|LECLERC|AUCHAN|INTERMARCHE|LIDL|ALDI|MONOPRIX|FRANPRIX|CASINO|SUPER ?U|MAGASIN U|PICARD|BOULANGERIE|MARCHE|EPICERIE/,'Alimentation'],
+  [/MC ?DO|MCDONALD|BURGER|KFC|RESTO|RESTAURANT|PIZZ|SUSHI|BRASSERIE|CAFE|TABAC|UBER ?EATS|DELIVEROO/,'Restaurants & sorties'],
+  [/SNCF|RATP|RTM|NAVIGO|UBER|BOLT|TAXI|TOTAL|ESSO|SHELL|STATION|CARBURANT|PEAGE|PARKING/,'Transports'],
+  [/LOYER|SYNDIC|FONCIA|EDF|ENGIE|GAZ|VEOLIA|FREE|ORANGE|SFR|BOUYGUES|SOSH/,'Logement'],
+  [/MAIF|MACIF|MATMUT|GMF|AXA|ALLIANZ|ASSURANCE/,'Assurances'],
+  [/PHARMACIE|DOCTEUR|MEDECIN|HOPITAL|DENTAIRE|OPTIC|DOCTOLIB/,'Santé'],
+  [/AMAZON|FNAC|DARTY|ZARA|H&M|DECATHLON|IKEA|LEROY MERLIN|VINTED|CDISCOUNT|ACTION/,'Shopping'],
+  [/NETFLIX|SPOTIFY|DEEZER|DISNEY|CANAL|CINEMA|STEAM|PLAYSTATION/,'Loisirs'],
+  [/GOOGLE|APPLE|MICROSOFT|OVH|ADOBE|OPENAI|GITHUB|ICLOUD/,'Abonnements & numérique'],
+  [/DGFIP|IMPOT|TAXE FONCIERE|URSSAF/,'Impôts & taxes'],
+  [/RETRAIT|DAB|DISTRIBUTEUR/,"Retrait d'espèces"],
+  [/SALAIRE|REMUNERATION|PAYE|VIREMENT.*RECU/,'Revenus']
+];
+function taxoGuess(lib){ const n=norm(lib); for(const [re,fam] of TAXO){ if(re.test(n)) return fam; } return null; }
+/* </budget-core> */
+/* ===================================================================== */
+
+const HAS_GRIST = typeof grist!=='undefined';
+let DATA=null;   // { rows, uncat[], cats[], sous(map fam->[]), regles[], histByMerchant(map), familles[] }
+let ST={ drafts:{}, expanded:null };
+
+const UNCAT=['', null, 'À catégoriser', 'A categoriser'];
+const isUncat=c=>!c || UNCAT.includes(c) || norm(c)==='A CATEGORISER';
+
+async function load(){
+  if(!HAS_GRIST){ renderNoGrist(); return; }
+  let tx,catsTbl,reg,sc;
+  try{
+    [tx,catsTbl,reg,sc]=await Promise.all([
+      grist.docApi.fetchTable('Transactions'),
+      grist.docApi.fetchTable('Categories'),
+      grist.docApi.fetchTable('Regles'),
+      grist.docApi.fetchTable('Sous_categories')
+    ]);
+  }catch(e){ renderError("Tables introuvables. Le classement lit Transactions, Categories, Regles, Sous_categories — lance d'abord l'Import."); return; }
+  const col=(t,n)=>t[n]||[];
+
+  const rows=(tx.id||[]).map((rowId,i)=>({
+    rowId, lib:col(tx,'Libelle')[i]||'', montant:+(col(tx,'Montant')[i]||0),
+    cat:col(tx,'Categorie')[i]||'', sous:col(tx,'Sous_categorie')[i]||'',
+    date:col(tx,'Date')[i], key:merchantKey(col(tx,'Libelle')[i]||'')
+  }));
+
+  const cats=(catsTbl.id||[]).map((rowId,i)=>({rowId,cat:col(catsTbl,'Categorie')[i],type:col(catsTbl,'Type')[i]||'depense',color:col(catsTbl,'Couleur')[i]||'#5b6470'})).filter(c=>c.cat);
+  const familles=cats.slice().sort((a,b)=>(a.type==='depense'?0:1)-(b.type==='depense'?0:1)||a.cat.localeCompare(b.cat));
+  const catColor={}; cats.forEach(c=>catColor[c.cat]=c.color);
+
+  const sousMap={};
+  (sc.id||[]).forEach((rowId,i)=>{ const f=col(sc,'Categorie')[i], s=col(sc,'Sous_categorie')[i]; if(!f||!s)return; (sousMap[f]=sousMap[f]||[]).push(s); });
+
+  const regles=(reg.id||[]).map((rowId,i)=>({rowId,motif:col(reg,'Motif')[i]||'',cat:col(reg,'Categorie')[i]||'',sous:col(reg,'Sous_categorie')[i]||'',prio:+(col(reg,'Priorite')[i]||0)})).filter(r=>r.motif).sort((a,b)=>b.prio-a.prio);
+
+  // mémoire : marchand -> classement le plus fréquent (depuis l'historique déjà classé)
+  const hist={};
+  rows.forEach(r=>{ if(isUncat(r.cat))return; const k=r.key; const h=hist[k]=hist[k]||{}; const key=r.cat+'||'+(r.sous||''); h[key]=(h[key]||0)+1; });
+  const histByMerchant={};
+  for(const k in hist){ const best=Object.keys(hist[k]).sort((a,b)=>hist[k][b]-hist[k][a])[0]; const [c,s]=best.split('||'); histByMerchant[k]={cat:c,sous:s}; }
+
+  const uncat=rows.filter(r=>isUncat(r.cat));
+
+  DATA={rows,uncat,cats,familles,catColor,sousMap,regles,histByMerchant};
+  render();
+}
+
+// suggestion pour un marchand : règle > historique > deviné
+function suggest(key, libs){
+  for(const r of DATA.regles){ const m=norm(r.motif); if(libs.some(l=>norm(l).includes(m))) return {cat:r.cat,sous:r.sous,src:'règle'}; }
+  if(DATA.histByMerchant[key]) return {...DATA.histByMerchant[key],src:'connu'};
+  const g=taxoGuess(libs[0]||key); if(g && DATA.catColor[g]!==undefined) return {cat:g,sous:'',src:'deviné'};
+  if(g) return {cat:g,sous:'',src:'deviné'};
+  return {cat:'',sous:'',src:'à confirmer'};
+}
+
+function groups(){
+  const by={};
+  DATA.uncat.forEach(r=>{ (by[r.key]=by[r.key]||[]).push(r); });
+  return Object.keys(by).map(key=>{
+    const items=by[key]; const libs=items.map(i=>i.lib);
+    const sug=suggest(key,libs);
+    const d=ST.drafts[key]||{famille:sug.cat,sous:sug.sous};
+    return {key,items,libs,sug,famille:d.famille,sous:d.sous,total:items.reduce((a,i)=>a+i.montant,0)};
+  }).sort((a,b)=>b.items.length-a.items.length);
+}
+
+/* -------- écritures -------- */
+async function actions(acts){
+  if(!HAS_GRIST) return;
+  try{ await grist.docApi.applyUserActions(acts); }
+  catch(e){ alert("Écriture refusée : "+(e&&e.message||e)); }
+  await load();
+}
+function setDraft(key,field,val){ const d=ST.drafts[key]||{}; d[field]=val; if(field==='famille') d.sous=''; ST.drafts[key]=d; render(); }
+
+async function createFamille(key){
+  const name=(prompt('Nouvelle famille (catégorie) :')||'').trim(); if(!name) return;
+  await actions([['AddRecord','Categories',null,{Categorie:name,Type:'depense',Couleur:'#5b6470'}]]);
+  setDraft(key,'famille',name);
+}
+async function createSous(key,famille){
+  if(!famille){ alert('Choisis d\'abord une famille.'); return; }
+  const name=(prompt('Nouvelle sous-catégorie pour « '+famille+' » :')||'').trim(); if(!name) return;
+  await actions([['AddRecord','Sous_categories',null,{Categorie:famille,Sous_categorie:name}]]);
+  ST.drafts[key]=ST.drafts[key]||{}; ST.drafts[key].famille=famille; ST.drafts[key].sous=name;
+}
+
+async function classifyGroup(g){
+  if(!g.famille){ alert('Choisis une famille avant de classer.'); return; }
+  const ids=g.items.map(i=>i.rowId);
+  const acts=[['BulkUpdateRecord','Transactions',ids,{Categorie:ids.map(()=>g.famille),Sous_categorie:ids.map(()=>g.sous||'')}]];
+  // apprend une règle si tout le marchand part dans une seule famille et qu'aucune règle ne le couvre déjà
+  const already=DATA.regles.some(r=>g.libs.some(l=>norm(l).includes(norm(r.motif))));
+  if(!already && g.key){ acts.push(['AddRecord','Regles',null,{Motif:g.key,Categorie:g.famille,Sous_categorie:g.sous||'',Priorite:10}]); }
+  delete ST.drafts[g.key];
+  await actions(acts);
+}
+async function classifyLine(r,famille,sous){
+  if(!famille) return;
+  await actions([['UpdateRecord','Transactions',r.rowId,{Categorie:famille,Sous_categorie:sous||''}]]);
+}
+
+/* -------- rendu -------- */
+const SRC={ 'règle':['#eef0fb','#3155e0'], 'connu':['#e3f4ec','#0f8a5f'], 'deviné':['#fcefdc','#b9742a'], 'à confirmer':['#f2f4f8','#8a8f99'] };
+
+function famSelect(key,famille,handlerAttr){
+  const opts=DATA.familles.map(c=>`<option value="${esc(c.cat)}" ${c.cat===famille?'selected':''}>${esc(c.cat)}</option>`).join('');
+  return `<select class="sel" data-act="famille" data-key="${esc(key)}"><option value="">— famille —</option>${opts}<option value="__new__">➕ Nouvelle famille…</option></select>`;
+}
+function sousSelect(key,famille,sous){
+  const list=(DATA.sousMap[famille]||[]);
+  const opts=list.map(s=>`<option value="${esc(s)}" ${s===sous?'selected':''}>${esc(s)}</option>`).join('');
+  return `<select class="sel" data-act="sous" data-key="${esc(key)}" ${famille?'':'disabled'}><option value="">— sous-catégorie —</option>${opts}<option value="__new__">➕ Nouvelle…</option></select>`;
+}
+const esc=s=>(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function render(){
+  if(!DATA){return;}
+  const root=document.getElementById('root');
+  const gs=groups();
+  const nLignes=DATA.uncat.length, nMarch=gs.length;
+
+  if(!gs.length){
+    root.innerHTML=`<div class="wrap"><div class="msg"><div style="font-size:32px">✓</div><b>Tout est catégorisé.</b><br><span class="note">${DATA.rows.length} opérations, aucune en attente. Le classement reprendra à la main au prochain import.</span><div style="margin-top:14px"><a href="#" data-act="reload" style="color:var(--violet)">rafraîchir</a></div></div></div>`;
+    return;
+  }
+
+  const cards=gs.map(g=>{
+    const [bg,fg]=SRC[g.sug.src]||SRC['à confirmer'];
+    const dot=DATA.catColor[g.famille]||'#c2c7d0';
+    const expanded=ST.expanded===g.key;
+    const lines = expanded ? g.items.map(r=>`<div class="line">
+        <span class="note" style="width:64px">${r.date?gristToDate(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.lib)}</span>
+        <span class="mono" style="color:${r.montant<0?'var(--red)':'var(--green)'}">${eur(r.montant)}</span>
+      </div>`).join('') : '';
+    return `<div class="card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <span style="width:10px;height:10px;border-radius:3px;background:${dot};flex:none"></span>
+        <span style="font-size:14px;font-weight:680">${esc(g.key)}</span>
+        <span class="note">${g.items.length} op. · <span class="mono">${eur0(g.total)}</span></span>
+        <span class="chip" style="background:${bg};color:${fg};margin-left:auto">${g.sug.src}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${famSelect(g.key,g.famille)}
+        <span style="color:#c2c7d0">›</span>
+        ${sousSelect(g.key,g.famille,g.sous)}
+        <button class="btn btn-go" data-act="classer" data-key="${esc(g.key)}">Classer ${g.items.length>1?('les '+g.items.length):''}</button>
+        <button class="btn btn-ghost" data-act="expand" data-key="${esc(g.key)}">${expanded?'▾ replier':'▸ détail'}</button>
+      </div>
+      ${lines}
+    </div>`;
+  }).join('');
+
+  root.innerHTML=`<div class="wrap">
+    <div class="hd">
+      <div style="margin-right:auto">
+        <div style="font-size:19px;font-weight:680">Classement</div>
+        <div class="note">${nLignes} opération${nLignes>1?'s':''} à catégoriser · ${nMarch} marchand${nMarch>1?'s':''}</div>
+      </div>
+      <div class="note">règle <span style="color:#3155e0">▮</span> · connu <span style="color:#0f8a5f">▮</span> · deviné <span style="color:#b9742a">▮</span></div>
+    </div>
+    ${cards}
+    <div class="note" style="margin-top:8px;text-align:right"><a href="#" data-act="reload" style="color:var(--violet)">rafraîchir</a></div>
+  </div>`;
+}
+
+function renderNoGrist(){ document.getElementById('root').innerHTML=`<div class="msg"><b>Widget Grist — Classement.</b><br>Ouvre-le comme widget custom dans un document Grist (accès complet). Il regroupe les opérations non catégorisées par marchand et écrit dans Transactions, Regles, Sous_categories, Categories.</div>`; }
+function renderError(m){ document.getElementById('root').innerHTML=`<div class="msg">${m}</div>`; }
+
+/* -------- événements -------- */
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]'); if(!a)return;
+  const act=a.dataset.act, key=a.dataset.key;
+  if(act==='reload'){ e.preventDefault(); load(); return; }
+  if(act==='expand'){ ST.expanded=ST.expanded===key?null:key; render(); return; }
+  if(act==='classer'){ const g=groups().find(x=>x.key===key); if(g) classifyGroup(g); return; }
+});
+document.addEventListener('change',e=>{
+  const s=e.target.closest('select[data-act]'); if(!s)return;
+  const key=s.dataset.key, act=s.dataset.act, val=s.value;
+  const g=groups().find(x=>x.key===key); const fam=(ST.drafts[key]&&ST.drafts[key].famille)||(g&&g.famille)||'';
+  if(act==='famille'){ if(val==='__new__'){ createFamille(key); } else { setDraft(key,'famille',val); } return; }
+  if(act==='sous'){ if(val==='__new__'){ createSous(key,fam); } else { setDraft(key,'sous',val); } return; }
+});
+
+if(HAS_GRIST){ grist.ready({requiredAccess:'full'}); load(); }
+else { renderNoGrist(); }
+</script>
+</body>
+</html>

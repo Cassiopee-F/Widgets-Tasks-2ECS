@@ -1,0 +1,9 @@
+node_modules/
+published/
+.DS_Store
+Thumbs.db
+*.log
+.env
+
+# WikiChat overlay (auto-added)
+.wikichat/

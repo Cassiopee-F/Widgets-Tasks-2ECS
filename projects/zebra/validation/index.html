@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<!--
+  ZEBRA — Widget Grist de révision.
+
+  Permet à un technicien de réviser les détections PP (passages piétons)
+  produites par le pipeline ZEBRA, depuis un document Grist. Utilise
+  geoai-kit v0.2 pour le traitement géométrique côté client (dédup léger,
+  simplification, agrégation des stats) et applyUserActions pour écrire
+  les corrections terrain dans la table PP.
+
+  Modes (priorité décroissante) :
+    - GRIST       : embarqué en widget custom, lit table PP via
+                    grist.onRecords, écrit via applyUserActions.
+    - LIVE        : appelle le service stationnement (/v1/filter pour la
+                    chaîne géo serveur, /v1/annotations pour hydrater les
+                    emprises stationnement). Activé par URL :
+                    `?live=1` (URL service par défaut) OU
+                    `?service=https://user-nic01asfr-pcrs-detect-bridge.user.lab.sspcloud.fr`.
+                    Reproject WGS84 ↔ L93 via proj4js.
+                    Fallback mock si CORS/network down.
+    - MOCK        : jeu de 16 PP fictifs du 4ᵉ Marseille, pour démo/dev.
+
+  Schéma de table attendu : cf. examples/zebra/docs/schema_grist_pp.md
+  (champs `pp_id`, `geometry_json`, `dangerosite_code`, `statut_terrain`,
+  `dangerosite_terrain`, `action_recommandee`, `commentaire`, `flag_litigieux`,
+  les 14 `cl_*`, etc.).
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZEBRA — Révision</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+  <style>
+    :root {
+      --rf-blue: #000091;
+      --rf-blue-light: #e3e3fd;
+      --grey-50: #f6f6f6;
+      --grey-100: #eee;
+      --grey-700: #444;
+      --grey-900: #161616;
+      --danger-3: #d32f2f;
+      --danger-2: #f57c00;
+      --danger-1: #fbc02d;
+      --danger-0: #2a9d8f;
+      --danger-x: #9e9e9e;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, -apple-system, sans-serif; color: var(--grey-900); }
+    body { display: grid; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+
+    header {
+      background: white; padding: 6px 10px; border-bottom: 1px solid var(--grey-100);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px;
+    }
+    header strong { color: var(--rf-blue); }
+    .mode-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; color: white; }
+    .mode-badge.grist { background: var(--rf-blue); }
+    .mode-badge.mock { background: var(--danger-2); }
+    .mode-badge.live { background: #2a9d8f; }
+    .live-warning { background: var(--danger-3); color: white; font-size: 10px; padding: 2px 7px; border-radius: 4px; }
+    .stat { background: var(--grey-50); border-radius: 4px; padding: 2px 7px; font-variant-numeric: tabular-nums; font-size: 12px; }
+    .manifest-info { display: none; }
+
+    /* Layout principal : [gauche 270px] | [carte 1fr] | [detail 300px optionnel] */
+    main {
+      display: grid;
+      grid-template-columns: 270px 1fr;
+      height: 100%; overflow: hidden;
+    }
+    main.detail-open {
+      grid-template-columns: 270px 1fr 300px;
+    }
+
+    /* Panel gauche permanent : filtres + liste */
+    aside.filters {
+      position: relative; left: auto; top: auto; bottom: auto; width: auto;
+      background: white; border-right: 1px solid var(--grey-100);
+      padding: 12px; overflow-y: auto; font-size: 13px;
+      /* Panel gauche permanent — toujours visible */
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    aside.filters.open { display: flex; }
+    .filters-close { display: none; } /* bouton fermer inutile — panel permanent */
+
+    /* Filtres compacts dans le panel gauche */
+    .filters-section { padding: 8px 10px; border-bottom: 1px solid var(--grey-100); }
+    .filters-section h3 { font-size: 10px; text-transform: uppercase; color: var(--grey-700); margin: 0 0 5px; }
+    .filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .filter-chip { font-size: 10px; padding: 2px 7px; border-radius: 10px; border: 1px solid var(--grey-100);
+      background: var(--grey-50); cursor: pointer; color: var(--grey-700); }
+    .filter-chip.active { background: var(--rf-blue); color: white; border-color: var(--rf-blue); }
+    .filter-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; font-size: 11px; }
+    .filter-row .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .filter-row label { flex: 1; cursor: pointer; }
+    .filter-row .count { font-variant-numeric: tabular-nums; color: var(--grey-700); font-size: 10px; }
+
+    /* Liste PP dans le panel gauche — prend tout l'espace restant */
+    .pp-list {
+      flex: 1; overflow-y: auto; padding: 4px 0;
+      /* plus de position absolute */
+      position: static; background: white; font-size: 12px;
+    }
+    .pp-list-footer {
+      padding: 8px 10px; border-top: 1px solid var(--grey-100);
+      font-size: 11px; color: var(--grey-700);
+    }
+    .pp-row {
+      display: grid; grid-template-columns: 8px 1fr auto;
+      gap: 8px; padding: 5px 10px; cursor: pointer;
+      border-left: 3px solid transparent; align-items: center;
+    }
+    .pp-row:hover { background: var(--grey-50); }
+    .pp-row.selected { background: var(--rf-blue-light); border-left-color: var(--rf-blue); }
+    .pp-row.validated { opacity: 0.55; }
+    .pp-row .pin { width: 8px; height: 8px; border-radius: 50%; }
+    .pp-row .pp-info { min-width: 0; }
+    .pp-row .pp-name { font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pp-row .pp-meta { font-size: 10px; color: var(--grey-700); }
+    .pp-row .statut { font-size: 9px; padding: 1px 5px; border-radius: 8px; white-space: nowrap; }
+    .pp-row .statut.A_voir { background: #ffebee; color: var(--danger-3); }
+    .pp-row .statut.En_cours { background: #fff3e0; color: var(--danger-2); }
+    .pp-row .statut.Valide { background: #e8f5e9; color: var(--danger-0); }
+    .pp-row .statut.Refuse { background: var(--grey-100); color: var(--grey-700); }
+
+    /* CTA Phase 2 — apparaît quand validation terminée */
+    .phase2-cta {
+      margin: 8px 10px; padding: 10px 12px; border-radius: 6px;
+      background: linear-gradient(135deg, #e3f2fd, #e8f5e9);
+      border: 1px solid #b3e0ff; font-size: 12px;
+    }
+    .phase2-cta strong { display: block; color: var(--rf-blue); margin-bottom: 4px; }
+    .phase2-cta button { margin-top: 6px; padding: 7px 14px; background: var(--rf-blue); color: white;
+      border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; width: 100%; }
+    .phase2-cta button:hover { filter: brightness(0.9); }
+
+    /* Carte centre */
+    .map-wrap { position: relative; overflow: hidden; }
+    #map { width: 100%; height: 100%; }
+
+    /* Panneau révision droite — dans la grille */
+    aside.detail {
+      position: relative; right: auto;
+      background: white; border-left: 1px solid var(--grey-100);
+      overflow-y: auto; font-size: 13px; display: none; flex-direction: column;
+    }
+    aside.detail.open { display: flex; }
+    .detail-close { position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer; font-size: 14px; color: var(--grey-700); padding: 2px 5px; z-index: 1; }
+    .detail-close:hover { color: #000; }
+    .detail-empty { color: var(--grey-700); text-align: center; padding: 40px 16px; font-style: italic; font-size: 12px; }
+    
+    /* Sticky header actions */
+    .d-sticky { position: sticky; top: 0; background: white; z-index: 2; padding: 10px 12px; border-bottom: 1px solid var(--grey-100); }
+    .d-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; display: flex; align-items: center; gap: 8px; }
+    .d-meta { font-size: 10px; color: var(--grey-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
+    .d-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .d-btn { padding: 7px 4px; border: 1px solid var(--grey-100); background: var(--grey-50); border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; transition: var(--t,150ms ease); text-align: center; }
+    .d-btn:hover { filter: brightness(0.95); }
+    .d-btn.validate { background: #e8f5e9; border-color: var(--danger-0,#2a9d8f); color: var(--danger-0,#2a9d8f); }
+    .d-btn.validate:hover { background: var(--danger-0,#2a9d8f); color: white; }
+    .d-btn.reject  { background: #ffebee; border-color: var(--danger-3,#d32f2f); color: var(--danger-3,#d32f2f); }
+    .d-btn.reject:hover  { background: var(--danger-3,#d32f2f); color: white; }
+    .d-btn.progress{ background: #fff3e0; border-color: var(--danger-2,#f57c00); color: var(--danger-2,#f57c00); }
+    .d-btn.litige  { background: #f3e5f5; border-color: #7b1fa2; color: #7b1fa2; }
+    
+    /* Body scrollable */
+    .d-body { padding: 10px 12px; flex: 1; overflow-y: auto; }
+    .d-comment { width: 100%; padding: 5px 7px; border: 1px solid var(--grey-100); border-radius: 4px; font: inherit; font-size: 11px; resize: none; height: 44px; margin-top: 6px; }
+    
+    /* Critère LOM compact */
+    .lom-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--grey-100); font-size: 12px; }
+    .lom-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+    .lom-conforme    { background: #e8f5e9; color: #2e7d32; }
+    .lom-non-conforme{ background: #ffebee; color: #c62828; }
+    .lom-a-verifier  { background: #fff8e1; color: #e65100; }
+    .lom-non-evaluable{ background: var(--grey-50); color: var(--grey-700); }
+    
+    /* Classifiers avec barre */
+    .cl-section { margin-top: 8px; }
+    .cl-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; font-size: 11px; font-weight: 600; color: var(--grey-700); text-transform: uppercase; letter-spacing: .04em; }
+    .cl-header:hover { color: var(--rf-blue); }
+    .cl-rows { }
+    .cl-row { display: grid; grid-template-columns: 1fr 60px 36px; align-items: center; gap: 5px; padding: 2px 0; font-size: 11px; }
+    .cl-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--grey-900); }
+    .cl-bar-wrap { background: var(--grey-100); border-radius: 3px; height: 5px; overflow: hidden; }
+    .cl-bar { height: 100%; border-radius: 3px; background: var(--rf-blue); transition: width .3s; }
+    .cl-bar.high { background: var(--danger-0,#2a9d8f); }
+    .cl-val { text-align: right; font-family: monospace; color: var(--grey-700); font-size: 10px; }
+    .cl-val.high { color: var(--danger-0,#2a9d8f); font-weight: 700; }
+    
+    /* Override collapsible */
+    .ov-section { margin-top: 6px; }
+    .ov-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .ov-chip { padding: 3px 8px; border-radius: 12px; font-size: 10px; cursor: pointer; border: 1px solid transparent; font-weight: 500; }
+
+  </style>
+</head>
+<body>
+  <header>
+    <strong style="color:var(--rf-blue)">ZEBRA</strong>
+    <span style="color:var(--grey-700)">Révision PP</span>
+    <span class="mode-badge" id="mode-badge">…</span>
+    <button id="btn-import" onclick="showImportPanel()" style="display:none;margin-left:auto;font-size:11px;padding:4px 10px;background:var(--rf-blue);color:white;border:none;border-radius:4px;cursor:pointer;font-weight:500;" title="Charger les résultats d'inférence ZEBRA">+ Charger des PP</button>
+
+    <!-- Panel import : liste des communes disponibles -->
+    <div id="import-panel" style="display:none;position:fixed;top:44px;right:0;left:0;z-index:999;background:white;border-bottom:2px solid var(--rf-blue);padding:16px 20px;box-shadow:0 4px 16px rgba(0,0,0,0.10);font-size:13px;">
+      <div style="max-width:900px;margin:0 auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div>
+            <strong style="color:var(--rf-blue);font-size:14px;">Charger des passages piétons</strong>
+            <span style="color:var(--grey-700);margin-left:8px;font-size:12px;">Sélectionnez une commune détectée par ZEBRA</span>
+          </div>
+          <button onclick="document.getElementById('import-panel').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--grey-700);line-height:1;">✕</button>
+        </div>
+        <div id="commune-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <span style="color:var(--grey-700);font-style:italic;font-size:12px;">⏳ Chargement des communes disponibles…</span>
+        </div>
+        <div id="import-status" style="font-size:12px;color:var(--grey-700);min-height:16px;"></div>
+      </div>
+    </div>
+  </header>
+  <main id="main-layout">
+    <!-- Panel gauche permanent : filtres compacts + liste PP -->
+    <aside class="filters open">
+      <!-- Filtres compacts -->
+      <div class="filters-section" id="commune-section">
+        <h3>Commune</h3>
+        <div id="commune-filters" class="filter-chips"></div>
+      </div>
+      <div class="filters-section">
+        <h3>Dangerosité</h3>
+        <div id="danger-filters"></div>
+      </div>
+      <div class="filters-section" style="border-bottom:none;padding-bottom:4px;">
+        <h3>Tri</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <label style="font-size:10px;cursor:pointer;display:flex;align-items:center;gap:3px;">
+            <input type="radio" name="sort" id="sort-litigieux" checked style="margin:0"/> Priorité
+          </label>
+          <label style="font-size:10px;cursor:pointer;display:flex;align-items:center;gap:3px;">
+            <input type="radio" name="sort" id="sort-danger" style="margin:0"/> Danger ↓
+          </label>
+          <label style="font-size:10px;cursor:pointer;display:flex;align-items:center;gap:3px;">
+            <input type="radio" name="sort" id="sort-tile" style="margin:0"/> Tuile
+          </label>
+        </div>
+      </div>
+      <!-- Liste PP (prend tout l'espace restant) -->
+      <div class="pp-list" id="pp-list"></div>
+      <!-- CTA Phase 2 (apparaît quand validation terminée) -->
+      <div id="phase2-cta" class="phase2-cta" style="display:none">
+        <strong>Validation terminée !</strong>
+        <span style="color:var(--grey-700);font-size:10px;">Les passages piétons validés peuvent maintenant être enrichis par l'analyse stationnement.</span>
+        <button onclick="window.launchPhase2&&window.launchPhase2()">Analyser le stationnement →</button>
+      </div>
+      <!-- Footer stats -->
+      <div class="pp-list-footer">
+        <span id="stat-total">—</span> · <span id="stat-pending" style="color:var(--danger-3)">—</span> · <span id="stat-validated" style="color:var(--danger-0)">—</span>
+      </div>
+    </aside>
+
+    <!-- Carte -->
+    <div class="map-wrap">
+      <div id="map"></div>
+    </div>
+
+    <aside class="detail" id="detail">
+      <button class="detail-close" onclick="window.closeDetail&&window.closeDetail()" title="Fermer">✕</button>
+      <div class="detail-empty" id="detail-empty-msg">Sélectionnez un PP dans la liste ou sur la carte.</div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import GeoAIKit from "./geoai-kit.js";
+    // ↑ Suppose geoai-kit.js déposé à côté de ce fichier ou symlinké vers
+    //   ../../../sdk/js/geoai-kit/geoai-kit.js. À ajuster selon le déploiement.
+
+    // ── Constantes ────────────────────────────────────────────────────────
+    const DANGER_DEF = [
+      { code: 3, label: "Très élevée", color: "#d32f2f" },
+      { code: 2, label: "Élevée",      color: "#f57c00" },
+      { code: 1, label: "Moyenne",     color: "#fbc02d" },
+      { code: 0, label: "Faible",      color: "#2a9d8f" },
+      { code: -1, label: "Non évaluable", color: "#9e9e9e" },
+    ];
+    const STATUS_LIST = ["A_voir", "En_cours", "Valide", "Refuse", "Litige"];
+    const CLASSIFIERS = [
+      "cl_valide_evaluable_sat", "cl_valide_evaluable_street",
+      "cl_ralentisseurs_trapezoidal_plateau", "cl_manque_visibilite",
+      "cl_feu", "cl_ligne_effet_sas_cycliste", "cl_eclairage_public_moins_20m",
+      "cl_coherence_longueur_passage_pieton", "cl_places_stationnement",
+      "cl_presence_ilot", "cl_ilot_refuge_inferieur_2m",
+      "cl_ilot_refuge_franchissable", "cl_arret_de_bus",
+      "cl_bande_d_eveil_de_vigilance",
+    ];
+
+    const PIPELINE = [
+      { op: "dedup", iouThreshold: 0.95, metric: "bbox" },
+      { op: "simplify", tolerance: 0.000003 },
+    ];
+
+    // ── Config mode LIVE — service pcrs-detect ────────────────────────────
+    const DEFAULT_SERVICE_URL = "https://user-nic01asfr-pcrs-detect-bridge.user.lab.sspcloud.fr";
+    // URL du service ZEBRA lui-même = même origine que ce widget (servi par zebra-bridge)
+    const ZEBRA_API_URL = window.location.origin;
+    const URL_PARAMS = new URLSearchParams(location.search);
+    const LIVE_SERVICE_URL = URL_PARAMS.get("service") ||
+      (URL_PARAMS.get("live") ? DEFAULT_SERVICE_URL : null);
+
+    // proj4 — WGS84 (EPSG:4326) ↔ Lambert-93 (EPSG:2154). Le service stationnement
+    // travaille en L93, MapLibre affiche en WGS84 → reprojection bidirectionnelle.
+    if (typeof proj4 !== "undefined") {
+      proj4.defs("EPSG:2154",
+        "+proj=lcc +lat_0=46.5 +lon_0=3 +lat_1=49 +lat_2=44 +x_0=700000 +y_0=6600000 " +
+        "+ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+    }
+    const toL93 = (lng, lat) => proj4("EPSG:4326", "EPSG:2154", [lng, lat]);
+    const toWGS = (x, y) => proj4("EPSG:2154", "EPSG:4326", [x, y]);
+    const ringToL93 = (ring) => ring.map(([lng, lat]) => toL93(lng, lat));
+    const ringToWGS = (ring) => ring.map(([x, y]) => toWGS(x, y));
+
+    // ── État ──────────────────────────────────────────────────────────────
+    const state = {
+      mode: null,
+      allFeatures: [],    // features brutes (Grist, live ou mock)
+      cleanFeatures: [],  // après process()
+      manifest: null,
+      serverManifest: null,
+      annotationsCache: {},
+      colMap: {},
+      filterDanger: new Set(DANGER_DEF.map(d => d.code)),
+      filterStatus: new Set(STATUS_LIST),
+      filterCommune: new Set(),   // vide = toutes communes
+      sortBy: "litigieux",
+      selectedId: null,
+    };
+
+    // ── Mode mock — jeu de données 4ᵉ Marseille ───────────────────────────
+    function mockFeatures() {
+      const c0 = [5.398, 43.305];
+      const seed = (i) => ({
+        lng: c0[0] + (i % 5) * 0.0008 - 0.0016,
+        lat: c0[1] - Math.floor(i / 5) * 0.0006,
+      });
+      const ringAt = (i) => {
+        const s = seed(i);
+        const w = 0.00005, h = 0.00003;
+        return [[s.lng-w,s.lat-h],[s.lng+w,s.lat-h],[s.lng+w,s.lat+h],[s.lng-w,s.lat+h],[s.lng-w,s.lat-h]];
+      };
+      const ds = [3, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, -1, 0, 1, 0, 0];
+      const ss = ["A_voir", "A_voir", "En_cours", "Valide", "A_voir",
+                   "A_voir", "Valide", "A_voir", "A_voir", "En_cours",
+                   "Valide", "A_voir", "A_voir", "Litige", "A_voir", "A_voir"];
+      const lits = [true, true, false, false, false, true, false, false, false, false,
+                    false, true, false, true, false, false];
+      return ds.map((d, i) => {
+        const cls = {};
+        for (const c of CLASSIFIERS) cls[c] = Math.round(Math.random() * 100) / 100;
+        return {
+          id: `mock-${String(i).padStart(3, "0")}-uuid-fake`,
+          pp_id: `mock-${String(i).padStart(3, "0")}-uuid-fake`,
+          id_zebra: `ZEBRA_M4_${i + 1}`,
+          geometry: ringAt(i),
+          bbox: null,
+          score: 0.45 + Math.random() * 0.5,
+          props: {
+            commune: "Marseille 4e Arrondissement",
+            insee: "13204",
+            dangerosite_code: d,
+            dangerosite: DANGER_DEF.find(x => x.code === d).label,
+            statut_terrain: ss[i],
+            flag_litigieux: lits[i],
+            review_status: "pending",
+            campaign_ortho_id: "pcrs_5cm_2022_amp",
+            source_type: "pcrs",
+            tile_id: `L93_T_${5042 + Math.floor(i / 4)}_${8120 + (i % 4)}`,
+            action_recommandee: "Aucune",
+            commentaire: "",
+            lom_infraction: d >= 2 ? "Non_conforme" : "Conforme",
+            lom_amenagement: d >= 1 ? "A_verifier" : "Conforme",
+            ...cls,
+          },
+        };
+      });
+    }
+
+    // ── Coordination inter-widgets ZEBRA ─────────────────────────────────
+    // Expose selectPp pour que d'autres widgets puissent centrer la vue
+    window.ZEBRA_SELECT_PP = function(ppId) {
+      const f = state.cleanFeatures?.find(f => f.pp_id === ppId)
+             || state.allFeatures?.find(f => f.pp_id === ppId);
+      if (f && map) {
+        const ring = f.geometry;
+        if (ring && ring.length) {
+          const [lng, lat] = ring[0];
+          map.flyTo({ center: [lng, lat], zoom: 18, duration: 600 });
+        }
+        if (state.mode === "grist" && f._gristId) {
+          grist.setSelectedRows([f._gristId]);
+        }
+        renderDetail(f);
+      }
+    };
+
+    // ── Init Grist / live / mock ──────────────────────────────────────────
+    async function init() {
+      const inGrist = typeof grist !== "undefined" && window.parent !== window;
+      if (inGrist) {
+        state.mode = "grist";
+        setModeBadge("GRIST", "grist");
+        document.getElementById("btn-import").style.display = "block";
+        try { grist.ready({ requiredAccess: "full" }); }
+        catch (_) { try { grist.ready(); } catch (__) {} }
+        // Bootstrap schéma — silencieux, idempotent
+        (async () => {
+          try {
+            const { ensureTables } = await import('/widget/shared/grist_schema.js');
+            await ensureTables(['Pp','Etudes','Corrections','Pp_stationnement_emprises','Campagnes']);
+          } catch (e) { console.warn('[ZEBRA review] schema init:', e.message); }
+        })();
+        // Écouter la sélection depuis d'autres widgets (Taskflow pattern)
+        grist.onRecord((record) => {
+          if (record?.pp_id) window.ZEBRA_SELECT_PP(record.pp_id);
+        });
+        // Lire la commune active depuis la table Campagnes (dernière campagne = territoire actif)
+        async function _loadActiveCommuneFromCampagnes() {
+          try {
+            const data = await grist.docApi.fetchTable('Campagnes');
+            if (!data || !data.id || !data.id.length) return null;
+            // Dernière campagne = indice le plus élevé
+            const lastIdx = data.id.length - 1;
+            return data.commune?.[lastIdx] || null;
+          } catch (_) { return null; }
+        }
+
+        // Enrichit les features avec geometry_json/lat/lng depuis fetchTable
+        // (onRecords peut ne pas transmettre les colonnes TEXT larges)
+        async function _enrichGeometry(features) {
+          try {
+            const data = await Promise.race([
+              grist.docApi.fetchTable('Pp'),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+            ]);
+            if (!data?.id?.length) return;
+            const byGristId = {};
+            data.id.forEach((id, i) => {
+              byGristId[id] = {
+                geometry_json: data.geometry_json?.[i],
+                lat: data.lat?.[i],
+                lng: data.lng?.[i],
+                pp_id: data.pp_id?.[i],
+                id_zebra: data.id_zebra?.[i],
+                commune: data.commune?.[i],
+                statut_terrain: data.statut_terrain?.[i],
+                review_status: data.review_status?.[i],
+                dangerosite_code: data.dangerosite_code?.[i],
+                dangerosite: data.dangerosite?.[i],
+              };
+            });
+            features.forEach(f => {
+              const extra = byGristId[f._gristId];
+              if (!extra) return;
+              // Enrichir TOUS les champs critiques (TEXT cols non transmis par onRecords)
+              if (!f.props.pp_id && extra.pp_id) { f.props.pp_id = extra.pp_id; f.id = extra.pp_id; }
+              if (!f.id_zebra && extra.id_zebra) { f.id_zebra = extra.id_zebra; }
+              if (extra.commune) f.props.commune = extra.commune;
+              if (extra.statut_terrain) f.props.statut_terrain = extra.statut_terrain;
+              if (extra.dangerosite_code != null) f.props.dangerosite_code = +extra.dangerosite_code;
+              if (extra.dangerosite) f.props.dangerosite = extra.dangerosite;
+              if (!f.geometry && extra.geometry_json) {
+                const raw = extra.geometry_json;
+                if (raw && raw.startsWith('[')) {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed) && parsed.length >= 3) {
+                      f.geometry = parsed;
+                      f.bbox = GeoAIKit.bbox(parsed);
+                    }
+                  } catch(_) {}
+                }
+              }
+              if (!f.geometry && extra.lat && extra.lng) {
+                const lat = parseFloat(extra.lat), lng = parseFloat(extra.lng);
+                if (!isNaN(lat) && !isNaN(lng) && lat !== 0) {
+                  const D = 0.00004;
+                  f.geometry = [[lng-D,lat-D],[lng+D,lat-D],[lng+D,lat+D],[lng-D,lat+D],[lng-D,lat-D]];
+                  f.bbox = GeoAIKit.bbox(f.geometry);
+                }
+              }
+            });
+          } catch(e) {
+            console.warn('[ZEBRA] _enrichGeometry:', e.message);
+          }
+        }
+
+        // onRecords retourne TOUTES les colonnes des lignes visibles dans la section.
+        // Synchrone (important : pas d'async ici pour rester compatible Grist plugin API).
+        grist.onRecords((records) => {
+          state.allFeatures = records.map(toFeature);
+          // Enrichir async la géométrie et les champs critiques si manquants
+          const missingGeom = state.allFeatures.some(f => !f.geometry);
+          // Toujours enrichir (géométrie + commune + statut non transmis par onRecords TEXT)
+          _enrichGeometry(state.allFeatures).then(() => {
+            _mapCenteredOnData = false;
+            renderFilters(); renderStats(); renderMap(); renderList();
+          });
+          // Binding territoire : auto-sélectionner la commune la plus récente au 1er chargement
+          if (_firstRefresh && state.allFeatures.length > 0) {
+            _firstRefresh = false;
+            const communes = [...new Set(state.allFeatures.map(f => f.props.commune).filter(Boolean))];
+            if (communes.length > 1) {
+              // Commune avec le _gristId le plus élevé = la plus récente
+              const max = {};
+              state.allFeatures.forEach(f => {
+                const c = f.props.commune; if (!c) return;
+                if (!max[c] || (f._gristId || 0) > max[c]) max[c] = f._gristId || 0;
+              });
+              const latestCommune = communes.reduce((b, c) => max[c] > (max[b] || 0) ? c : b, communes[0]);
+              state.filterCommune = new Set([latestCommune]);
+              // Ouvrir le panel filtres pour montrer le filtre commune
+              setTimeout(() => {
+                const aside = document.querySelector('aside.filters');
+                if (aside) aside.classList.add('open');
+              }, 100);
+            }
+          }
+          refresh();
+        });
+        // Chargement différé de la commune depuis Campagnes (async OK ici car hors onRecords)
+        _loadActiveCommuneFromCampagnes().then(c => {
+          if (c && !_firstRefresh) {  // seulement si déjà chargé une fois
+            state.filterCommune = new Set([c]);
+            renderFilters(); renderMap(); renderList(); renderStats();
+          }
+        }).catch(() => {});
+        return;
+      }
+
+      if (LIVE_SERVICE_URL) {
+        try {
+          const features = await initLiveMode();
+          state.mode = "live";
+          setModeBadge(`LIVE · ${LIVE_SERVICE_URL.replace(/^https?:\/\//, "")}`, "live");
+          state.allFeatures = features;
+          refresh();
+          return;
+        } catch (exc) {
+          console.warn("[ZEBRA] mode LIVE échoué, fallback mock :", exc);
+          showLiveWarning(`Service injoignable (${exc.message}). Fallback mock.`);
+        }
+      }
+
+      state.mode = "mock";
+      setModeBadge("MOCK", "mock");
+      state.allFeatures = mockFeatures();
+      refresh();
+    }
+
+    function setModeBadge(text, klass) {
+      const el = document.getElementById("mode-badge");
+      el.textContent = text;
+      el.className = `mode-badge ${klass}`;
+    }
+
+    function showLiveWarning(msg) {
+      const el = document.getElementById("mode-badge");
+      const warn = document.createElement("span");
+      warn.className = "live-warning";
+      warn.textContent = msg;
+      el.parentNode.insertBefore(warn, el.nextSibling);
+    }
+
+    // ── Mode LIVE — appelle /v1/filter pour la chaîne géo serveur ─────────
+    async function initLiveMode() {
+      if (typeof proj4 === "undefined") {
+        throw new Error("proj4js non chargé (CDN bloqué ?)");
+      }
+      const mock = mockFeatures();
+      const fc = {
+        type: "FeatureCollection",
+        features: mock.map(f => ({
+          type: "Feature",
+          id: f.id,
+          geometry: { type: "Polygon", coordinates: [ringToL93(f.geometry)] },
+          properties: { detection_id: f.id, score: f.score, ...f.props },
+        })),
+      };
+
+      const resp = await fetch(`${LIVE_SERVICE_URL}/v1/filter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          features: fc,
+          profile_id: "stationnement",
+          campaign_id: "demo_zebra_marseille_4e",
+        }),
+      });
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => "");
+        throw new Error(`HTTP ${resp.status} ${detail.slice(0, 120)}`);
+      }
+      const body = await resp.json();
+      state.serverManifest = body.manifest;
+
+      // Reproject responses L93 → WGS84 pour l'affichage MapLibre
+      return body.features.features.map(feat => {
+        const ringL93 = feat.geometry.coordinates[0];
+        const ringWGS = ringToWGS(ringL93);
+        return {
+          id: feat.id || feat.properties.detection_id,
+          pp_id: feat.id || feat.properties.detection_id,
+          id_zebra: feat.properties.id_zebra || feat.id,
+          geometry: ringWGS,
+          bbox: null,
+          score: feat.properties.score ?? null,
+          props: { ...feat.properties },
+        };
+      });
+    }
+
+    // ── Mode LIVE — hydratation /v1/annotations?parent_pp_id=... ──────────
+    async function fetchAnnotations(parentPpId) {
+      if (state.mode !== "live") return [];
+      if (state.annotationsCache[parentPpId] !== undefined) {
+        return state.annotationsCache[parentPpId];
+      }
+      try {
+        const url = `${LIVE_SERVICE_URL}/v1/annotations?parent_pp_id=${encodeURIComponent(parentPpId)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const body = await resp.json();
+        const emprises = (body.annotations || []).map(a => {
+          if (!a.geometry || a.geometry.type !== "Polygon") return null;
+          const ringWGS = ringToWGS(a.geometry.coordinates[0]);
+          return { id: a.annotation_id, geometry: ringWGS, props: a };
+        }).filter(Boolean);
+        state.annotationsCache[parentPpId] = emprises;
+        return emprises;
+      } catch (exc) {
+        console.warn("[ZEBRA] /v1/annotations échec :", exc);
+        state.annotationsCache[parentPpId] = [];
+        return [];
+      }
+    }
+
+    function toFeature(r) {
+      // Stratégie 1 : JSON.parse direct (ring brut [[lng,lat],...])
+      let ring = null;
+      const raw = r.geometry_json;
+      if (raw && typeof raw === "string") {
+        const t = raw.trim();
+        if (t.startsWith("[")) {
+          try {
+            const parsed = JSON.parse(t);
+            if (Array.isArray(parsed) && parsed.length >= 3) ring = parsed;
+          } catch (_) {}
+        }
+        if (!ring) ring = GeoAIKit.Grist.parseGeometry(raw) ?? null;
+      }
+
+      // Stratégie 2 : mini-rectangle depuis lat/lng (parseFloat gère strings ET 0)
+      if (!ring) {
+        const lat = parseFloat(r.lat), lng = parseFloat(r.lng);
+        if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+          const D = 0.00004;
+          ring = [[lng-D,lat-D],[lng+D,lat-D],[lng+D,lat+D],[lng-D,lat+D],[lng-D,lat-D]];
+        }
+      }
+
+      // Normaliser les types depuis Grist (peut stocker Numeric comme string)
+      const dangCode = r.dangerosite_code != null ? +r.dangerosite_code : -1;
+      const statut = r.statut_terrain || "A_voir";
+
+      return {
+        id: r.pp_id || String(r.id),
+        pp_id: r.pp_id,
+        id_zebra: r.id_zebra,
+        geometry: ring,
+        bbox: ring ? GeoAIKit.bbox(ring) : null,
+        score: r.score_detection != null ? +r.score_detection : null,
+        props: {
+          ...r,
+          dangerosite_code: dangCode,
+          statut_terrain:   statut,
+          flag_litigieux:   !!r.flag_litigieux,
+        },
+        _gristId: r.id,
+      };
+    }
+
+    // ── Process pipeline (process geoai-kit pour bench + manifest) ────────
+    async function process() {
+      const withGeom = state.allFeatures.filter(f => f.bbox !== null && f.geometry !== null);
+      if (!withGeom.length) {
+        // Pas de géométrie valide — afficher quand même les features brutes sans dédup
+        state.cleanFeatures = state.allFeatures;
+        state.manifest = null;
+        return;
+      }
+      try {
+        const { features, manifest } = await GeoAIKit.process(
+          withGeom, PIPELINE,
+          { profileId: "zebra_widget_review", campaignId: null }
+        );
+        // Si geoai-kit filtre tout, revenir aux features brutes
+        state.cleanFeatures = features.length ? features : withGeom;
+        state.manifest = manifest;
+      } catch (e) {
+        console.warn("[ZEBRA] geoai-kit process error:", e.message);
+        state.cleanFeatures = withGeom;
+        state.manifest = null;
+      }
+    }
+
+    // ── Rendu ─────────────────────────────────────────────────────────────
+    function renderFilters() {
+      // ── Filtre commune (chips) ────────────────────────────────────────────
+      const ch = document.getElementById("commune-filters");
+      if (ch) {
+        const communes = [...new Set(state.allFeatures.map(f => f.props.commune).filter(Boolean))].sort();
+        if (state.filterCommune.size === 0) communes.forEach(c => state.filterCommune.add(c));
+        // Cacher la section si une seule commune
+        const secEl = document.getElementById("commune-section");
+        if (secEl) secEl.style.display = communes.length <= 1 ? 'none' : 'block';
+        ch.innerHTML = communes.map(c => {
+          const n = state.allFeatures.filter(f => f.props.commune === c).length;
+          const active = state.filterCommune.has(c) ? 'active' : '';
+          const short = c.replace(' Arrondissement','').replace('_samgeo3','').replace(/_/g,' ').slice(0, 18);
+          return `<span class="filter-chip ${active}" data-commune="${c}" title="${c} (${n} PP)">${short} <b>${n}</b></span>`;
+        }).join("");
+        ch.querySelectorAll("[data-commune]").forEach(chip =>
+          chip.addEventListener("click", e => {
+            const c = e.currentTarget.dataset.commune;
+            if (state.filterCommune.has(c)) state.filterCommune.delete(c);
+            else state.filterCommune.add(c);
+            renderFilters(); renderMap(); renderList(); renderStats();
+          }));
+      }
+
+      // ── Filtre dangerosité (compact) ──────────────────────────────────────
+      const dh = document.getElementById("danger-filters");
+      const visibleFeatures = filteredByCommune();
+      dh.innerHTML = DANGER_DEF.map(d => {
+        const n = visibleFeatures.filter(f => +f.props.dangerosite_code === d.code).length;
+        const checked = state.filterDanger.has(d.code) ? "checked" : "";
+        return `<div class="filter-row">
+          <span class="swatch" style="background:${d.color}"></span>
+          <input type="checkbox" data-danger="${d.code}" ${checked}/>
+          <label>${d.label}</label>
+          <span class="count">${n}</span>
+        </div>`;
+      }).join("");
+      dh.querySelectorAll("[data-danger]").forEach(cb =>
+        cb.addEventListener("change", e => {
+          const c = +e.target.dataset.danger;
+          if (e.target.checked) state.filterDanger.add(c); else state.filterDanger.delete(c);
+          renderMap(); renderList();
+        }));
+
+      // Tri
+      document.querySelectorAll('input[name="sort"]').forEach(r =>
+        r.addEventListener("change", e => {
+          state.sortBy = e.target.id.replace("sort-", "");
+          renderList();
+        }));
+    }
+
+    function filteredByCommune() {
+      // Utiliser allFeatures (props.commune, props.statut_terrain etc. préservés)
+      // GeoAIKit.process peut créer de nouveaux objets sans les props originaux
+      const src = state.allFeatures;
+      if (state.filterCommune.size === 0) return src;
+      return src.filter(f => state.filterCommune.has(f.props.commune));
+    }
+
+    function filteredFeatures() {
+      return filteredByCommune().filter(f => {
+        const dc = +f.props.dangerosite_code;
+        // Si NaN (code inconnu/undefined) → laisser passer (ne pas filtrer)
+        const dangerOk = isNaN(dc) || state.filterDanger.has(dc);
+        const statusOk = state.filterStatus.has(f.props.statut_terrain || 'A_voir');
+        return dangerOk && statusOk;
+      });
+    }
+
+    function sortFeatures(arr) {
+      const copy = arr.slice();
+      if (state.sortBy === "litigieux") {
+        copy.sort((a, b) => (b.props.flag_litigieux ? 1 : 0) - (a.props.flag_litigieux ? 1 : 0) ||
+                            (b.props.dangerosite_code ?? -2) - (a.props.dangerosite_code ?? -2));
+      } else if (state.sortBy === "danger") {
+        copy.sort((a, b) => (b.props.dangerosite_code ?? -2) - (a.props.dangerosite_code ?? -2));
+      } else if (state.sortBy === "tile") {
+        copy.sort((a, b) => (a.props.tile_id || "").localeCompare(b.props.tile_id || ""));
+      }
+      return copy;
+    }
+
+    function dangerColor(code) {
+      // Normalise : code peut être number ou string
+      const d = DANGER_DEF.find(x => x.code === +code);
+      return d ? d.color : "#9e9e9e";
+    }
+
+    function renderStats() {
+      const all = state.allFeatures;
+      const visible = filteredByCommune();
+      const pending = visible.filter(f => (f.props.statut_terrain || 'A_voir') === "A_voir").length;
+      const validated = visible.filter(f => f.props.statut_terrain === "Valide").length;
+      const refused = visible.filter(f => f.props.statut_terrain === "Refuse").length;
+      const totalLabel = visible.length < all.length ? `${visible.length}/${all.length} PP` : `${all.length} PP`;
+
+      document.getElementById("stat-total").textContent = totalLabel;
+      document.getElementById("stat-pending").textContent = `${pending} à voir`;
+      document.getElementById("stat-validated").textContent = `${validated} validés`;
+
+      // CTA Phase 2 : apparaît quand plus aucun PP à voir
+      const ctaEl = document.getElementById("phase2-cta");
+      if (ctaEl) {
+        const allReviewed = visible.length > 0 && pending === 0;
+        ctaEl.style.display = allReviewed ? 'block' : 'none';
+      }
+
+      // Écran vide GRIST : montrer les actions si aucun PP
+      const emptyEl = document.getElementById("detail-empty-msg");
+      if (emptyEl && state.mode === "grist" && all.length === 0) {
+        emptyEl.innerHTML = `
+          <div style="padding:24px;text-align:center;color:var(--grey-700);">
+            <div style="font-size:36px;margin-bottom:12px;">🗺️</div>
+            <div style="font-weight:600;margin-bottom:6px;color:var(--rf-blue);font-size:15px;">Aucun passage piéton chargé</div>
+            <div style="font-size:12px;margin-bottom:20px;line-height:1.6;color:var(--grey-700);">
+              Cliquez sur le bouton ci-dessus pour charger<br>les résultats d'une détection ZEBRA.
+            </div>
+            <button onclick="showImportPanel()" style="padding:8px 20px;background:var(--rf-blue);color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;">
+              + Charger des passages piétons
+            </button>
+          </div>`;
+      } else if (emptyEl && all.length === 0) {
+        emptyEl.textContent = "Sélectionnez un PP dans la liste ou sur la carte.";
+      } else if (emptyEl && all.length > 0) {
+        // Données présentes : remettre le message standard de sélection
+        if (emptyEl.querySelector('button')) {
+          emptyEl.innerHTML = '<div class="detail-empty" id="detail-empty-msg">Sélectionnez un PP dans la liste ou sur la carte.</div>';
+        }
+        emptyEl.textContent = "Sélectionnez un PP dans la liste ou sur la carte.";
+      }
+      const parts = [];
+      if (state.serverManifest) {
+        const sm = state.serverManifest;
+        parts.push(
+          `server[${sm.profile_id} v${sm.profile_version}] ` +
+          `hash:${sm.filter_hash.slice(0, 8)}… ` +
+          `steps:${sm.steps.map(s => `${s.op}(${s.n_in}→${s.n_out})`).join(",")}`
+        );
+      }
+      if (state.manifest) {
+        parts.push(
+          `client[geoai-kit] hash:${state.manifest.filter_hash.slice(0, 8)}… ` +
+          `steps:${state.manifest.steps.map(s => `${s.op}(${s.n_in}→${s.n_out})`).join(",")}`
+        );
+      }
+      const manifestEl = document.getElementById("manifest-info");
+      if (manifestEl) manifestEl.textContent = parts.join(" │ ");
+    }
+
+    // ── Carte ─────────────────────────────────────────────────────────────
+    let map, mapReady = false;
+    function initMap() {
+      map = new maplibregl.Map({
+        container: "map",
+        style: {
+          version: 8, sources: {
+            "ortho": { type: "raster", tiles: [
+              "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",
+            ], tileSize: 256, attribution: "© IGN" }
+          },
+          layers: [{ id: "ortho", type: "raster", source: "ortho" }],
+        },
+        center: [5.398, 43.305], zoom: 17,
+      });
+      map.on("load", () => {
+        map.addSource("pp", { type: "geojson", data: { type: "FeatureCollection", features: [] }, promoteId: "id" });
+        map.addLayer({
+          id: "pp-fill", type: "fill", source: "pp",
+          paint: { "fill-color": ["get", "_color"], "fill-opacity": 0.45 }
+        });
+        map.addLayer({
+          id: "pp-line", type: "line", source: "pp",
+          paint: {
+            "line-color": ["get", "_color"],
+            "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 1.5]
+          }
+        });
+        map.on("click", "pp-fill", e => {
+          if (e.features?.[0]) selectFeature(e.features[0].properties.pp_id);
+        });
+        mapReady = true;
+        renderMap();
+      });
+    }
+
+    let _mapCenteredOnData = false;
+    function renderMap() {
+      if (!mapReady) return;
+      const feats = filteredFeatures();
+      // Auto-centrer sur les données au premier rendu avec features
+      if (!_mapCenteredOnData && feats.length) {
+        _mapCenteredOnData = true;
+        const allRings = feats.filter(f => f.geometry).map(f => f.geometry).flat();
+        if (allRings.length) {
+          const lngs = allRings.map(c => c[0]), lats = allRings.map(c => c[1]);
+          const bbox = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+          map.fitBounds([[bbox[0],bbox[1]],[bbox[2],bbox[3]]], { padding: 40, maxZoom: 16, duration: 800 });
+        }
+      }
+      const fc = {
+        type: "FeatureCollection",
+        features: feats.filter(f => f.geometry).map(f => ({
+          type: "Feature",
+          geometry: { type: "Polygon", coordinates: [f.geometry] },
+          properties: {
+            ...f.props, pp_id: f.id,
+            _color: dangerColor(f.props.dangerosite_code),
+          },
+        })),
+      };
+      map.getSource("pp").setData(fc);
+    }
+
+    // ── Liste PP dans le panel gauche ─────────────────────────────────────
+    function renderList() {
+      const ul = document.getElementById("pp-list");
+      const feats = sortFeatures(filteredFeatures());
+      console.log('[ZEBRA renderList] ul:', !!ul, 'feats:', feats.length, 'filterCommune:', [...state.filterCommune]);
+      if (!ul) return;
+      const MAX = 200;
+
+      // Construction HTML item par item (évite les problèmes de template literals)
+      let html = '';
+      for (let idx = 0; idx < Math.min(feats.length, MAX); idx++) {
+        const f = feats[idx];
+        const statut = (f.props && f.props.statut_terrain) || 'A_voir';
+        const dc = f.props ? +f.props.dangerosite_code : -1;
+        const danger = DANGER_DEF.find(function(d) { return d.code === dc; }) || DANGER_DEF[4];
+        const isSelected = state.selectedId === f.id;
+        const isDone = statut === 'Valide' || statut === 'Refuse';
+        const name = ((f.id_zebra || f.id || '') + '').replace(/^ZEBRA_/, '').replace(/_samgeo3_/, '_').slice(0, 22);
+        const color = danger ? danger.color : '#9e9e9e';
+        const label = danger ? danger.label : 'Non évaluable';
+        html += '<div class="pp-row' + (isSelected ? ' selected' : '') + (isDone ? ' validated' : '') + '" data-id="' + (f.id || '') + '">' +
+          '<span class="pin" style="background:' + color + '"></span>' +
+          '<div class="pp-info">' +
+            '<div class="pp-name">' + name + '</div>' +
+            '<div class="pp-meta">' + label + '</div>' +
+          '</div>' +
+          '<span class="statut ' + statut + '">' + (statut === 'A_voir' ? 'à voir' : statut.replace(/_/g, ' ').toLowerCase()) + '</span>' +
+          '</div>';
+      }
+      if (feats.length > MAX) html += '<div style="padding:6px 10px;color:var(--grey-700);font-size:10px">+ ' + (feats.length - MAX) + ' autres</div>';
+      ul.innerHTML = html;
+
+      ul.querySelectorAll(".pp-row").forEach(row =>
+        row.addEventListener("click", () => selectFeature(row.dataset.id)));
+
+      // Scroll auto vers le PP sélectionné
+      if (state.selectedId) {
+        const sel = ul.querySelector(`.pp-row[data-id="${state.selectedId}"]`);
+        if (sel) sel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    // ── Sélection + détail ────────────────────────────────────────────────
+    // ── Overlay BD TOPO ──────────────────────────────────────────────────────────
+    const BDTOPO_LAYERS = ['bdtopo-bati-fill', 'bdtopo-bati-stroke', 'bdtopo-routes'];
+    const BDTOPO_SOURCES = ['bdtopo-bati', 'bdtopo-routes'];
+
+    function _removeBdTopoLayers() {
+      BDTOPO_LAYERS.forEach(id => { try { if (map.getLayer(id))   map.removeLayer(id); } catch(_){} });
+      BDTOPO_SOURCES.forEach(id => { try { if (map.getSource(id)) map.removeSource(id); } catch(_){} });
+    }
+
+    async function loadBdTopoContext(lat, lng, radiusDeg = 0.003) {
+      // Phase validation : on affiche uniquement les routes (contexte voirie)
+      // Le masque bâti n'est pas affiché (utilisé uniquement pour le filtrage pipeline)
+      if (!map || !mapReady) return;
+      const minlng = (lng - radiusDeg).toFixed(6), maxlng = (lng + radiusDeg).toFixed(6);
+      const minlat = (lat - radiusDeg).toFixed(6), maxlat = (lat + radiusDeg).toFixed(6);
+      try {
+        const res = await fetch(`${ZEBRA_API_URL}/api/bdtopo-context?bbox=${minlng},${minlat},${maxlng},${maxlat}`);
+        if (!res.ok) return;
+        const fc = await res.json();
+        const routeFc = { type: 'FeatureCollection', features: fc.features.filter(f => f.properties?.bdtopo_type === 'route') };
+
+        _removeBdTopoLayers();
+        map.addSource('bdtopo-routes', { type: 'geojson', data: routeFc });
+        map.addLayer({ id: 'bdtopo-routes', type: 'line', source: 'bdtopo-routes',
+                       paint: { 'line-color': '#43a047', 'line-width': 2.5, 'line-opacity': 0.8 } });
+      } catch (_) {}
+    }
+
+    function selectFeature(id) {
+      state.selectedId = id;
+      const f = (state.cleanFeatures.length ? state.cleanFeatures : state.allFeatures)
+                  .find(x => x.id === id || x.pp_id === id);
+      if (!f) return;
+
+      // Ouvrir le panel détail (3ème colonne dans la grille)
+      const detailEl = document.getElementById('detail');
+      detailEl.classList.add('open');
+      document.getElementById('main-layout')?.classList.add('detail-open');
+
+      // Centrer la carte
+      let lat, lng;
+      if (f.geometry) {
+        try {
+          const c = GeoAIKit.centroid(f.geometry);
+          if (c) { [lng, lat] = c; map.flyTo({ center: c, zoom: 19, duration: 500 }); }
+        } catch (_) {}
+      }
+      if (!lat) {
+        lat = parseFloat(f.props.lat); lng = parseFloat(f.props.lng);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0) map.flyTo({ center: [lng, lat], zoom: 19, duration: 500 });
+      }
+      if (lat) loadBdTopoContext(lat, lng);
+      renderList(); renderDetail(f);
+    }
+
+    window.closeDetail = function() {
+      state.selectedId = null;
+      document.getElementById('detail').classList.remove('open');
+      document.getElementById('main-layout')?.classList.remove('detail-open');
+      _removeBdTopoLayers();
+      renderList();
+    };
+
+    // ── Phase 2 : lancer l'analyse stationnement sur les PP validés ────────
+    window.launchPhase2 = async function() {
+      const validatedPP = (state.cleanFeatures.length ? state.cleanFeatures : state.allFeatures)
+        .filter(f => f.props.statut_terrain === 'Valide');
+      const commune = [...new Set(validatedPP.map(f => f.props.commune).filter(Boolean))][0] || '';
+
+      const ctaEl = document.getElementById('phase2-cta');
+      if (ctaEl) ctaEl.innerHTML = `
+        <strong>Analyse stationnement en cours…</strong>
+        <span style="color:var(--grey-700);font-size:10px;">${validatedPP.length} PP validés · commune: ${commune}</span>
+        <div style="margin-top:6px;height:4px;background:var(--grey-100);border-radius:2px;">
+          <div style="height:100%;background:var(--rf-blue);border-radius:2px;animation:progress-anim 2s linear infinite;" id="phase2-bar"></div>
+        </div>`;
+
+      try {
+        const r = await fetch(`${ZEBRA_API_URL}/api/phase2`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ commune, pp_ids: validatedPP.map(f => f.id) })
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (ctaEl) ctaEl.innerHTML = `
+            <strong style="color:var(--danger-0);">Analyse lancée !</strong>
+            <span style="color:var(--grey-700);font-size:10px;">Job ${d.job_id} · ${validatedPP.length} PP</span>`;
+        }
+      } catch(e) {
+        if (ctaEl) ctaEl.innerHTML = `<strong style="color:var(--danger-3);">Erreur</strong><span style="font-size:10px;color:var(--grey-700);">${e.message}</span>`;
+      }
+    };
+
+// ── Labels lisibles classifiers ──────────────────────────────────────────
+    const CL_LABELS = {"cl_valide_evaluable_sat": "Eval. satellite", "cl_valide_evaluable_street": "Eval. rue", "cl_ralentisseurs_trapezoidal_plateau": "Ralentisseur", "cl_manque_visibilite": "Manque visibilite", "cl_feu": "Feu pieton", "cl_ligne_effet_sas_cycliste": "SAS cycliste", "cl_eclairage_public_moins_20m": "Eclairage <20m", "cl_coherence_longueur_passage_pieton": "Longueur PP", "cl_places_stationnement": "Stationnement", "cl_presence_ilot": "Ilot refuge", "cl_ilot_refuge_inferieur_2m": "Ilot <2m", "cl_ilot_refuge_franchissable": "Ilot franchissable", "cl_arret_de_bus": "Arret bus", "cl_bande_d_eveil_de_vigilance": "BEV podotactile"};
+
+    // ── Navigation auto vers le PP suivant ───────────────────────────────────
+    function _selectNext() {
+      const feats = sortFeatures(filteredFeatures());
+      const idx = feats.findIndex(x => x.id === state.selectedId);
+      const next = feats[idx + 1];
+      if (next) selectFeature(next.id);
+      else window.closeDetail?.();  // Fin de liste
+    }
+
+    function renderDetail(f) {
+      const p = f.props;
+      const code = +p.dangerosite_code;
+      const danger = DANGER_DEF.find(d => d.code === code) || DANGER_DEF[4];
+
+      // Progression dans la liste
+      const feats = sortFeatures(filteredFeatures());
+      const idx = feats.findIndex(x => x.id === f.id);
+      const progress = idx >= 0 ? `${idx + 1} / ${feats.length}` : '';
+
+      // Statut courant
+      const statut = p.statut_terrain || 'A_voir';
+      const statutColor = {
+        'Valide': 'var(--danger-0)', 'Refuse': 'var(--grey-700)',
+        'En_cours': 'var(--danger-2)', 'Litige': '#7b1fa2', 'A_voir': 'var(--danger-3)'
+      }[statut] || 'var(--grey-700)';
+
+      // Info filtrage BD TOPO
+      const distInfo = p.dist_road != null
+        ? `<span style="font-size:10px;color:var(--grey-700)">Route: ${p.dist_road}m</span>` : '';
+      const scoreInfo = p.score_detection
+        ? `<span style="font-size:10px;color:var(--grey-700)">Score SAM: ${(+p.score_detection).toFixed(2)}</span>` : '';
+
+      document.getElementById('detail').innerHTML =
+        '<div class="d-sticky">'
+          + '<div class="d-title">'
+            + '<span style="font-size:12px">' + (p.id_zebra || String(f.id).slice(0,12)) + '</span>'
+            + '<span class="danger-pill" style="background:' + danger.color + '">' + danger.label + '</span>'
+            + (p.flag_litigieux ? '<span style="color:var(--danger-3);font-size:11px">⚠</span>' : '')
+          + '</div>'
+          + '<div class="d-meta" style="display:flex;gap:8px;align-items:center;">'
+            + '<span>' + (p.commune || '—') + '</span>'
+            + '<span style="color:var(--grey-700);font-size:10px">' + progress + '</span>'
+            + distInfo + scoreInfo
+          + '</div>'
+          + '<div style="padding:4px 12px 2px;font-size:11px;color:' + statutColor + ';font-weight:600;">'
+            + statut.replace(/_/g,' ')
+          + '</div>'
+          + '<div class="d-actions">'
+            + '<button class="d-btn validate" id="btn-validate">✓ Valider →</button>'
+            + '<button class="d-btn reject"   id="btn-reject">✗ Refuser →</button>'
+            + '<button class="d-btn progress" id="btn-correct">⏳ En cours</button>'
+            + '<button class="d-btn litige"   id="btn-litige">⚠ Litige</button>'
+          + '</div>'
+          + '<textarea class="d-comment" id="commentaire" placeholder="Commentaire (optionnel)…">' + (p.commentaire||'') + '</textarea>'
+        + '</div>';
+
+      // Auto-avance après Valider / Refuser
+      document.getElementById('btn-validate').onclick = () => action(f, 'Valide').then(_selectNext);
+      document.getElementById('btn-reject').onclick   = () => action(f, 'Refuse').then(_selectNext);
+      document.getElementById('btn-correct').onclick  = () => action(f, 'En_cours');
+      document.getElementById('btn-litige').onclick   = () => action(f, 'Litige');
+    }
+    function renderEmprisesOnMap(emprises) {
+      if (!map || !mapReady) return;
+      const fc = {
+        type: "FeatureCollection",
+        features: emprises.map(e => ({
+          type: "Feature", id: e.id,
+          geometry: { type: "Polygon", coordinates: [e.geometry] },
+        })),
+      };
+      if (map.getSource("emprises-stationnement")) {
+        map.getSource("emprises-stationnement").setData(fc);
+      } else {
+        map.addSource("emprises-stationnement", { type: "geojson", data: fc });
+        map.addLayer({
+          id: "emprises-stationnement-fill",
+          type: "fill",
+          source: "emprises-stationnement",
+          paint: { "fill-color": "#ff6b35", "fill-opacity": 0.4 },
+        });
+        map.addLayer({
+          id: "emprises-stationnement-line",
+          type: "line",
+          source: "emprises-stationnement",
+          paint: { "line-color": "#d32f2f", "line-width": 2 },
+        });
+      }
+    }
+
+    // ── Writeback (Grist applyUserActions ou mock local) ──────────────────
+    async function updateField(f, field, value) {
+      f.props[field] = value;
+      if (state.mode === "grist" && f._gristId) {
+        await GeoAIKit.Grist.writeBack("Pp", [
+          { id: f._gristId, fields: { [field]: value, corrige_le: new Date().toISOString() } },
+        ]).catch(e => console.warn("writeback KO", e));
+      }
+      renderDetail(f);
+    }
+
+    async function action(f, statut) {
+      const com = document.getElementById("commentaire")?.value || "";
+      f.props.statut_terrain = statut;
+      f.props.commentaire = com;
+      f.props.corrige_le = new Date().toISOString();
+      if (state.mode === "grist" && f._gristId) {
+        await GeoAIKit.Grist.writeBack("Pp", [
+          { id: f._gristId, fields: {
+            statut_terrain: statut, commentaire: com,
+            review_status: statut === "Valide" ? "validated" :
+                           statut === "Refuse" ? "rejected" :
+                           statut === "En_cours" ? "corrected" : "pending",
+            corrige_le: new Date().toISOString(),
+          }},
+        ]).catch(e => console.warn("writeback KO", e));
+      }
+      renderList(); renderStats();
+      // Note: auto-advance géré par l'appelant (_selectNext) pour Valider/Refuser
+    }
+
+    // ── Grist setup + import depuis service ZEBRA ─────────────────────────
+
+    // ── Import panel : liste les communes disponibles côté service ZEBRA ─────
+    async function showImportPanel() {
+      const panel = document.getElementById("import-panel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+      if (panel.style.display !== "block") return;
+
+      const list = document.getElementById("commune-list");
+      list.innerHTML = '<span style="color:var(--grey-700);font-style:italic;font-size:12px;">⏳ Chargement…</span>';
+
+      try {
+        const resp = await fetch(`${ZEBRA_API_URL}/api/available`);
+        const communes = await resp.json();
+        if (!communes.length) {
+          list.innerHTML = '<span style="color:var(--grey-700);font-size:12px;">Aucune commune disponible — lancez d\'abord une inférence via <code>/api/process</code>.</span>';
+          return;
+        }
+        list.innerHTML = communes.map(c => {
+          const label = c.name.replace(/_/g, ' ').replace(/_(maskrcnn|samgeo3|GT_5cm|20cm)$/, '');
+          const nGeojson = c.geojson?.length || 0;
+          const badge = nGeojson ? `<span style="background:#e3f2fd;color:#1565c0;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;">${c.csv.length > 0 ? 'prêt' : ''}</span>` : '';
+          return `<button onclick="importFromZebra('${c.name}')"
+            style="padding:6px 14px;background:white;border:1px solid var(--grey-100);border-radius:20px;
+                   cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;"
+            onmouseover="this.style.borderColor='var(--rf-blue)';this.style.color='var(--rf-blue)'"
+            onmouseout="this.style.borderColor='var(--grey-100)';this.style.color=''"
+            title="Importer ${label}">
+            📍 ${label}${badge}
+          </button>`;
+        }).join('');
+      } catch (e) {
+        list.innerHTML = `<span style="color:var(--danger-3);font-size:12px;">Service ZEBRA inaccessible : ${e.message}</span>`;
+      }
+    }
+
+    // Retourne true si la table tableId existe dans le document Grist.
+    async function _tableExists(tableId) {
+      try { await grist.docApi.fetchTable(tableId); return true; }
+      catch (_) { return false; }
+    }
+
+    // Crée la table tableId avec columns uniquement si elle n'existe pas.
+    async function _ensureTable(tableId, columns) {
+      if (await _tableExists(tableId)) return "existante";
+      await grist.docApi.applyUserActions([["AddTable", tableId, columns]]);
+      return "créée";
+    }
+
+    // Colonnes minimales de la table pp (types simples — pas de Choice/Attachments).
+    const PP_COLUMNS_MIN = [
+      {id:"pp_id",            fields:{type:"Text",    label:"PP ID"}},
+      {id:"id_zebra",         fields:{type:"Text",    label:"ID ZEBRA"}},
+      {id:"commune",          fields:{type:"Text",    label:"Commune"}},
+      {id:"campaign_ortho_id",fields:{type:"Text",    label:"Campagne"}},
+      {id:"detector",         fields:{type:"Text",    label:"Detecteur"}},
+      {id:"model_version",    fields:{type:"Text",    label:"Modele"}},
+      {id:"source_type",      fields:{type:"Text",    label:"Source"}},
+      {id:"origin",           fields:{type:"Text",    label:"Origine"}},
+      {id:"created_at",       fields:{type:"Text",    label:"Cree le"}},
+      {id:"geometry_json",    fields:{type:"Text",    label:"Geometrie"}},
+      {id:"lat",              fields:{type:"Numeric", label:"Latitude"}},
+      {id:"lng",              fields:{type:"Numeric", label:"Longitude"}},
+      {id:"score_detection",  fields:{type:"Numeric", label:"Score"}},
+      {id:"dangerosite_code", fields:{type:"Numeric", label:"Dangerosite (code)"}},
+      {id:"dangerosite",      fields:{type:"Text",    label:"Dangerosite"}},
+      {id:"has_streetview",   fields:{type:"Bool",    label:"Streetview"}},
+      {id:"flag_litigieux",   fields:{type:"Bool",    label:"Litigieux"}},
+      {id:"cl_valide_evaluable_sat",            fields:{type:"Numeric",label:"cl: eval sat"}},
+      {id:"cl_valide_evaluable_street",         fields:{type:"Numeric",label:"cl: eval street"}},
+      {id:"cl_ralentisseurs_trapezoidal_plateau",fields:{type:"Numeric",label:"cl: ralentisseur"}},
+      {id:"cl_manque_visibilite",               fields:{type:"Numeric",label:"cl: visibilite"}},
+      {id:"cl_feu",                             fields:{type:"Numeric",label:"cl: feu"}},
+      {id:"cl_ligne_effet_sas_cycliste",        fields:{type:"Numeric",label:"cl: SAS velo"}},
+      {id:"cl_eclairage_public_moins_20m",      fields:{type:"Numeric",label:"cl: eclairage"}},
+      {id:"cl_coherence_longueur_passage_pieton",fields:{type:"Numeric",label:"cl: longueur"}},
+      {id:"cl_places_stationnement",            fields:{type:"Numeric",label:"cl: stationnement"}},
+      {id:"cl_presence_ilot",                   fields:{type:"Numeric",label:"cl: ilot"}},
+      {id:"cl_ilot_refuge_inferieur_2m",        fields:{type:"Numeric",label:"cl: ilot <2m"}},
+      {id:"cl_ilot_refuge_franchissable",       fields:{type:"Numeric",label:"cl: ilot franchissable"}},
+      {id:"cl_arret_de_bus",                    fields:{type:"Numeric",label:"cl: arret bus"}},
+      {id:"cl_bande_d_eveil_de_vigilance",      fields:{type:"Numeric",label:"cl: BEV"}},
+      {id:"review_status",    fields:{type:"Text",    label:"Statut revision"}},
+      {id:"statut_terrain",   fields:{type:"Text",    label:"Statut terrain"}},
+      {id:"phase2_status",    fields:{type:"Text",    label:"Phase 2 statut"}},
+      {id:"lom_decree_distance_m",fields:{type:"Numeric",label:"Distance decret m"}},
+    ];
+
+    const ETUDES_COLUMNS = [
+      {id:"etude_id",         fields:{type:"Text",    label:"Etude ID"}},
+      {id:"commune",          fields:{type:"Text",    label:"Commune"}},
+      {id:"campaign_ortho_id",fields:{type:"Text",    label:"Campagne"}},
+      {id:"detector",         fields:{type:"Text",    label:"Detecteur"}},
+      {id:"model_version",    fields:{type:"Text",    label:"Modele"}},
+      {id:"created_at",       fields:{type:"Text",    label:"Cree le"}},
+      {id:"n_pp_detected",    fields:{type:"Numeric", label:"PP detectes"}},
+      {id:"manifest_json",    fields:{type:"Text",    label:"Manifest"}},
+    ];
+
+    async function setupGristTables() {
+      const status = document.getElementById("import-status");
+      try {
+        await _ensureTable("Pp",     PP_COLUMNS_MIN);
+        await _ensureTable("Etudes", ETUDES_COLUMNS);
+        if (status) status.innerHTML = '<span style="color:#2a9d8f;">✅ Tables prêtes</span>';
+      } catch (e) {
+        if (status) status.innerHTML = `<span style="color:var(--danger-3);">Erreur tables : ${e.message}</span>`;
+        console.error("[ZEBRA] setupGristTables:", e);
+      }
+    }
+
+    async function importFromZebra(communeArg) {
+      const commune = communeArg || "";
+      if (!commune) { return; }
+      const status = document.getElementById("import-status");
+      const communeLabel = commune.replace(/_/g, ' ');
+      status.innerHTML = `<span style="color:var(--rf-blue);">⏳ Chargement de <b>${communeLabel}</b>…</span>`;
+
+      try {
+        // 1. Récupérer les résultats depuis le service
+        const resp = await fetch(`${ZEBRA_API_URL}/api/results/${encodeURIComponent(commune)}`);
+        if (resp.status === 404) {
+          status.innerHTML = `❌ Aucune inférence pour <b>${commune}</b>.<br>
+            <span style="color:var(--grey-700)">Lancez d'abord
+            <code>POST /api/process</code> depuis le service ZEBRA,<br>
+            puis revenez importer.</span>`;
+          return;
+        }
+        if (!resp.ok) throw new Error(`/api/results HTTP ${resp.status}`);
+        const fc = await resp.json();
+        const features = (fc.features || []);
+        if (!features.length) { status.textContent = "Aucun résultat pour cette commune."; return; }
+
+        status.textContent = `⏳ Import de ${features.length} PP en cours…`;
+
+        // 3. Préparer les données PP
+        const now = new Date().toISOString();
+        const etudeId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36);
+        const ppIds = [], idZebras = [], communes = [], geomJsons = [], lats = [], lngs = [];
+        const scores = [], dangCodes = [], dangs = [], hasStreet = [], flags = [];
+        const reviewStatuts = [], statutTerrains = [], phase2Statuts = [], createdAts = [];
+        const filterStatuts = [], filterReasons = [], distRoads = [], distBatis = [];
+        const clFields = {};
+        const CL_KEYS = ["valide_evaluable_sat","valide_evaluable_street",
+          "ralentisseurs_trapezoidal_plateau","manque_visibilite","feu",
+          "ligne_effet_sas_cycliste","eclairage_public_moins_20m",
+          "coherence_longueur_passage_pieton","places_stationnement",
+          "presence_ilot","ilot_refuge_inferieur_2m","ilot_refuge_franchissable",
+          "arret_de_bus","bande_d_eveil_de_vigilance"];
+        CL_KEYS.forEach(k => { clFields[`cl_${k}`] = []; });
+
+        for (const feat of features) {
+          const props = feat.properties || {};
+          const geom = feat.geometry || {};
+          // Polygon → ring direct. Point → mini-rectangle 4m×4m (~0.00004°)
+          const DEG = 0.00004;
+          let coords = null;
+          if (geom.type === "Polygon") {
+            coords = geom.coordinates[0];
+          } else if (geom.type === "Point") {
+            const [px, py] = geom.coordinates;
+            coords = [[px-DEG,py-DEG],[px+DEG,py-DEG],[px+DEG,py+DEG],[px-DEG,py+DEG],[px-DEG,py-DEG]];
+          }
+          const ring = coords ? JSON.stringify(coords) : "";
+          const centLng = coords ? coords.reduce((s,c)=>s+c[0],0)/coords.length : (props.lng||null);
+          const centLat = coords ? coords.reduce((s,c)=>s+c[1],0)/coords.length : (props.lat||null);
+
+          ppIds.push(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+          idZebras.push(props.id_zebra || props.id || "");
+          communes.push(commune);
+          geomJsons.push(ring);
+          lats.push(centLat); lngs.push(centLng);
+          scores.push(+(props.score_detection || props.confidence || 0));
+          dangCodes.push(+(props.dangerosite_code ?? -1));
+          dangs.push(props.dangerosite || "Non_evaluable");
+          hasStreet.push(!!props.has_streetview);
+          flags.push(!!props.flag_litigieux);
+          reviewStatuts.push("pending");
+          statutTerrains.push("A_voir");
+          phase2Statuts.push("not_run");
+          createdAts.push(now);
+          filterStatuts.push(props.filter_status || 'valid');
+          filterReasons.push(props.filter_reason || 'ok');
+          distRoads.push(props.dist_road != null ? +props.dist_road : null);
+          distBatis.push(props.dist_bati != null ? +props.dist_bati : null);
+          CL_KEYS.forEach(k => { clFields[`cl_${k}`].push(+(props[`cl_${k}`] || 0)); });
+        }
+
+        const ppColData = {
+          pp_id: ppIds, id_zebra: idZebras, commune: communes,
+          campaign_ortho_id: Array(features.length).fill("samgeo3_ortho_20cm"),
+          detector: Array(features.length).fill("samgeo3"),
+          model_version: Array(features.length).fill("samgeo3-2026"),
+          source_type: Array(features.length).fill("ortho"),
+          origin: Array(features.length).fill("model_inference"),
+          created_at: createdAts, geometry_json: geomJsons, lat: lats, lng: lngs,
+          score_detection: scores, dangerosite_code: dangCodes, dangerosite: dangs,
+          has_streetview: hasStreet, flag_litigieux: flags,
+          review_status: reviewStatuts, statut_terrain: statutTerrains,
+          phase2_status: phase2Statuts,
+          filter_status: filterStatuts, filter_reason: filterReasons,
+          dist_road: distRoads, dist_bati: distBatis,
+          lom_decree_distance_m: Array(features.length).fill(5.0),
+          ...clFields,
+        };
+
+        // 4. Insertion atomique : si table absente → AddTable + BulkAddRecord en 1 transaction
+        //    Si table présente → BulkAddRecord seul. Pattern ask-forgiveness, pas de _tableExists.
+        const nPP = features.length;
+        const insertPP = async () => grist.docApi.applyUserActions([
+          ["BulkAddRecord", "Pp", Array(nPP).fill(null), ppColData],
+        ]);
+
+        try {
+          await insertPP();
+        } catch (e) {
+          if (!e.message?.includes("pp")) throw e;
+          // Table pp absente → créer + insérer en une seule transaction atomique
+          await grist.docApi.applyUserActions([
+            ["AddTable", "Pp", PP_COLUMNS_MIN],
+            ["BulkAddRecord", "Pp", Array(nPP).fill(null), ppColData],
+          ]);
+        }
+
+        // 5. Insérer dans etudes (même pattern)
+        const etudeData = {
+          etude_id: [etudeId], commune: [commune],
+          campaign_ortho_id: ["samgeo3_ortho_20cm"],
+          detector: ["samgeo3"], model_version: ["samgeo3-2026"],
+          created_at: [now], n_pp_detected: [features.length],
+        };
+        try {
+          await grist.docApi.applyUserActions([["BulkAddRecord", "Etudes", [null], etudeData]]);
+        } catch (e) {
+          if (!e.message?.includes("etudes")) throw e;
+          await grist.docApi.applyUserActions([
+            ["AddTable", "Etudes", ETUDES_COLUMNS],
+            ["BulkAddRecord", "Etudes", [null], etudeData],
+          ]);
+        }
+
+        status.innerHTML = `<span style="color:#2a9d8f;font-weight:600;">✅ ${features.length} PP importés pour ${commune.replace(/_/g,' ')}</span>`;
+        setTimeout(() => { document.getElementById("import-panel").style.display = "none"; }, 1500);
+        // Grist déclenchera grist.onRecords() automatiquement
+      } catch (e) {
+        status.textContent = "❌ Erreur : " + e.message;
+        console.error("[ZEBRA] importFromZebra:", e);
+      }
+    }
+
+    // Exposer sur window (script type=module → scope isolé, onclick a besoin de window.*)
+    window.setupGristTables = setupGristTables;
+    window.importFromZebra  = importFromZebra;
+    window.showImportPanel  = showImportPanel;
+    // Debug
+    window._zebraDebug = () => {
+      const ff = filteredFeatures();
+      const html0 = ff.length > 0 ? `<div class="pp-row" data-id="${ff[0].id}"><span class="pin" style="background:red"></span><div class="pp-info"><div class="pp-name">${ff[0].id_zebra || ff[0].id}</div></div></div>` : 'EMPTY';
+      return {
+        allFeatures: state.allFeatures.length,
+        cleanFeatures: state.cleanFeatures.length,
+        filterCommune: [...state.filterCommune],
+        filterDanger: [...state.filterDanger],
+        filteredByCommune: filteredByCommune().length,
+        filteredFeatures: ff.length,
+        sample_html0: html0.slice(0, 100),
+      };
+    };
+    window._forceRenderList = () => _doRenderList();
+
+    // ── Boot ──────────────────────────────────────────────────────────────
+    let _firstRefresh = true;
+    async function refresh() {
+      await process();
+
+      // Premier chargement avec plusieurs communes : auto-sélectionner la plus récente
+      if (_firstRefresh && state.allFeatures.length > 0) {
+        _firstRefresh = false;
+        const communes = [...new Set(state.allFeatures.map(f => f.props.commune).filter(Boolean))];
+        if (communes.length > 1) {
+          // La commune la plus récente = commune du record avec le plus grand _gristId
+          const communeMaxGristId = {};
+          state.allFeatures.forEach(f => {
+            const c = f.props.commune;
+            if (!c) return;
+            const gid = f._gristId || 0;
+            if (!communeMaxGristId[c] || gid > communeMaxGristId[c]) communeMaxGristId[c] = gid;
+          });
+          const latestCommune = communes.reduce((best, c) =>
+            (communeMaxGristId[c] || 0) > (communeMaxGristId[best] || 0) ? c : best, communes[0]);
+          // Sélectionner uniquement la commune la plus récente
+          state.filterCommune = new Set([latestCommune]);
+          // Ouvrir le panel filtres pour montrer les options de commune
+          const aside = document.querySelector('aside.filters');
+          if (aside) aside.classList.add('open');
+        }
+      }
+
+      renderStats(); renderFilters(); renderMap(); renderList();
+    }
+
+    initMap();
+    init();
+  </script>
+</body>
+</html>
