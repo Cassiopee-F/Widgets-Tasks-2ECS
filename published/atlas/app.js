@@ -13,19 +13,19 @@ import {
   loadSceneManifestLayers,
   materializeDeferredLayer,
   boundsFromVisibleLayers,
-} from './lib/scene-loader.js?v=1.1.1';
-import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.1';
-import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.1';
-import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.1';
+} from './lib/scene-loader.js?v=1.1.2';
+import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.2';
+import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.2';
+import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.2';
 import {
   moveSequence, displayOrder, moveLayerInStack, insertionIndex, sortByRank,
   dropIndex, reorderByDrop,
-} from './lib/layer-order.js?v=1.1.1';
-import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.1';
-import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.1';
+} from './lib/layer-order.js?v=1.1.2';
+import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.2';
+import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.2';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
-} from './lib/terrain-base.js?v=1.1.1';
+} from './lib/terrain-base.js?v=1.1.2';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -34,7 +34,7 @@ import {
   saveFeaturesToSource,
   startScenePolling,
   refreshLayerFromTable,
-} from './lib/grist-sync.js?v=1.1.1';
+} from './lib/grist-sync.js?v=1.1.2';
 import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
@@ -45,13 +45,13 @@ import {
   resolveFeaturePropertyKey,
   graduatedStops,
   recolorStops,
-} from './lib/declarative-style.js?v=1.1.1';
+} from './lib/declarative-style.js?v=1.1.2';
 import {
   scanGeoTables,
   detectGeometryColumn,
   tableToGeoJSON,
   isLinkedTableLayer,
-} from './lib/geo-tables.js?v=1.1.1';
+} from './lib/geo-tables.js?v=1.1.2';
 import {
   layerFieldNames,
   controlFieldType,
@@ -66,21 +66,21 @@ import {
   repairSelectControlFromManifest,
   applyStoryControlsToLayer,
   sanitizeBrokenSelectFilters,
-} from './lib/controls.js?v=1.1.1';
+} from './lib/controls.js?v=1.1.2';
 import {
   captureStoryState,
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=1.1.1';
+} from './lib/story.js?v=1.1.2';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
-} from './lib/manifest-binding.js?v=1.1.1';
+} from './lib/manifest-binding.js?v=1.1.2';
 import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
-} from './lib/viewport.js?v=1.1.1';
+} from './lib/viewport.js?v=1.1.2';
 import {
   parseAtlasMode,
   resolveAccess,
@@ -90,16 +90,16 @@ import {
   shouldEnableLight3d,
   parseNo3dParam,
   probeCanWriteDoc,
-} from './lib/view-mode.js?v=1.1.1';
+} from './lib/view-mode.js?v=1.1.2';
 import {
   createDefaultViewerControls,
   getViewerControl,
   setViewerExposed as setViewerExposedFn,
-} from './lib/viewer-controls.js?v=1.1.1';
+} from './lib/viewer-controls.js?v=1.1.2';
 import {
   loadScenePrefs,
   saveScenePrefs,
-} from './lib/scene-prefs.js?v=1.1.1';
+} from './lib/scene-prefs.js?v=1.1.2';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
