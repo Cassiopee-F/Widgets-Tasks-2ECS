@@ -200,3 +200,39 @@ export function needsTerrainBase(layer, terrainActif) {
   const surfacique = g === 'Polygon' || g === 'MultiPolygon';
   return surfacique && layer.style?.polygonMode !== 'flat';
 }
+
+/**
+ * Les deux echantillonnages du relief doivent-ils etre rejoues ?
+ *
+ * Le MNT arrive par tuiles, et leur resolution change a chaque palier entier de
+ * zoom : une altitude relevee a z11 n'est pas celle que MapLibre rendra a z14.
+ * Il faut donc bien re-echantillonner un jour ou l'autre — mais **pas a chaque
+ * fin de deplacement**.
+ *
+ * C'etait le defaut : le cache d'altitude etait vide a chaque `moveend`, donc
+ * un simple panoramique suffisait a faire re-sonder tous les objets. Ceux dont
+ * la tuile n'etait pas encore revenue retombaient a zero, et la scene entiere
+ * sautait — d'ou les modeles 3D qui « bougeaient avec la carte ». Le meme cache
+ * alimentant le calage des surfaces, les mailles heritaient des memes altitudes
+ * douteuses.
+ *
+ * On ne rejoue donc que sur changement de palier, ou la donnee change vraiment.
+ */
+export function paliersDemDifferents(zoomA, zoomB) {
+  if (!Number.isFinite(zoomA) || !Number.isFinite(zoomB)) return true;
+  return Math.floor(zoomA) !== Math.floor(zoomB);
+}
+
+/**
+ * Altitude de reference de la scene 3D, jamais retombee a zero.
+ *
+ * `queryTerrainElevation` ne repond que pour les tuiles chargees. L'origine de
+ * la scene est un objet fixe, souvent hors du champ apres quelques
+ * deplacements : le repli historique `|| 0` la ramenait alors au niveau de la
+ * mer et translatait toute la scene d'un coup. Mieux vaut conserver la derniere
+ * altitude connue — perimee au pire, jamais absurde.
+ */
+export function altitudeOrigineStable(sondee, precedente) {
+  if (Number.isFinite(sondee)) return sondee;
+  return Number.isFinite(precedente) ? precedente : 0;
+}

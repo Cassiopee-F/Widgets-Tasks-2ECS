@@ -25,7 +25,9 @@ import { edgeScrollStep } from './lib/edge-scroll.js?v=20260806a';
 import { basemapLayerIds } from './lib/basemap-layers.js?v=20260807a';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
-} from './lib/terrain-base.js?v=20260808f';
+  paliersDemDifferents, altitudeOrigineStable,
+} from './lib/terrain-base.js?v=20260818a';
+import { voileNocturne, intensiteLumiere, couleurLumiere } from './lib/night-readability.js?v=20260818a';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -171,6 +173,12 @@ const STATE = {
         terrainExaggeration: 1.2,
         labels: true,
         sky: true,
+        // Lisibilite des donnees quand la carte passe a la nuit : 0 = ambiance
+        // pleine (voile a 62 %, volumes a 0,16), 1 = donnees toujours lisibles.
+        // Par defaut a mi-chemin : Atlas sert d'abord a lire de la donnee, et
+        // rien ne permettait jusqu'ici de recuperer une couche graduee apres le
+        // coucher du soleil.
+        nightReadability: 0.5,
         timeOfDay: 870,          // minutes (14:30)
         date: new Date(2026, 5, 15, 14, 30, 0),
         shadows: true,
@@ -676,6 +684,13 @@ const MODEL3D_ZOOM_GATE = 11;          // sous ce zoom on cache la 3D si beaucou
 const MODEL3D_GATE_COUNT = 4000;
 const SHADOW_FEATURE_CAP = 1500;       // ombres portées réelles seulement sous ce nombre d'objets visibles
 
+/** Ecart d'altitude a l'origine au-dela duquel la scene 3D est recalculee, en metres. */
+const DERIVE_ORIGINE_M = 0.5;
+
+/** Palier de zoom du dernier echantillonnage du relief, et son minuteur. */
+let _palierDemCale = null;
+let _recalageTimer = null;
+
 const Models3D = {
     layerId: 'three-models-3d',
     scene: null, camera: null, renderer: null,
@@ -734,13 +749,20 @@ const Models3D = {
                 if (!self.renderer || !self.origin) return;
                 const arr = Array.isArray(matrix) ? matrix : (matrix && (matrix.defaultProjectionData?.mainMatrix || matrix.mainMatrix));
                 if (!arr) return;
-                // élévation de l'origine — peut évoluer pendant le chargement des tuiles DEM
-                const elev = STATE.settings.terrain3D ? (map.queryTerrainElevation(self.origin) || 0) : 0;
-                if (self._lastOriginElev !== undefined && Math.abs(elev - self._lastOriginElev) > 0.5) {
-                    clearTimeout(self._driftTimer);
-                    self._driftTimer = setTimeout(() => self.recomputeAll(), 200);
+                // L'altitude qui translate la scene DOIT etre celle qui a servi a
+                // calculer la position verticale des instances (`placement`). La
+                // sonder ici a chaque frame les desynchronisait : `originElev` ne
+                // se rafraichit qu'apres coup, et entre-temps la scene glissait.
+                const elev = STATE.settings.terrain3D ? self.originElev : 0;
+                // Sonde de derive, hors du chemin de rendu : elle ne fait que
+                // declencher un recalcul ou placement et rendu repartent ensemble.
+                if (STATE.settings.terrain3D) {
+                    const sondee = map.queryTerrainElevation(self.origin);
+                    if (Number.isFinite(sondee) && Math.abs(sondee - elev) > DERIVE_ORIGINE_M) {
+                        clearTimeout(self._driftTimer);
+                        self._driftTimer = setTimeout(() => self.recomputeAll(), 200);
+                    }
                 }
-                self._lastOriginElev = elev;
                 const mc = maplibregl.MercatorCoordinate.fromLngLat(self.origin, elev);
                 const s = mc.meterInMercatorCoordinateUnits();
                 self._vScale.set(s, -s, s);
@@ -795,6 +817,16 @@ const Models3D = {
         this.protoCache.set(url, v); return v;
     },
 
+    /**
+     * Altitude de l'origine de la scene, conservee si la tuile a disparu.
+     *
+     * L'origine est un objet fixe, vite hors champ : le repli `|| 0` la ramenait
+     * au niveau de la mer et faisait sauter toute la scene.
+     */
+    readOriginElev() {
+        if (!STATE.settings.terrain3D || !map) return 0;
+        return altitudeOrigineStable(map.queryTerrainElevation(this.origin), this.originElev);
+    },
     setOrigin(lng, lat) { this.origin = [lng, lat]; this.originMC = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0); this.originScale = this.originMC.meterInMercatorCoordinateUnits(); },
     localMeters(lng, lat) { const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0), s = this.originScale; return { x: (mc.x - this.originMC.x) / s, y: -(mc.y - this.originMC.y) / s }; },
     /**
@@ -873,7 +905,7 @@ const Models3D = {
         this._shadowFeasible = all.length > 0 && all.length <= SHADOW_FEATURE_CAP; // ombres réelles seulement sous ce plafond
         if ((z < MODEL3D_ZOOM_GATE && all.length > MODEL3D_GATE_COUNT) || all.length === 0) { map.triggerRepaint(); return; }
         if (!this.origin) this.setOrigin(all[0].lng, all[0].lat);
-        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+        this.originElev = this.readOriginElev();
 
         const byUrl = new Map();
         for (const it of all) { if (!byUrl.has(it.url)) byUrl.set(it.url, []); byUrl.get(it.url).push(it); }
@@ -908,7 +940,7 @@ const Models3D = {
     recomputeAll() {
         if (!this.origin || !map || !this.scene) return;
         this.elevCache.clear();
-        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+        this.originElev = this.readOriginElev();
         for (const [, g] of this.groups) {
             g.items.forEach((it, slot) => {
                 const layer = STATE.layers.find((l) => l.id === it.layerId);
@@ -1023,9 +1055,14 @@ function initMap() {
     map.on('rotate', () => {
         $('compass-svg').style.transform = `rotate(${map.getBearing()}deg)`;
     });
-    // OPTIM (EclExt) : ré-instancie les modèles dans l'emprise + invalide le cache d'élévation
+    // Re-instancie les modeles dans l'emprise. Le cache d'altitude, lui, n'est
+    // PAS invalide ici : il l'etait a chaque `moveend`, si bien qu'un simple
+    // panoramique faisait re-sonder tous les objets — ceux dont la tuile DEM
+    // n'etait pas revenue retombaient a zero et la scene sautait. Les altitudes
+    // ne sont rejouees qu'au changement de palier de zoom (`recalerSiPalierDem`),
+    // seul moment ou la resolution du MNT change vraiment.
     map.on('moveend', () => {
-        Models3D.elevCache.clear();
+        recalerSiPalierDem();
         Models3D.cull();
         clearTimeout(_cameraSaveTimer);
         _cameraSaveTimer = setTimeout(saveMapCamera, 400);
@@ -1182,8 +1219,7 @@ function setTerrainSource(src) {
     if (map.getSource('terrain-dem')) { try { map.removeSource('terrain-dem'); } catch (e) {} }
     addTerrainSource();
     if (STATE.settings.terrain3D) applyTerrain();
-    Models3D.recomputeAll();
-    setTimeout(refreshTerrainBases, 250); // le MNT doit d'abord se charger
+    recalerRelief(); // le MNT doit d'abord se charger
 }
 function applySky() {
     if (typeof map.setSky !== 'function') return;
@@ -1225,14 +1261,25 @@ function updateLighting() {
     const moon = computeMoon(date, c.lat, c.lng);
     const amb = computeAmbient(altitude, moon);
     const polar = clamp(90 - altitude, 5, 88);
-    try { map.setLight({ anchor: 'map', position: [1.2, azimuth, polar], color: amb.mapColor, intensity: amb.mapIntensity }); } catch (e) {}
+    // `setLight` ne touche que les `fill-extrusion` — couches en volume et bati
+    // du fond. Le ciel et les modeles three.js gardent leur propre eclairage :
+    // c'est ce qui permet de relever la donnee sans effacer la nuit.
+    const lisibilite = STATE.settings.nightReadability ?? 0;
+    try {
+        map.setLight({
+            anchor: 'map', position: [1.2, azimuth, polar],
+            color: couleurLumiere(amb.mapColor, lisibilite),
+            intensity: intensiteLumiere(amb.mapIntensity, lisibilite),
+        });
+    } catch (e) {}
     if (STATE.settings.sky && typeof map.setSky === 'function') {
         // atmosphere-blend : halo atmosphérique du globe en vue large, estompé en zoom
         try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7, 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 6, 1, 9, 0] }); } catch (e) {}
     }
     Models3D.setSun(azimuth, altitude, moon);
     // Teinte nocturne de la scène (le fond vecteur ne s'assombrit pas seul) — atténuée par la lune
-    const tint = clamp((6 - altitude) / 26, 0, 0.62) * (moon && moon.isUp ? (1 - moon.moonIntensity * 0.35) : 1);
+    const tintBrut = clamp((6 - altitude) / 26, 0, 0.62) * (moon && moon.isUp ? (1 - moon.moonIntensity * 0.35) : 1);
+    const tint = voileNocturne(tintBrut, lisibilite);
     const nt = $('night-tint');
     if (nt) nt.style.background = tint <= 0.015 ? 'transparent' : `rgba(16,24,58,${tint.toFixed(3)})`;
     updateSunStrip();
@@ -1416,6 +1463,47 @@ function poserCoucheSurTerrain(layer) {
     const ms = Math.round(performance.now() - t0);
     if (ms > 500) console.warn(`[Atlas terrain] ${layer.name} : ${n} entites posees en ${ms} ms`);
     return n;
+}
+
+/**
+ * Rejoue les deux echantillonnages du relief quand la resolution du MNT change.
+ *
+ * Modeles 3D et surfaces en volume lisent le meme cache d'altitude : les
+ * recaler separement les ferait diverger — un lampadaire flotterait au-dessus
+ * du batiment qui le porte. Ils repartent donc ensemble, et seulement au
+ * franchissement d'un palier entier de zoom.
+ */
+function recalerSiPalierDem() {
+    if (!map || !STATE.settings.terrain3D) return;
+    const z = map.getZoom();
+    if (!paliersDemDifferents(_palierDemCale, z)) return;
+    _palierDemCale = z;
+    Models3D.elevCache.clear();
+    clearTimeout(_recalageTimer);
+    // Le MNT du nouveau palier doit d'abord arriver : sonder trop tot ne
+    // rendrait que l'ancienne resolution, et on aurait paye le calcul pour rien.
+    recalerRelief(350);
+}
+
+/**
+ * Recale modeles 3D et surfaces en volume sur le relief, apres un delai.
+ *
+ * Les deux lisent le meme cache d'altitude : les recaler separement les ferait
+ * diverger. Ce point d'entree unique remplace les quatre paires d'appels
+ * dispersees, qui pouvaient s'entrelacer — un changement d'exageration suivi
+ * d'un changement de source rejouait deux calages concurrents sur des donnees
+ * differentes.
+ *
+ * Le delai laisse le MNT arriver : sonder trop tot ne rend que l'ancienne
+ * resolution, et le calcul est paye pour rien.
+ */
+function recalerRelief(delai = 250) {
+    clearTimeout(_recalageTimer);
+    _recalageTimer = setTimeout(() => {
+        if (map) _palierDemCale = map.getZoom();
+        Models3D.recomputeAll();
+        refreshTerrainBases();
+    }, delai);
 }
 
 /**
@@ -2039,7 +2127,7 @@ function applyStoryState(s) {
     if (s.terrain3D != null && s.terrain3D !== STATE.settings.terrain3D) {
         STATE.settings.terrain3D = s.terrain3D;
         applyTerrain();
-        setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250);
+        recalerRelief();
     }
     if (s.timeOfDay != null) STATE.settings.timeOfDay = s.timeOfDay;
     if (s.date) STATE.settings.date = new Date(s.date);
@@ -2850,6 +2938,11 @@ function renderSoleil() {
         </div>
         <div class="section">
             <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
+        </div>
+        <div class="section">
+            <div class="slider-head"><span class="lbl">Lisibilité de nuit</span><span class="val" id="v-nightread">${Math.round((STATE.settings.nightReadability ?? 0) * 100)}%</span></div>
+            <input type="range" class="rng" min="0" max="1" step="0.05" value="${STATE.settings.nightReadability ?? 0}" oninput="A.setNightReadability(this.value)">
+            <div class="range-info">0 % : ambiance nocturne pleine · 100 % : couches lisibles quelle que soit l'heure</div>
         </div>
         <div class="section">
             <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')" role="switch" tabindex="0" aria-checked="${!!STATE.settings.shadows}" aria-label="Ombres portées"></div></div>
@@ -5024,7 +5117,7 @@ const A = {
     toggleSetting(key) {
         STATE.settings[key] = !STATE.settings[key];
         if (key === 'buildings3D') applyBuildingVisibility();
-        else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250); }
+        else if (key === 'terrain3D') { applyTerrain(); _palierDemCale = null; recalerRelief(); }
         else if (key === 'labels') applyLabelsVisibility();
         else if (key === 'sky') applySky();
         else if (key === 'shadows') { updateLighting(); $('shadow-toggle')?.classList.toggle('on', STATE.settings.shadows); }
@@ -5038,7 +5131,13 @@ const A = {
     },
     setPitch(v) { map.setPitch(+v); $('v-pitch').textContent = Math.round(v) + '°'; },
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
-    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 200); } },
+    setNightReadability(v) {
+        STATE.settings.nightReadability = clamp(+v, 0, 1);
+        const el = $('v-nightread');
+        if (el) el.textContent = Math.round(STATE.settings.nightReadability * 100) + '%';
+        updateLighting();
+    },
+    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); recalerRelief(200); } },
     setBasemap(k) {
         if (CONFIG.viewMode) {
             const allowed = basemapChoicesForDock();
