@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>ZEBRA — Terrain</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+  <style>
+    :root {
+      --rf-blue: #000091; --rf-blue-l: #e3e3fd;
+      --green: #2a9d8f; --orange: #f57c00; --red: #d32f2f;
+      --grey-50: #f6f6f6; --grey-100: #eee; --grey-700: #444;
+      --t: 150ms ease;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; font-size: 13px; color: #161616;
+           background: var(--grey-50); height: 100vh; display: flex; flex-direction: column; }
+
+    /* Header */
+    header { background: white; padding: 8px 14px; border-bottom: 2px solid var(--rf-blue);
+             display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    header strong { color: var(--rf-blue); font-size: 14px; }
+    .badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: #2a9d8f; color: white; }
+    .mode-tabs { margin-left: auto; display: flex; gap: 2px; }
+    .mode-tab { padding: 4px 10px; border: 1px solid var(--grey-100); border-radius: 4px;
+                cursor: pointer; font-size: 11px; background: white; transition: var(--t); }
+    .mode-tab.active { background: var(--rf-blue); color: white; border-color: var(--rf-blue); }
+
+    /* Corps */
+    main { flex: 1; overflow: hidden; position: relative; }
+
+    /* Mode Vision */
+    #mode-vision { display: flex; flex-direction: column; height: 100%; }
+    .vision-map { flex: 1; position: relative; }
+    #map-vision { width: 100%; height: 100%; }
+    .vision-controls {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      z-index: 10;
+    }
+    .btn-capture {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: var(--rf-blue); border: 3px solid white; color: white;
+      font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,131,.4);
+      transition: var(--t);
+    }
+    .btn-capture:active { transform: scale(.95); }
+    .gps-indicator { font-size: 11px; color: white; background: rgba(0,0,0,.5);
+                     padding: 3px 8px; border-radius: 10px; }
+
+    /* Panneau résultats vision */
+    .vision-results {
+      background: white; border-top: 1px solid var(--grey-100);
+      max-height: 40%; overflow-y: auto; padding: 10px;
+    }
+    .vision-results h4 { font-size: 11px; text-transform: uppercase; color: var(--grey-700);
+                          margin-bottom: 8px; }
+    .obj-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; margin-bottom: 4px;
+      background: var(--grey-50); border: 1px solid var(--grey-100); border-radius: 4px;
+      font-size: 12px;
+    }
+    .obj-chip .conf { margin-left: auto; font-size: 10px; color: var(--grey-700); }
+    .obj-chip .chip-actions { display: flex; gap: 4px; margin-left: 8px; }
+    .chip-btn { padding: 2px 8px; border: 1px solid; border-radius: 3px; cursor: pointer;
+                font-size: 11px; background: white; transition: var(--t); }
+    .chip-btn.confirm { border-color: var(--green); color: var(--green); }
+    .chip-btn.confirm:hover { background: var(--green); color: white; }
+    .chip-btn.reject { border-color: var(--red); color: var(--red); }
+    .chip-btn.reject:hover { background: var(--red); color: white; }
+
+    /* Mode Validation */
+    #mode-validation { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+    .pp-list-terrain { flex: 1; overflow-y: auto; }
+    .pp-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-bottom: 1px solid var(--grey-100);
+      cursor: pointer; transition: var(--t);
+    }
+    .pp-item:hover { background: var(--grey-50); }
+    .pp-item.selected { background: var(--rf-blue-l); }
+    .pp-pin { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .pp-info { flex: 1; min-width: 0; }
+    .pp-info .pp-id { font-weight: 600; font-size: 12px; white-space: nowrap;
+                       overflow: hidden; text-overflow: ellipsis; }
+    .pp-info .pp-dist { font-size: 11px; color: var(--grey-700); }
+    .pp-arrow { color: var(--grey-700); }
+
+    /* Fiche validation */
+    .validation-sheet {
+      background: white; border-top: 2px solid var(--rf-blue);
+      overflow-y: auto; flex-shrink: 0; max-height: 70%;
+      padding: 14px;
+    }
+    .sheet-title { font-weight: 600; font-size: 14px; margin-bottom: 12px;
+                   display: flex; align-items: center; gap: 8px; }
+    .criteria-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+    .criterion-row { display: flex; flex-direction: column; gap: 3px;
+                     padding: 6px 8px; background: var(--grey-50); border-radius: 4px; }
+    .criterion-label { font-size: 10px; color: var(--grey-700); }
+    .criterion-btns { display: flex; gap: 3px; }
+    .crit-btn { flex: 1; padding: 3px; border: 1px solid var(--grey-100); border-radius: 3px;
+                cursor: pointer; font-size: 10px; background: white; transition: var(--t);
+                text-align: center; }
+    .crit-btn.sel-yes  { background: #e8f5e9; border-color: var(--green); color: var(--green); font-weight: 600; }
+    .crit-btn.sel-no   { background: #ffebee; border-color: var(--red); color: var(--red); font-weight: 600; }
+    .crit-btn.sel-nsp  { background: #fff3e0; border-color: var(--orange); color: var(--orange); font-weight: 600; }
+    .photo-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+    .photo-btn { border: 1px dashed var(--grey-100); border-radius: 4px; padding: 10px;
+                 text-align: center; cursor: pointer; font-size: 11px; color: var(--grey-700);
+                 background: var(--grey-50); transition: var(--t); }
+    .photo-btn:hover { border-color: var(--rf-blue); color: var(--rf-blue); }
+    .photo-btn.has-photo { border-style: solid; border-color: var(--green); background: #e8f5e9; }
+    textarea { width: 100%; min-height: 48px; padding: 6px; border: 1px solid var(--grey-100);
+               border-radius: 4px; font: inherit; font-size: 12px; resize: vertical;
+               margin-bottom: 10px; }
+    .btn-validate { width: 100%; padding: 10px; background: var(--green); color: white;
+                    border: none; border-radius: 4px; font-size: 13px; font-weight: 600;
+                    cursor: pointer; transition: var(--t); }
+    .btn-validate:hover { background: #1b7a6e; }
+
+    /* Toast */
+    #toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+             background: #222; color: white; padding: 8px 16px; border-radius: 20px;
+             font-size: 12px; opacity: 0; transition: opacity .3s; z-index: 999; pointer-events: none; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+<header>
+  <strong>ZEBRA</strong>
+  <span class="badge">Terrain</span>
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="switchMode('vision')">📷 Vision</button>
+    <button class="mode-tab" onclick="switchMode('validation')">✅ Validation</button>
+  </div>
+</header>
+<main>
+  <!-- MODE VISION : photo → DepthPro + GroundingDINO → carte objets -->
+  <div id="mode-vision" style="display:flex">
+    <div class="vision-map">
+      <div id="map-vision"></div>
+      <div class="vision-controls">
+        <div class="gps-indicator" id="gps-label">GPS non disponible</div>
+        <button class="btn-capture" onclick="capturePhoto()" title="Détecter les équipements">📷</button>
+        <input type="file" id="photo-input" accept="image/*" capture="environment"
+               style="display:none" onchange="onPhotoSelected(this)">
+      </div>
+    </div>
+    <div class="vision-results" id="vision-results" style="display:none">
+      <h4>Équipements détectés</h4>
+      <div id="obj-list"></div>
+    </div>
+  </div>
+
+  <!-- MODE VALIDATION : liste PP → fiche 14 critères + photos -->
+  <div id="mode-validation">
+    <div class="pp-list-terrain" id="pp-list-terrain">
+      <div style="padding:20px;text-align:center;color:var(--grey-700)">
+        Chargement des passages piétons…
+      </div>
+    </div>
+    <div class="validation-sheet" id="validation-sheet" style="display:none"></div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script type="module">
+  // ── Config ───────────────────────────────────────────────────────────────────
+  const ZEBRA_API = 'https://user-nic01asfr-zebra-bridge.user.lab.sspcloud.fr';
+
+  // ── État ────────────────────────────────────────────────────────────────────
+  let gps = null;
+  let heading = 0;
+  let allPPs = [];
+  let selectedPP = null;
+  let criteriaState = {};
+  let mapVision = null;
+  let detectedObjects = [];
+  let pendingSync = JSON.parse(localStorage.getItem('zebra_terrain_sync') || '[]');
+
+  // 14 critères INSERM avec labels courts
+  const CRITERIA = [
+    { id: 'cl_feu',                               label: 'Feu piéton',       icon: '🚦' },
+    { id: 'cl_bande_d_eveil_de_vigilance',        label: 'BEV / podotactile',icon: '⬜' },
+    { id: 'cl_eclairage_public_moins_20m',        label: 'Éclairage <20m',   icon: '💡' },
+    { id: 'cl_arret_de_bus',                      label: 'Arrêt TC',         icon: '🚏' },
+    { id: 'cl_presence_ilot',                     label: 'Îlot refuge',      icon: '🏝️' },
+    { id: 'cl_ilot_refuge_inferieur_2m',          label: 'Îlot <2m',         icon: '📏' },
+    { id: 'cl_ilot_refuge_franchissable',         label: 'Îlot franchissable',icon: '♿' },
+    { id: 'cl_ralentisseurs_trapezoidal_plateau', label: 'Ralentisseur',      icon: '🔶' },
+    { id: 'cl_manque_visibilite',                 label: 'Masque visib.',     icon: '🌳' },
+    { id: 'cl_places_stationnement',              label: 'Stationnement',     icon: '🅿️' },
+    { id: 'cl_ligne_effet_sas_cycliste',          label: 'SAS vélo',         icon: '🚲' },
+    { id: 'cl_valide_evaluable_sat',              label: 'Éval. satellite',   icon: '🛰️' },
+    { id: 'cl_valide_evaluable_street',           label: 'Éval. rue',        icon: '👁️' },
+    { id: 'cl_coherence_longueur_passage_pieton', label: 'Longueur cohérente',icon: '📐' },
+  ];
+
+  const DANGER_COLORS = { 3: '#d32f2f', 2: '#f57c00', 1: '#fbc02d', 0: '#2a9d8f', '-1': '#9e9e9e' };
+
+  // ── Bootstrap schéma Grist (idempotent, silencieux) ─────────────────────────
+  async function autoInitSchema() {
+    try {
+      const { ensureTables } = await import('/widget/shared/grist_schema.js');
+      await ensureTables(['Pp', 'Etudes', 'Corrections', 'Pp_vision']);
+    } catch (e) { console.warn('[ZEBRA terrain] autoInitSchema:', e.message); }
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  async function init() {
+    initMapVision();
+    startGPS();
+    startCompass();
+
+    // Grist
+    const inGrist = typeof grist !== 'undefined' && window.parent !== window;
+    if (inGrist) {
+      try { grist.ready({ requiredAccess: 'full' }); } catch (_) {}
+      autoInitSchema();  // bootstrap silencieux
+      grist.onRecords(records => {
+        allPPs = records;
+        renderPPList();
+      });
+      grist.onRecord(record => {
+        if (record?.pp_id) selectPP(record);
+      });
+    }
+
+    // Rejouer les syncs offline
+    replaySyncQueue();
+  }
+
+  // ── Carte vision ─────────────────────────────────────────────────────────────
+  function initMapVision() {
+    mapVision = new maplibregl.Map({
+      container: 'map-vision',
+      style: 'https://data.geopf.fr/tms/1.0.0/GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2/{z}/{x}/{y}.png',
+      zoom: 17, center: [2.35, 48.87],
+    });
+    mapVision.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+    mapVision.on('load', () => {
+      mapVision.addSource('objects', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      mapVision.addLayer({ id: 'objects-circle', type: 'circle', source: 'objects',
+        paint: { 'circle-radius': 10, 'circle-color': '#f57c00',
+                 'circle-stroke-width': 2, 'circle-stroke-color': 'white' } });
+      mapVision.addLayer({ id: 'objects-label', type: 'symbol', source: 'objects',
+        layout: { 'text-field': ['get', '_icon'], 'text-size': 14,
+                  'text-offset': [0, -1.5] } });
+    });
+  }
+
+  // ── GPS + Boussole ───────────────────────────────────────────────────────────
+  function startGPS() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.watchPosition(
+      pos => {
+        gps = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+        document.getElementById('gps-label').textContent =
+          `📍 ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)} (±${gps.acc.toFixed(0)}m)`;
+        if (mapVision) mapVision.setCenter([gps.lng, gps.lat]);
+        sortPPsByDistance();
+      },
+      () => {}, { enableHighAccuracy: true, maximumAge: 2000 }
+    );
+  }
+
+  function startCompass() {
+    window.addEventListener('deviceorientationabsolute', e => {
+      heading = e.webkitCompassHeading ?? (360 - (e.alpha ?? 0));
+    });
+    window.addEventListener('deviceorientation', e => {
+      if (e.webkitCompassHeading) heading = e.webkitCompassHeading;
+    });
+  }
+
+  // ── Mode Vision : capture + détection ────────────────────────────────────────
+  window.capturePhoto = () => { document.getElementById('photo-input').click(); };
+
+  window.onPhotoSelected = async function(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const b64 = await fileToBase64(file);
+    await runVisionDetection(b64);
+    input.value = '';
+  };
+
+  async function runVisionDetection(imageBase64) {
+    if (!gps) { toast('GPS requis pour géoréférencer les objets'); return; }
+
+    toast('⏳ Détection en cours…');
+    const results = document.getElementById('vision-results');
+    results.style.display = 'block';
+    document.getElementById('obj-list').innerHTML = '<div style="text-align:center;padding:12px;color:var(--grey-700)">⏳</div>';
+
+    try {
+      const resp = await fetch(`${ZEBRA_API}/api/vision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: imageBase64,
+          gps_lat: gps.lat, gps_lng: gps.lng,
+          heading_deg: heading,
+          camera_fov_h: 60,
+          pp_id: selectedPP?.pp_id || null,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      detectedObjects = data.objects || [];
+      renderDetectedObjects(detectedObjects);
+      updateVisionMap(detectedObjects);
+      toast(`✅ ${detectedObjects.length} objet(s) détecté(s)`);
+    } catch (e) {
+      // Fallback si /api/vision pas encore implémenté
+      if (e.message.includes('404') || e.message.includes('Not Found')) {
+        toast('⚠ /api/vision non disponible — mode démo');
+        const demo = generateDemoObjects(gps, heading);
+        detectedObjects = demo;
+        renderDetectedObjects(demo);
+        updateVisionMap(demo);
+      } else {
+        document.getElementById('obj-list').innerHTML =
+          `<div style="color:var(--red);font-size:12px">❌ ${e.message}</div>`;
+        toast('Erreur détection');
+      }
+    }
+  }
+
+  function renderDetectedObjects(objects) {
+    const ICONS = {
+      cl_feu: '🚦', cl_bande_d_eveil_de_vigilance: '⬜',
+      cl_eclairage_public_moins_20m: '💡', cl_arret_de_bus: '🚏',
+      cl_presence_ilot: '🏝️', cl_ralentisseurs_trapezoidal_plateau: '🔶',
+      cl_manque_visibilite: '🌳', cl_places_stationnement: '🅿️',
+    };
+    const list = document.getElementById('obj-list');
+    if (!objects.length) {
+      list.innerHTML = '<div style="color:var(--grey-700);font-size:12px">Aucun objet détecté</div>';
+      return;
+    }
+    list.innerHTML = objects.map((obj, i) => `
+      <div class="obj-chip" id="chip-${i}">
+        <span>${ICONS[obj.zebra_criterion] || '📍'}</span>
+        <div>
+          <div style="font-weight:500">${obj.label}</div>
+          <div style="font-size:10px;color:var(--grey-700)">${obj.distance_m?.toFixed(1)}m · ${obj.lat?.toFixed(5)}, ${obj.lng?.toFixed(5)}</div>
+        </div>
+        <span class="conf">${(obj.confidence * 100).toFixed(0)}%</span>
+        <div class="chip-actions">
+          <button class="chip-btn confirm" onclick="confirmObject(${i})">✓</button>
+          <button class="chip-btn reject" onclick="rejectObject(${i})">✗</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function updateVisionMap(objects) {
+    if (!mapVision || !mapVision.getSource('objects')) return;
+    const features = objects.filter(o => o.lat && o.lng).map(o => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [o.lng, o.lat] },
+      properties: { _icon: '📍', label: o.label, criterion: o.zebra_criterion },
+    }));
+    mapVision.getSource('objects').setData({ type: 'FeatureCollection', features });
+  }
+
+  window.confirmObject = async function(idx) {
+    const obj = detectedObjects[idx];
+    if (!obj) return;
+    const chip = document.getElementById(`chip-${idx}`);
+    chip.style.borderColor = 'var(--green)'; chip.style.background = '#e8f5e9';
+
+    // Écrire dans Grist Pp_vision
+    if (typeof grist !== 'undefined') {
+      try {
+        const { PP_VISION_COLUMNS } = await import('../shared/grist_schema.js');
+        try { await grist.docApi.fetchTable('Pp_vision'); } catch (_) {
+          await grist.docApi.applyUserActions([['AddTable', 'Pp_vision', PP_VISION_COLUMNS]]);
+        }
+        await grist.docApi.applyUserActions([['AddRecord', 'Pp_vision', null, {
+          vision_id: crypto.randomUUID?.() || Date.now().toString(36),
+          pp_id: selectedPP?.pp_id || '',
+          label: obj.label, zebra_criterion: obj.zebra_criterion || '',
+          confidence: obj.confidence, lat: obj.lat, lng: obj.lng,
+          distance_m: obj.distance_m || 0, heading_deg: heading,
+          confirmed: true, detected_at: new Date().toISOString(),
+        }]]);
+        toast('Objet confirmé dans Grist');
+      } catch (e) { toast('Erreur Grist: ' + e.message); }
+    }
+
+    // Aussi mettre à jour cl_* du PP si associé
+    if (selectedPP && obj.zebra_criterion && typeof grist !== 'undefined') {
+      try {
+        await grist.docApi.applyUserActions([['UpdateRecord', 'Pp', selectedPP.id, {
+          [obj.zebra_criterion]: Math.max(selectedPP[obj.zebra_criterion] || 0, obj.confidence),
+        }]]);
+      } catch (_) {}
+    }
+  };
+
+  window.rejectObject = function(idx) {
+    const chip = document.getElementById(`chip-${idx}`);
+    chip.style.opacity = '0.4';
+    chip.querySelector('.chip-actions').innerHTML = '<span style="font-size:10px;color:var(--red)">Rejeté</span>';
+  };
+
+  // ── Mode Validation ──────────────────────────────────────────────────────────
+  function renderPPList() {
+    const container = document.getElementById('pp-list-terrain');
+    const pps = allPPs.filter(r => r.statut_terrain === 'A_voir' || r.statut_terrain === 'En_cours');
+
+    if (!pps.length) {
+      container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--grey-700)">
+        <div style="font-size:32px;margin-bottom:8px">✅</div>
+        Tous les PP ont été traités !
+      </div>`;
+      return;
+    }
+
+    container.innerHTML = pps.map(r => {
+      const code = r.dangerosite_code ?? -1;
+      const color = DANGER_COLORS[code] || '#9e9e9e';
+      const dist = gps ? distanceTo(gps, r) : null;
+      return `<div class="pp-item" onclick="selectPPById('${r.pp_id}')">
+        <span class="pp-pin" style="background:${color}"></span>
+        <div class="pp-info">
+          <div class="pp-id">${r.id_zebra || r.pp_id?.slice(0, 8) || '—'}</div>
+          <div class="pp-dist">${dist ? dist.toFixed(0) + 'm' : '—'} · ${r.statut_terrain || '—'}</div>
+        </div>
+        <span class="pp-arrow">›</span>
+      </div>`;
+    }).join('');
+  }
+
+  function selectPPById(ppId) {
+    const r = allPPs.find(r => r.pp_id === ppId);
+    if (r) selectPP(r);
+  }
+
+  function selectPP(r) {
+    selectedPP = r;
+    criteriaState = {};
+    CRITERIA.forEach(c => { criteriaState[c.id] = null; });
+    renderValidationSheet(r);
+    if (typeof grist !== 'undefined' && r.id) grist.setSelectedRows([r.id]);
+  }
+
+  function renderValidationSheet(r) {
+    const sheet = document.getElementById('validation-sheet');
+    sheet.style.display = 'block';
+    const code = r.dangerosite_code ?? -1;
+    const color = DANGER_COLORS[code] || '#9e9e9e';
+
+    sheet.innerHTML = `
+      <div class="sheet-title">
+        <span style="background:${color};width:10px;height:10px;border-radius:50%;display:inline-block"></span>
+        ${r.id_zebra || r.pp_id?.slice(0, 8)}
+        <span style="margin-left:auto;font-size:11px;color:var(--grey-700)">${r.commune || ''}</span>
+      </div>
+
+      <div style="font-size:11px;color:var(--grey-700);margin-bottom:10px">
+        Validez la présence ou l'absence de chaque équipement.
+      </div>
+
+      <div class="criteria-grid" id="criteria-grid">
+        ${CRITERIA.map(c => `
+          <div class="criterion-row">
+            <div class="criterion-label">${c.icon} ${c.label}</div>
+            <div class="criterion-btns">
+              <button class="crit-btn" onclick="setCriterion('${c.id}','yes',this.parentNode)"
+                title="Présent">O</button>
+              <button class="crit-btn" onclick="setCriterion('${c.id}','no',this.parentNode)"
+                title="Absent">N</button>
+              <button class="crit-btn" onclick="setCriterion('${c.id}','nsp',this.parentNode)"
+                title="Ne sait pas">?</button>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <div class="photo-row">
+        ${['Vue ensemble','Marquage','Signalétique','Abaissé trottoir'].map((label, i) => `
+          <div class="photo-btn" id="photo-btn-${i}" onclick="captureValidationPhoto(${i})">
+            📷 ${label}
+          </div>`).join('')}
+      </div>
+
+      <textarea id="commentaire" placeholder="Observations, remarques…"></textarea>
+
+      <button class="btn-validate" onclick="validatePP()">
+        ✓ Valider ce passage piéton
+      </button>
+    `;
+  }
+
+  window.setCriterion = function(id, val, btnsContainer) {
+    criteriaState[id] = val;
+    Array.from(btnsContainer.children).forEach(b => {
+      b.className = 'crit-btn';
+      if ((val === 'yes' && b.textContent === 'O') ||
+          (val === 'no'  && b.textContent === 'N') ||
+          (val === 'nsp' && b.textContent === '?')) {
+        b.classList.add(`sel-${val}`);
+      }
+    });
+  };
+
+  window.captureValidationPhoto = function(idx) {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const btn = document.getElementById(`photo-btn-${idx}`);
+      btn.classList.add('has-photo');
+      btn.textContent = `✅ ${['Vue ensemble','Marquage','Signalétique','Abaissé'][idx]}`;
+      // Stocker pour upload Grist Attachments (futur)
+    };
+    input.click();
+  };
+
+  window.validatePP = async function() {
+    if (!selectedPP) return;
+    const commentaire = document.getElementById('commentaire')?.value || '';
+
+    // Construire les champs à mettre à jour
+    const fields = {
+      statut_terrain: 'Valide',
+      review_status: 'validated',
+      commentaire,
+    };
+
+    // Mapper critères O/N/NSP → valeurs 0-1
+    for (const [id, val] of Object.entries(criteriaState)) {
+      if (val === 'yes') fields[id] = 1.0;
+      else if (val === 'no') fields[id] = 0.0;
+      // NSP → on laisse la valeur IA actuelle
+    }
+
+    // Sauvegarder (Grist ou queue offline)
+    if (typeof grist !== 'undefined') {
+      try {
+        await grist.docApi.applyUserActions([
+          ['UpdateRecord', 'Pp', selectedPP.id, fields],
+          ['AddRecord', 'Corrections', null, {
+            correction_id: crypto.randomUUID?.() || Date.now().toString(36),
+            pp_id: selectedPP.pp_id || '',
+            user_id: 'terrain', timestamp: new Date().toISOString(),
+            action: 'validate', field_changed: 'statut_terrain',
+            old_value: selectedPP.statut_terrain || '', new_value: 'Valide',
+            source: 'terrain',
+          }],
+        ]);
+        toast('✅ PP validé');
+        document.getElementById('validation-sheet').style.display = 'none';
+        selectedPP = null;
+      } catch (e) {
+        // Offline → queue
+        addToSyncQueue({ type: 'updatePp', ppId: selectedPP.pp_id, gristId: selectedPP.id, fields });
+        toast('📶 Hors ligne — synchronisé au retour réseau');
+      }
+    } else {
+      toast('✅ Validé (mode démo)');
+    }
+  };
+
+  // ── Offline sync ─────────────────────────────────────────────────────────────
+  function addToSyncQueue(action) {
+    pendingSync.push(action);
+    localStorage.setItem('zebra_terrain_sync', JSON.stringify(pendingSync));
+  }
+
+  async function replaySyncQueue() {
+    if (!pendingSync.length || typeof grist === 'undefined') return;
+    const pending = [...pendingSync];
+    pendingSync = [];
+    localStorage.setItem('zebra_terrain_sync', '[]');
+    for (const action of pending) {
+      try {
+        if (action.type === 'updatePp') {
+          await grist.docApi.applyUserActions([['UpdateRecord', 'Pp', action.gristId, action.fields]]);
+        }
+      } catch (e) {
+        addToSyncQueue(action); // Re-queue si échec
+      }
+    }
+    if (pending.length) toast(`${pending.length} action(s) synchronisée(s)`);
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  window.switchMode = function(mode) {
+    document.getElementById('mode-vision').style.display = mode === 'vision' ? 'flex' : 'none';
+    document.getElementById('mode-validation').style.display = mode === 'validation' ? 'flex' : 'none';
+    document.querySelectorAll('.mode-tab').forEach((t, i) => {
+      t.classList.toggle('active', (i === 0) === (mode === 'vision'));
+    });
+    if (mode === 'validation') renderPPList();
+    if (mode === 'vision' && mapVision) setTimeout(() => mapVision.resize(), 50);
+  };
+
+  function sortPPsByDistance() {
+    if (!gps || !allPPs.length) return;
+    allPPs.sort((a, b) => distanceTo(gps, a) - distanceTo(gps, b));
+    if (document.getElementById('mode-validation').style.display !== 'none') renderPPList();
+  }
+
+  function distanceTo(gps, pp) {
+    if (!pp.lat || !pp.lng) return Infinity;
+    const R = 6371000;
+    const dLat = (pp.lat - gps.lat) * Math.PI / 180;
+    const dLng = (pp.lng - gps.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(gps.lat*Math.PI/180)*Math.cos(pp.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = e => resolve(e.target.result.split(',')[1]);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  // Démo : générer des objets fictifs si /api/vision n'est pas disponible
+  function generateDemoObjects(gps, heading) {
+    const DEMO = [
+      { label: 'traffic light', zebra_criterion: 'cl_feu', confidence: 0.91, distance_m: 3.2 },
+      { label: 'street lamp pole', zebra_criterion: 'cl_eclairage_public_moins_20m', confidence: 0.82, distance_m: 12.5 },
+      { label: 'tactile paving strip', zebra_criterion: 'cl_bande_d_eveil_de_vigilance', confidence: 0.74, distance_m: 1.8 },
+    ];
+    return DEMO.map(d => {
+      const bear = (heading + (Math.random() - 0.5) * 30 + 360) % 360;
+      const [lat, lng] = vincentyDirect(gps.lat, gps.lng, bear, d.distance_m);
+      return { ...d, lat, lng, heading_deg: heading };
+    });
+  }
+
+  function vincentyDirect(lat1, lng1, bearingDeg, distanceM) {
+    const R = 6371000;
+    const lat = Math.asin(
+      Math.sin(lat1*Math.PI/180) * Math.cos(distanceM/R) +
+      Math.cos(lat1*Math.PI/180) * Math.sin(distanceM/R) * Math.cos(bearingDeg*Math.PI/180)
+    );
+    const lng = lng1*Math.PI/180 + Math.atan2(
+      Math.sin(bearingDeg*Math.PI/180) * Math.sin(distanceM/R) * Math.cos(lat1*Math.PI/180),
+      Math.cos(distanceM/R) - Math.sin(lat1*Math.PI/180) * Math.sin(lat)
+    );
+    return [lat * 180/Math.PI, lng * 180/Math.PI];
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2500);
+  }
+
+  // Boot
+  init();
+</script>
+</body>
+</html>

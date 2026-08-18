@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso — Prévisionnel</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root{--paper:#f6f7f9;--ink:#171a21;--muted:#6b7280;--line:#e6e9ef;--indigo:#3d5afe;--amber:#d97706;--green:#0f8a5f;--red:#d14343}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1000px;margin:0 auto}
+  .card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px}
+  .hero{background:var(--ink);border-radius:16px;padding:20px 22px;color:#fff}
+  .lab{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa1ad}
+  .inp{width:120px;border:1px solid var(--amber);border-radius:8px;padding:7px 10px;font-size:18px;outline:none;background:#fff}
+  .btn{border:none;border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .btn-go{background:var(--amber);color:#fff}
+  .note{font-size:11px;color:#9aa1ad}
+  .seg{display:flex;background:#eef0f4;border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:none;border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#9aa1ad}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(20,22,28,.10)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:7px 8px;border-top:1px solid #f2f4f8}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9aa1ad;border-top:none}
+  .msg{max-width:620px;margin:50px auto;padding:24px;background:#fff;border:1px solid var(--line);border-radius:14px;line-height:1.6;text-align:center}
+</style>
+</head>
+<body>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<script>
+/* ===================================================================== */
+/* <budget-core> — sous-ensemble inliné de core/budget-core.js (canonique) */
+/* ===================================================================== */
+const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+const eur = (v,d=2)=>(v<0?'\u2212':'')+Math.abs(v).toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d})+' \u20ac';
+const eur0 = v=>eur(v,0);
+const gristToDate = ts=>ts?new Date(ts*1000):null;
+const ym = d=>{const x=(d instanceof Date)?d:new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0');};
+const isLocatif = cat=>/^locatif\b/i.test((cat||'').toString().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+function median(a){const s=[...a].sort((x,y)=>x-y);const n=s.length;if(!n)return 0;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;}
+const med10 = a=>Math.round(median(a)/10)*10;
+const MOIS=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const moisLabel = key=>{const[y,m]=key.split('-').map(Number);return MOIS[m-1].replace('.','')+' '+y;};
+/* </budget-core> */
+/* ===================================================================== */
+
+const C={ink:'#171a21',muted:'#6b7280',indigo:'#3d5afe',amber:'#d97706',green:'#0f8a5f',red:'#d14343'};
+const HAS_GRIST = typeof grist!=='undefined';
+let DATA=null;
+let ST={ period:null };
+
+async function load(){
+  if(!HAS_GRIST){ renderNoGrist(); return; }
+  let tx,catsTbl,par,prev;
+  try{
+    [tx,catsTbl,par,prev]=await Promise.all([
+      grist.docApi.fetchTable('Transactions'),
+      grist.docApi.fetchTable('Categories'),
+      grist.docApi.fetchTable('Parametres'),
+      grist.docApi.fetchTable('Previsionnel')
+    ]);
+  }catch(e){ renderError("Tables introuvables. Le prévisionnel lit Transactions, Categories, Parametres, Previsionnel — lance d'abord l'Import."); return; }
+  const col=(t,n)=>t[n]||[];
+
+  const cats={}; (catsTbl.id||[]).forEach((rowId,i)=>{ const c=col(catsTbl,'Categorie')[i]; if(c) cats[c]={type:col(catsTbl,'Type')[i]||'depense',color:col(catsTbl,'Couleur')[i]||'#5b6470'}; });
+  const typeOf=c=>(cats[c]&&cats[c].type)||'depense';
+
+  const rows=(tx.id||[]).map((rowId,i)=>({ montant:+(col(tx,'Montant')[i]||0), cat:col(tx,'Categorie')[i]||'', date:col(tx,'Date')[i], exclu:!!col(tx,'Exclu')[i] }))
+    .filter(r=>r.date && isFinite(r.montant));
+  rows.forEach(r=>r.ym=ym(gristToDate(r.date)));
+
+  // paramètres (clé-valeur)
+  const params={}; const paramRow={};
+  (par.id||[]).forEach((rowId,i)=>{ const k=col(par,'Cle')[i]; if(k){ params[k]=col(par,'Valeur')[i]; paramRow[k]=rowId; } });
+  const objectif=parseFloat(String(params['objectif_epargne']||'').replace(',','.'))||0;
+
+  // prévisionnel figé : (mois||cat) -> {rowId, prevu, fige}
+  const prevMap={};
+  (prev.id||[]).forEach((rowId,i)=>{ const m=col(prev,'Mois')[i], c=col(prev,'Categorie')[i]; if(m&&c) prevMap[m+'||'+c]={rowId,prevu:+(col(prev,'Prevu')[i]||0),fige:!!col(prev,'Fige')[i]}; });
+
+  const months=[...new Set(rows.map(r=>r.ym))].sort();
+
+  DATA={rows,cats,typeOf,params,paramRow,objectif,prevMap,months};
+  if(!ST.period) ST.period=months[months.length-1]||ym(new Date());
+  render();
+}
+
+// épargne réelle d'un mois = revenus - dépenses (hors épargne, exclu, locatif) = reste-à-vivre dégagé
+function surplus(m){
+  let rev=0; const depByCat={};
+  for(const r of DATA.rows){ if(r.ym!==m||r.exclu||isLocatif(r.cat))continue; const t=DATA.typeOf(r.cat);
+    // depense plafonnee par categorie (comme spentCatMonth) : un poste net crediteur
+    // (remboursement, revenu mal classe) tombe a 0 sans effacer les depenses des autres.
+    if(t==='revenu')rev+=r.montant; else if(t==='depense')depByCat[r.cat]=(depByCat[r.cat]||0)-r.montant; }
+  const dep=Object.values(depByCat).reduce((s,v)=>s+Math.max(0,v),0);
+  return rev-dep;
+}
+function spentCatMonth(cat,m){ let s=0; for(const r of DATA.rows){ if(r.cat===cat&&r.ym===m&&!r.exclu)s+=-r.montant; } return Math.max(0,s); }
+function prevBuckets(m,n){ const i=DATA.months.indexOf(m); return i<0?[]:DATA.months.slice(Math.max(0,i-n),i); }
+
+// catégories de dépense (non locatif) avec dépense récente
+function depCats(){
+  const win=[...prevBuckets(ST.period,6),ST.period];
+  return Object.keys(DATA.cats).filter(c=>DATA.cats[c].type==='depense'&&!isLocatif(c))
+    .map(c=>{ let s=0; win.forEach(m=>s+=spentCatMonth(c,m)); return {c,recent:s}; })
+    .filter(x=>x.recent>0).sort((a,b)=>spentCatMonth(b.c,ST.period)-spentCatMonth(a.c,ST.period)).map(x=>x.c);
+}
+
+/* -------- écritures -------- */
+async function actions(acts){ if(!HAS_GRIST)return; try{ await grist.docApi.applyUserActions(acts);}catch(e){ alert("Écriture refusée : "+(e&&e.message||e)); } await load(); }
+function setObjectif(val){
+  const v=Math.max(0,Math.round(parseFloat(String(val).replace(',','.'))||0));
+  if(DATA.paramRow['objectif_epargne']!=null) actions([['UpdateRecord','Parametres',DATA.paramRow['objectif_epargne'],{Valeur:String(v)}]]);
+  else actions([['AddRecord','Parametres',null,{Cle:'objectif_epargne',Valeur:String(v)}]]);
+}
+function figerMois(){
+  const m=ST.period, acts=[];
+  depCats().forEach(c=>{
+    const prevu=Math.round(prevu_(c,m));
+    const k=m+'||'+c, ex=DATA.prevMap[k];
+    if(ex) acts.push(['UpdateRecord','Previsionnel',ex.rowId,{Prevu:prevu,Fige:true}]);
+    else acts.push(['AddRecord','Previsionnel',null,{Mois:m,Categorie:c,Prevu:prevu,Fige:true}]);
+  });
+  if(acts.length) actions(acts);
+}
+// prévu d'une catégorie pour un mois : figé si présent, sinon médiane 6 mois
+function prevu_(c,m){ const ex=DATA.prevMap[m+'||'+c]; if(ex&&ex.fige) return ex.prevu; return med10(prevBuckets(m,6).map(b=>spentCatMonth(c,b))); }
+
+/* -------- rendu -------- */
+function trajectorySVG(){
+  const ms=DATA.months, obj=DATA.objectif;
+  const real=ms.map(surplus); let cum=0; const cumReal=real.map(v=>cum+=v);
+  // projection : prolonge 6 mois à l'objectif depuis le dernier point réel
+  const projN=6; const lastCum=cumReal[cumReal.length-1]||0;
+  const cumObj=ms.map((_,i)=>obj*(i+1));
+  const allMax=Math.max(...cumReal,...cumObj,lastCum+obj*projN,1)*1.05;
+  const allMin=Math.min(0,...cumReal);
+  const N=ms.length+projN;
+  const X=i=>10+i*(580/Math.max(1,N-1)), Y=v=>8+(1-(v-allMin)/((allMax-allMin)||1))*150;
+  const realPts=cumReal.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
+  const objPts=ms.map((_,i)=>X(i).toFixed(1)+','+Y(cumObj[i]).toFixed(1)).join(' ');
+  // projection segment
+  const projPts=[]; for(let k=0;k<=projN;k++){ projPts.push(X(ms.length-1+k).toFixed(1)+','+Y(lastCum+obj*k).toFixed(1)); }
+  return `<svg viewBox="0 0 600 170" preserveAspectRatio="none" style="width:100%;height:150px;display:block">
+    <polyline points="${objPts}" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="5 4"></polyline>
+    <polyline points="${projPts.join(' ')}" fill="none" stroke="#c2c7d0" stroke-width="2" stroke-dasharray="2 4"></polyline>
+    <polyline points="${realPts}" fill="none" stroke="#3d5afe" stroke-width="2.5"></polyline>
+  </svg>`;
+}
+
+function render(){
+  if(!DATA){return;}
+  const root=document.getElementById('root');
+  const m=ST.period, obj=DATA.objectif, real=surplus(m), ecart=real-obj;
+  const cats=depCats();
+  const totalPrevu=cats.reduce((a,c)=>a+prevu_(c,m),0);
+  const totalReel=cats.reduce((a,c)=>a+spentCatMonth(c,m),0);
+
+  const allB=DATA.months; const _i=allB.indexOf(m);
+  const atOldest=_i<=0, atNewest=_i>=allB.length-1;
+  const navBtn=(act,sym,off)=>`<button data-act="${act}" ${off?'disabled':''} title="${act==='prevPeriod'?'Mois précédent (←)':'Mois suivant (→)'}" style="border:none;border-radius:7px;width:30px;height:28px;font-size:16px;line-height:1;cursor:${off?'default':'pointer'};color:${off?'#c2c7d0':'var(--ink)'};background:${off?'transparent':'#fff'};box-shadow:${off?'none':'0 1px 2px rgba(20,22,28,.10)'}">${sym}</button>`;
+  const periodSel=`<div style="display:flex;align-items:center;gap:3px;background:#eef0f4;border-radius:9px;padding:3px">${navBtn('prevPeriod','‹',atOldest)}<span class="mono" style="min-width:104px;text-align:center;font-size:13px;font-weight:600">${moisLabel(m)}</span>${navBtn('nextPeriod','›',atNewest)}</div>`;
+
+  const rowsHtml=cats.map(c=>{ const p=prevu_(c,m), reel=spentCatMonth(c,m), e=p-reel; const fige=DATA.prevMap[m+'||'+c]&&DATA.prevMap[m+'||'+c].fige;
+    return `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${DATA.cats[c].color};margin-right:7px"></span>${c}${fige?' <span class="note">· figé</span>':''}</td>
+      <td class="mono">${eur0(p)}</td><td class="mono">${eur0(reel)}</td>
+      <td class="mono" style="color:${e>=0?'var(--green)':'var(--red)'}">${e>=0?'+':''}${eur0(e)}</td></tr>`; }).join('');
+
+  root.innerHTML=`<div class="wrap">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="margin-right:auto"><div style="font-size:19px;font-weight:680">Prévisionnel</div><div class="note">objectif d'épargne & trajectoire</div></div>
+      ${periodSel}
+    </div>
+
+    <div class="hero" style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <div class="lab">Objectif d'épargne / mois</div>
+        <div style="margin-top:6px"><input class="inp mono" value="${obj||''}" placeholder="0" data-input="objectif"> <span class="note" style="color:#9aa1ad">€</span></div>
+      </div>
+      <div><div class="lab">Épargne ${moisLabel(m)}</div><div class="mono" style="font-size:30px;font-weight:600;margin-top:4px;color:${real<0?'#ff7a7a':'#fff'}">${eur0(real)}</div><div class="note" style="color:#9aa1ad">reste-à-vivre dégagé</div></div>
+      <div><div class="lab">Écart à l'objectif</div><div class="mono" style="font-size:22px;font-weight:600;margin-top:4px;color:${ecart>=0?'#46d39a':'#ff7a7a'}">${ecart>=0?'+':''}${eur0(ecart)}</div><div class="note" style="color:#9aa1ad">${ecart>=0?'objectif atteint':'sous l\'objectif'}</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:680">Trajectoire d'épargne cumulée</div>
+        <div class="note"><span style="color:#3d5afe">▬</span> réel · <span style="color:#d97706">▬</span> objectif · <span style="color:#c2c7d0">▬</span> projection</div>
+      </div>
+      ${trajectorySVG()}
+      <div style="display:flex;justify-content:space-between;margin-top:2px" class="note"><span>${moisLabel(DATA.months[0]||m)}</span><span>+6 mois projetés</span></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:680">Prévu vs réel · ${moisLabel(m)}</div>
+        <button class="btn btn-go" data-act="figer">Figer ce mois</button>
+      </div>
+      <table><thead><tr><th>Catégorie</th><th>Prévu</th><th>Réel</th><th>Écart</th></tr></thead>
+        <tbody>${rowsHtml||'<tr><td colspan="4" class="note">Aucune dépense ce mois.</td></tr>'}</tbody>
+        <tfoot><tr style="font-weight:680"><td>Total</td><td class="mono">${eur0(totalPrevu)}</td><td class="mono">${eur0(totalReel)}</td><td class="mono" style="color:${totalPrevu-totalReel>=0?'var(--green)':'var(--red)'}">${totalPrevu-totalReel>=0?'+':''}${eur0(totalPrevu-totalReel)}</td></tr></tfoot>
+      </table>
+      <div class="note" style="margin-top:8px">Prévu = médiane 6 mois, ou valeur figée. « Figer » fixe le prévu du mois comme référence (snapshot).</div>
+    </div>
+
+    <div class="note" style="margin-top:10px;text-align:right"><a href="#" data-act="reload" style="color:var(--amber)">rafraîchir</a></div>
+  </div>`;
+}
+
+function renderNoGrist(){ document.getElementById('root').innerHTML=`<div class="msg"><b>Widget Grist — Prévisionnel.</b><br>Ouvre-le comme widget custom dans un document Grist (accès complet). Il lit Transactions, Categories, Parametres, Previsionnel et écrit l'objectif et les mois figés.</div>`; }
+function renderError(m){ document.getElementById('root').innerHTML=`<div class="msg">${m}</div>`; }
+
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]'); if(!a)return;
+  if(a.dataset.act==='reload'){ e.preventDefault(); load(); return; }
+  if(a.dataset.act==='prevPeriod'){ const i=DATA.months.indexOf(ST.period); if(i>0){ST.period=DATA.months[i-1];render();} return; }
+  if(a.dataset.act==='nextPeriod'){ const i=DATA.months.indexOf(ST.period); if(i>=0&&i<DATA.months.length-1){ST.period=DATA.months[i+1];render();} return; }
+  if(a.dataset.act==='figer'){ figerMois(); return; }
+});
+document.addEventListener('change',e=>{
+  const inp=e.target.closest('input[data-input="objectif"]'); if(inp){ setObjectif(inp.value); return; }
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.matches('input[data-input="objectif"]')){ e.target.blur(); return; }
+  if(e.target.matches('input,select,textarea')) return;
+  if(e.key==='ArrowLeft'){ const i=DATA.months.indexOf(ST.period); if(i>0){ST.period=DATA.months[i-1];render();} }
+  if(e.key==='ArrowRight'){ const i=DATA.months.indexOf(ST.period); if(i>=0&&i<DATA.months.length-1){ST.period=DATA.months[i+1];render();} }
+});
+
+if(HAS_GRIST){ grist.ready({requiredAccess:'full'}); load(); }
+else { renderNoGrist(); }
+</script>
+</body>
+</html>

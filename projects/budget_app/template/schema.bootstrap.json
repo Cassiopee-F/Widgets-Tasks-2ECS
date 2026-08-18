@@ -1,0 +1,57 @@
+{
+  "_doc": "Bootstrap autoritatif de la suite Budget perso. Actions Grist (User Actions) applicables d'un bloc sur un document VIERGE : crée les 6 tables avec toutes les colonnes (dont Provision) puis sème la taxonomie de départ. Les sous-catégories ne sont pas semées ici : elles se créent à la volée via le widget Classement. Voir template/SETUP.md.",
+  "_version": "1.0",
+  "actions": [
+    ["AddTable", "Transactions", [
+      {"id": "Date", "type": "Date"},
+      {"id": "Libelle", "type": "Text"},
+      {"id": "Montant", "type": "Numeric"},
+      {"id": "Categorie", "type": "Text"},
+      {"id": "Sous_categorie", "type": "Text"},
+      {"id": "Compte", "type": "Text"},
+      {"id": "Banque", "type": "Text"},
+      {"id": "Reference", "type": "Text"},
+      {"id": "Exclu", "type": "Bool"},
+      {"id": "Notes", "type": "Text"}
+    ]],
+    ["AddTable", "Categories", [
+      {"id": "Categorie", "type": "Text"},
+      {"id": "Type", "type": "Text"},
+      {"id": "Couleur", "type": "Text"},
+      {"id": "Budget_mensuel", "type": "Numeric"},
+      {"id": "Budget_mode", "type": "Text"},
+      {"id": "Lisser", "type": "Bool"},
+      {"id": "Provision", "type": "Numeric"}
+    ]],
+    ["AddTable", "Regles", [
+      {"id": "Motif", "type": "Text"},
+      {"id": "Categorie", "type": "Text"},
+      {"id": "Sous_categorie", "type": "Text"},
+      {"id": "Exclu", "type": "Bool"},
+      {"id": "Priorite", "type": "Numeric"}
+    ]],
+    ["AddTable", "Sous_categories", [
+      {"id": "Categorie", "type": "Text"},
+      {"id": "Sous_categorie", "type": "Text"}
+    ]],
+    ["AddTable", "Parametres", [
+      {"id": "Cle", "type": "Text"},
+      {"id": "Valeur", "type": "Text"}
+    ]],
+    ["AddTable", "Previsionnel", [
+      {"id": "Mois", "type": "Text"},
+      {"id": "Categorie", "type": "Text"},
+      {"id": "Prevu", "type": "Numeric"},
+      {"id": "Fige", "type": "Bool"}
+    ]],
+    ["BulkAddRecord", "Categories",
+      [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      {
+        "Categorie": ["Revenus", "Alimentation", "Restaurants & sorties", "Transports", "Logement", "Assurances", "Santé", "Shopping", "Soins", "Loisirs", "Abonnements & numérique", "Impôts & taxes", "Frais bancaires", "Retrait d'espèces", "Épargne", "Virement interne", "Remboursement", "Famille", "Loyer (vie commune)", "À catégoriser"],
+        "Type": ["revenu", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "depense", "epargne", "exclu", "exclu", "depense", "depense", "depense"],
+        "Couleur": ["#0f8a5f", "#3d5afe", "#7c4dff", "#00a8a8", "#d14343", "#b9742a", "#e85d75", "#5b6470", "#c77b9a", "#f0883e", "#6b7280", "#8a5a00", "#a0524d", "#9b8a5f", "#2f8f5b", "#8a8f99", "#8a8f99", "#c0508a", "#d14343", "#b9742a"]
+      }
+    ],
+    ["AddRecord", "Parametres", null, {"Cle": "objectif_epargne", "Valeur": "0"}]
+  ]
+}
