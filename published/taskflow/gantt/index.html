@@ -36,6 +36,7 @@
         .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         .header-center { display: flex; align-items: center; gap: 8px; }
         .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .header-right select { max-width: 185px; }
         .btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; transition: all 0.15s; color: var(--text); }
         .btn:hover { background: var(--bg); }
         .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -600,6 +601,11 @@
                     <option value="assignee">Couleur: Assigné</option>
                     <option value="status">Couleur: Statut</option>
                 </select>
+                <select id="levelSelect" onchange="changeWorkLevel(this.value)" title="Niveau affiché — Tous = arbre ; Synthèses = tâches mères (parents) ; Actions = tâches sans sous-tâche (feuilles), vue aplatie">
+                    <option value="all">Niveau : Tous</option>
+                    <option value="parents">Niveau : Synthèses</option>
+                    <option value="actions">Niveau : Actions</option>
+                </select>
             </div>
         </div>
         <div class="header-center">
@@ -614,6 +620,7 @@
                 <button class="btn" data-view="quarter" onclick="setView('quarter')">Trim</button>
                 <button class="btn" data-view="semester" onclick="setView('semester')">6M</button>
                 <button class="btn" data-view="year" onclick="setView('year')">An</button>
+                <button class="btn" data-view="multi" onclick="setView('multi')" title="Vue pluriannuelle, graduée au trimestre">Pluri</button>
             </div>
         </div>
         <div class="header-right">
@@ -675,8 +682,13 @@
             month:    { label: 'Mois',      unit: 'day',   days: 42,   cellWidth: 34, navStep: 'month' },
             quarter:  { label: 'Trimestre', unit: 'week',  weeks: 13,  cellWidth: 60, navStep: 'quarter' },
             semester: { label: 'Semestre',  unit: 'week',  weeks: 26,  cellWidth: 32, navStep: 'semester' },
-            year:     { label: 'Année',     unit: 'month', months: 12, cellWidth: 80, navStep: 'year' }
+            year:     { label: 'Année',     unit: 'month', months: 12, cellWidth: 80, navStep: 'year' },
+            // Vue pluriannuelle : graduation au trimestre, seule échelle lisible au-delà de 2 ans.
+            multi:    { label: 'Pluriannuel', unit: 'quarter', quarters: 12, cellWidth: 52, navStep: 'year' }
         };
+        // Largeur de cellule sous laquelle une graduation devient illisible. Sert de plancher
+        // quand « Ajuster » comprime la vue pour faire tenir toute la plage à l'écran.
+        const MIN_CELL_WIDTH = { day: 16, week: 14, month: 30, quarter: 34 };
         const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
         
         // Configuration des champs affichés dans le tooltip (personnalisable)
@@ -1002,6 +1014,60 @@
                 return out;
             }
 
+            /* ----- #7 : respect des droits (ACL) ------------------------------------
+             * Deux niveaux : (a) acces document lecture seule -> Grist passe
+             * `readonly=true` dans l'URL de l'iframe ; (b) ACL au niveau ligne ->
+             * l'acces widget peut etre `full` mais une ecriture sur une ligne donnee
+             * est refusee par le serveur. safeApply absorbe ce refus proprement.
+             * --------------------------------------------------------------------- */
+            function _qp(name) { try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; } }
+            // Vrai si Grist a ouvert le widget en lecture seule (acces doc restreint).
+            function isReadOnly() { return _qp('readonly') === 'true'; }
+            // Niveau d'acces accorde au widget : 'full' | 'read table' | 'none' (defaut 'full').
+            function accessLevel() { return _qp('access') || 'full'; }
+            // Detecte un message d'erreur Grist correspondant a un refus de droits.
+            function isAccessError(e) {
+                const msg = (e && (e.message || e.toString())) || '';
+                return /access denied|not allowed|permission|forbidden|read[- ]?only|cannot (modify|add|remove)|acl/i.test(msg);
+            }
+            // Applique des actions en absorbant un refus de droits.
+            // Retourne { ok:true } ou { ok:false, denied:bool, message }. Ne fait PAS d'UI
+            // (chaque widget affiche son propre toast et recharge pour annuler l'optimiste).
+            async function safeApply(grist, actions) {
+                if (isReadOnly()) return { ok: false, denied: true, message: 'Document en lecture seule' };
+                try { const r = await grist.docApi.applyUserActions(actions); return { ok: true, ret: r }; }
+                catch (e) { return { ok: false, denied: isAccessError(e), message: (e && (e.message || e.toString())) || 'Erreur' }; }
+            }
+            // Garde transverse : enrobe grist.docApi.applyUserActions une seule fois pour
+            // respecter les droits sur TOUS les sites d'ecriture sans les modifier un a un.
+            // - lecture seule -> bloque + opts.onReadOnly()
+            // - refus ACL au niveau ligne -> opts.onDenied(err) (le widget toast + recharge)
+            // Les erreurs continuent d'etre levees (les try/catch existants les absorbent).
+            function guardWrites(grist, opts) {
+                opts = opts || {};
+                if (!grist || !grist.docApi || grist.docApi._tfGuarded) return;
+                const raw = grist.docApi.applyUserActions.bind(grist.docApi);
+                grist.docApi._tfGuarded = true;
+                grist.docApi.applyUserActions = async function (actions) {
+                    if (isReadOnly()) { try { opts.onReadOnly && opts.onReadOnly(); } catch (e) {} const err = new Error('Document en lecture seule'); err.tfReadOnly = true; throw err; }
+                    try { return await raw(actions); }
+                    catch (e) { if (isAccessError(e)) { try { opts.onDenied && opts.onDenied(e); } catch (e2) {} } throw e; }
+                };
+            }
+            // Bandeau "lecture seule" auto-contenu (aucun markup widget requis).
+            // Pousse le contenu vers le bas (padding-top sur body) pour NE PAS recouvrir l'en-tete du widget.
+            function readOnlyBanner() {
+                if (!isReadOnly() || (typeof document === 'undefined') || document.getElementById('tf-ro-banner')) return;
+                const b = document.createElement('div');
+                b.id = 'tf-ro-banner';
+                b.textContent = 'Lecture seule — vos droits ne permettent pas la modification';
+                b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b45309;color:#fff;font:600 12px/1.4 system-ui,-apple-system,sans-serif;text-align:center;padding:6px 10px;letter-spacing:.2px;box-sizing:border-box';
+                document.body.appendChild(b);
+                const h = b.offsetHeight || 28;
+                const prev = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+                document.body.style.paddingTop = (prev + h) + 'px';
+            }
+
             return {
                 DEFAULT_STATUSES: DEFAULT_STATUSES,
                 columnarToRows: columnarToRows,
@@ -1019,7 +1085,13 @@
                 chargeByMemberPeriod: chargeByMemberPeriod,
                 shiftPeriods: shiftPeriods,
                 periodRange: periodRange,
-                chargeMatrix: chargeMatrix
+                chargeMatrix: chargeMatrix,
+                isReadOnly: isReadOnly,
+                accessLevel: accessLevel,
+                isAccessError: isAccessError,
+                safeApply: safeApply,
+                guardWrites: guardWrites,
+                readOnlyBanner: readOnlyBanner
             };
         })();
         // </taskflow-core>
@@ -1030,13 +1102,19 @@
         let gristReady = false;
         let tasks = [], team = [], projects = [];
         let TASK_COLS = new Set(); // colonnes reelles de Tasks (sweet spot : charges/dateCloture n'existent que si le widget Plan a ete ouvert)
+        let CRA_ACTIVE = false; // Feuille de temps active -> tempsPasse = rollup CRA, saisie manuelle figee (anti-doublon)
         function pruneTaskRecord(rec) { if (TASK_COLS.size) { for (const k in rec) if (!TASK_COLS.has(k)) delete rec[k]; } return rec; }
         let statusCfg = TF.buildStatusConfig(TF.DEFAULT_STATUSES, 'default'); // #1 : statuts dynamiques, alimente par TF.loadStatusConfig
         let currentView = localStorage.getItem('taskflow_gantt_view') || 'month';
         let viewStartDate = new Date();
+        // Cadrage pose par « Ajuster » : fenêtre libre, non recalée sur une frontière de période.
+        // Nul en temps normal ; toute navigation explicite le remet à nul et rend la main aux vues fixes.
+        let fitWindow = null;   // { start: Date, days: number }
         let selectedTaskId = null;
         let sortMode = localStorage.getItem('taskflow_gantt_sort') || 'priority';
         let colorMode = localStorage.getItem('taskflow_gantt_colormode') || 'priority';
+        // #9 niveau de travail (par widget, opt-in, defaut 'all' = arbre) : 'actions'/'parents' = vue aplatie du niveau.
+        let workLevel = localStorage.getItem('taskflow_gantt_worklevel') || 'all';
         // WBS-02: état expand/collapse par tâche parente
         let expandedTasks = new Set();
         try { expandedTasks = new Set(JSON.parse(localStorage.getItem('taskflow_gantt_expanded') || '[]').map(Number).filter(n => !isNaN(n))); } catch (e) {}
@@ -1262,6 +1340,9 @@
         // Renvoie [{task, depth, dimmed}]
         function buildVisibleTasks() {
             const filtered = getFilteredTasks();
+            // #9 : niveau != 'all' -> vue APLATIE du niveau (pas d'arbre), coherent avec le Kanban.
+            if (workLevel === 'actions') return filtered.filter(t => !hasChildren(t)).map(t => ({ task: t, depth: 0, dimmed: false }));
+            if (workLevel === 'parents') return filtered.filter(t => hasChildren(t)).map(t => ({ task: t, depth: 0, dimmed: false }));
             const directMatches = new Set(filtered.map(t => t.id));
             // branches = tâches dont elles-mêmes OU un ancêtre OU un descendant match
             const branchTasks = new Set();
@@ -1358,28 +1439,35 @@
         function getStartOfYear(d) { return new Date(d.getFullYear(), 0, 1); }
         function getWeekNumber(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const year = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil((((t - year) / 86400000) + 1) / 7); }
         function getViewStartDate() {
+            // Un cadrage « Ajuster » est une fenêtre libre : la recaler sur le début de période
+            // annulerait le calage qui vient d'être calculé.
+            if (fitWindow) return fitWindow.start;
             switch (currentView) {
                 case 'week': return getStartOfWeek(viewStartDate);
                 case 'month': return getStartOfMonth(viewStartDate);
                 case 'quarter': return getStartOfQuarter(viewStartDate);
                 case 'semester': return getStartOfSemester(viewStartDate);
                 case 'year': return getStartOfYear(viewStartDate);
+                case 'multi': return getStartOfQuarter(viewStartDate);
                 default: return getStartOfMonth(viewStartDate);
             }
         }
-        function getTotalDays() { 
-            const cfg = VIEW_CONFIG[currentView]; 
-            if (cfg.unit === 'day') return cfg.days; 
-            if (cfg.unit === 'week') return cfg.weeks * 7; 
+        function getTotalDays() {
+            if (fitWindow) return fitWindow.days;
+            const cfg = VIEW_CONFIG[currentView];
+            if (cfg.unit === 'day') return cfg.days;
+            if (cfg.unit === 'week') return cfg.weeks * 7;
             if (cfg.unit === 'month') return cfg.months * 30; // Approximation pour vue année
-            return cfg.days; 
+            if (cfg.unit === 'quarter') return cfg.quarters * 91; // Approximation pour vue pluriannuelle
+            return cfg.days;
         }
-        function getPixelsPerDay() { 
-            const cfg = VIEW_CONFIG[currentView]; 
-            if (cfg.unit === 'day') return cfg.cellWidth; 
-            if (cfg.unit === 'week') return cfg.cellWidth / 7; 
+        function getPixelsPerDay() {
+            const cfg = VIEW_CONFIG[currentView];
+            if (cfg.unit === 'day') return cfg.cellWidth;
+            if (cfg.unit === 'week') return cfg.cellWidth / 7;
             if (cfg.unit === 'month') return cfg.cellWidth / 30; // Approximation pour vue année
-            return cfg.cellWidth; 
+            if (cfg.unit === 'quarter') return cfg.cellWidth / 91;
+            return cfg.cellWidth;
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -1387,12 +1475,15 @@
         // ═══════════════════════════════════════════════════════════════════════
         function setView(view) {
             currentView = view;
+            fitWindow = null;   // choix explicite d'une vue : on quitte le cadrage « Ajuster »
             localStorage.setItem('taskflow_gantt_view', view);
             document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
             document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[view].cellWidth + 'px');
             render();
         }
         function navigate(dir) {
+            // Naviguer depuis un cadrage libre : on repart de sa borne gauche, en vue fixe.
+            if (fitWindow) { viewStartDate = new Date(fitWindow.start.getTime()); fitWindow = null; }
             const cfg = VIEW_CONFIG[currentView];
             if (typeof cfg.navStep === 'number') viewStartDate = addDays(viewStartDate, dir * cfg.navStep);
             else if (cfg.navStep === 'month') viewStartDate = new Date(viewStartDate.getFullYear(), viewStartDate.getMonth() + dir, 1);
@@ -1401,7 +1492,7 @@
             else if (cfg.navStep === 'year') viewStartDate = new Date(viewStartDate.getFullYear() + dir, 0, 1);
             render();
         }
-        function goToToday() { viewStartDate = new Date(); render(); }
+        function goToToday() { fitWindow = null; viewStartDate = new Date(); render(); }
 
         function fitToTasks() {
             const ft = getFilteredTasks();
@@ -1425,7 +1516,7 @@
             // Calculate span in days
             const spanDays = getDaysDiff(minDate, maxDate);
 
-            // Choose best view based on span
+            // Choix de la graduation : la plus fine qui reste lisible sur toute l'amplitude.
             if (spanDays <= 14) {
                 currentView = 'week';
             } else if (spanDays <= 60) {
@@ -1434,11 +1525,16 @@
                 currentView = 'quarter';
             } else if (spanDays <= 200) {
                 currentView = 'semester';
-            } else {
+            } else if (spanDays <= 400) {
                 currentView = 'year';
+            } else {
+                currentView = 'multi';   // au-dela d'un an, seule la graduation trimestrielle tient
             }
 
+            // Cadrage libre : la fenêtre EST la plage des tâches. Sans cela, getViewStartDate()
+            // la recalerait sur le début de période et « Ajuster » n'ajusterait rien.
             viewStartDate = minDate;
+            fitWindow = { start: minDate, days: Math.max(spanDays, 1) };
             localStorage.setItem('taskflow_gantt_view', currentView);
             document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
             document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[currentView].cellWidth + 'px');
@@ -1447,12 +1543,20 @@
         function updatePeriodLabel() {
             const start = getViewStartDate();
             let text = '';
+            // Sous cadrage libre, le libellé annonce la plage réelle, pas une période calendaire.
+            if (fitWindow) {
+                const fin = addDays(fitWindow.start, fitWindow.days);
+                document.getElementById('currentPeriod').textContent =
+                    formatDateShort(fitWindow.start) + ' ' + start.getFullYear() + ' - ' + formatDateShort(fin) + ' ' + fin.getFullYear();
+                return;
+            }
             switch (currentView) {
                 case 'week': text = 'S' + getWeekNumber(start) + ' · ' + formatDateShort(start) + ' - ' + formatDateShort(addDays(start, 6)); break;
                 case 'month': text = MONTHS[start.getMonth()] + ' ' + start.getFullYear(); break;
                 case 'quarter': text = 'T' + (Math.floor(start.getMonth() / 3) + 1) + ' ' + start.getFullYear(); break;
                 case 'semester': text = 'S' + (Math.floor(start.getMonth() / 6) + 1) + ' ' + start.getFullYear(); break;
                 case 'year': text = start.getFullYear().toString(); break;
+                case 'multi': text = start.getFullYear() + ' - ' + addDays(start, getTotalDays()).getFullYear(); break;
             }
             document.getElementById('currentPeriod').textContent = text;
         }
@@ -1470,6 +1574,13 @@
         function changeColorMode(mode) {
             colorMode = mode;
             localStorage.setItem('taskflow_gantt_colormode', mode);
+            render();
+        }
+        // #9 : niveau de travail affiche (persistance locale par widget).
+        function changeWorkLevel(v) {
+            workLevel = v;
+            localStorage.setItem('taskflow_gantt_worklevel', v);
+            const s = document.getElementById('levelSelect'); if (s) s.value = v;
             render();
         }
         // Édite la couleur d'un projet (lue par tous les widgets TaskFlow via getProjectColor)
@@ -1624,7 +1735,7 @@
             const vEnd = new Date(eEnd.getTime());
 
             // Padding en jours selon la résolution de la vue
-            const PADDING = cfg.unit === 'day' ? 3 : cfg.unit === 'week' ? 7 : 14;
+            const PADDING = cfg.unit === 'day' ? 3 : cfg.unit === 'week' ? 7 : cfg.unit === 'quarter' ? 30 : 14;
 
             // N'étendre que pour les tâches qui chevauchent la période courante.
             // Les tâches entièrement hors-période restent invisibles (navigation cohérente).
@@ -1640,6 +1751,7 @@
             // Aligner le début sur la frontière de la grille
             if (cfg.unit === 'week') eStart = getStartOfWeek(eStart);
             else if (cfg.unit === 'month') eStart = getStartOfMonth(eStart);
+            else if (cfg.unit === 'quarter') eStart = getStartOfQuarter(eStart);
             else eStart = new Date(eStart.getFullYear(), eStart.getMonth(), eStart.getDate());
 
             effectiveStart = eStart;
@@ -1648,7 +1760,11 @@
             // Nombre de cellules effectives selon l'unité de la vue
             const eCfg = VIEW_CONFIG[currentView];
             let numCells;
-            if (eCfg.unit === 'month') {
+            if (eCfg.unit === 'quarter') {
+                const eEnd2 = addDays(eStart, effectiveDays);
+                const mois = (eEnd2.getFullYear() - eStart.getFullYear()) * 12 + (eEnd2.getMonth() - eStart.getMonth());
+                numCells = Math.max(1, Math.ceil(mois / 3));
+            } else if (eCfg.unit === 'month') {
                 const eEnd2 = addDays(eStart, effectiveDays);
                 numCells = Math.max(1, (eEnd2.getFullYear() - eStart.getFullYear()) * 12 + (eEnd2.getMonth() - eStart.getMonth()));
             } else if (eCfg.unit === 'week') {
@@ -1657,10 +1773,13 @@
                 numCells = effectiveDays;
             }
 
-            // Largeur de cellule : remplit la largeur disponible, min = cfg.cellWidth
+            // Largeur de cellule : remplit la largeur disponible, min = cfg.cellWidth.
+            // Sous cadrage « Ajuster », le plancher descend jusqu'a la limite de lisibilite :
+            // sinon la vue ne peut jamais se comprimer et le calage deborde de l'ecran.
             const timelineEl = document.getElementById('timelineScroll');
             const availableWidth = (timelineEl && timelineEl.clientWidth > 10) ? timelineEl.clientWidth : 600;
-            effectiveCellWidth = Math.max(eCfg.cellWidth, Math.floor(availableWidth / numCells));
+            const plancher = fitWindow ? (MIN_CELL_WIDTH[eCfg.unit] || eCfg.cellWidth) : eCfg.cellWidth;
+            effectiveCellWidth = Math.max(plancher, Math.floor(availableWidth / numCells));
 
             // Mettre à jour --cell-width pour les vues jour (Sem/Mois)
             document.documentElement.style.setProperty('--cell-width', effectiveCellWidth + 'px');
@@ -1675,7 +1794,28 @@
             const cfg = VIEW_CONFIG[currentView];
             let monthsHtml = '', daysHtml = '';
 
-            if (cfg.unit === 'month') {
+            if (cfg.unit === 'quarter') {
+                // Vue Pluriannuelle : une cellule par trimestre, l'année portée par le bandeau du haut.
+                const effEnd = addDays(start, totalDays);
+                let cur = new Date(start.getFullYear(), Math.floor(start.getMonth() / 3) * 3, 1);
+                let anneeCourante = -1, largeurAnnee = 0;
+                const pousserAnnee = () => {
+                    if (anneeCourante !== -1) monthsHtml += '<div class="month-cell" style="width:' + largeurAnnee + 'px">' + anneeCourante + '</div>';
+                };
+                const maintenant = new Date();
+                while (cur < effEnd) {
+                    const y = cur.getFullYear();
+                    const t = Math.floor(cur.getMonth() / 3) + 1;
+                    if (y !== anneeCourante) { pousserAnnee(); anneeCourante = y; largeurAnnee = 0; }
+                    largeurAnnee += effectiveCellWidth;
+                    const finTrim = new Date(y, cur.getMonth() + 3, 1);
+                    const estTrimCourant = maintenant >= cur && maintenant < finTrim;
+                    daysHtml += '<div class="day-cell ' + (estTrimCourant ? 'today' : '') + '" style="width:' + effectiveCellWidth + 'px">T' + t + '</div>';
+                    cur = finTrim;
+                }
+                pousserAnnee();
+
+            } else if (cfg.unit === 'month') {
                 // Vue Année : itérer sur les mois réels de la plage effective
                 const effEnd = addDays(start, totalDays);
                 let cur = new Date(start.getFullYear(), start.getMonth(), 1);
@@ -1833,7 +1973,12 @@
 
             // Largeur totale depuis effectiveCellWidth (calculé dans computeEffectiveRange)
             let numCells, totalWidth;
-            if (cfg.unit === 'month') {
+            if (cfg.unit === 'quarter') {
+                const effEnd = addDays(start, totalDays);
+                const mois = (effEnd.getFullYear() - start.getFullYear()) * 12 + (effEnd.getMonth() - start.getMonth());
+                numCells = Math.max(1, Math.ceil(mois / 3));
+                totalWidth = numCells * effectiveCellWidth;
+            } else if (cfg.unit === 'month') {
                 const effEnd = addDays(start, totalDays);
                 numCells = Math.max(1, (effEnd.getFullYear() - start.getFullYear()) * 12 + (effEnd.getMonth() - start.getMonth()));
                 totalWidth = numCells * effectiveCellWidth;
@@ -1850,7 +1995,19 @@
             let gridHtml = '';
             ft.forEach(() => {
                 gridHtml += '<div class="grid-row">';
-                if (cfg.unit === 'month') {
+                if (cfg.unit === 'quarter') {
+                    // Une cellule de fond par trimestre : le fond doit suivre la graduation
+                    // de l'en-tete, sinon la grille se compte en jours et deborde.
+                    const effEnd = addDays(start, totalDays);
+                    let cur = new Date(start.getFullYear(), Math.floor(start.getMonth() / 3) * 3, 1);
+                    const maintenant = new Date();
+                    while (cur < effEnd) {
+                        const finTrim = new Date(cur.getFullYear(), cur.getMonth() + 3, 1);
+                        const estTrimCourant = maintenant >= cur && maintenant < finTrim;
+                        gridHtml += '<div class="grid-cell ' + (estTrimCourant ? 'today' : '') + '" style="width:' + effectiveCellWidth + 'px"></div>';
+                        cur = finTrim;
+                    }
+                } else if (cfg.unit === 'month') {
                     const effEnd = addDays(start, totalDays);
                     let cur = new Date(start.getFullYear(), start.getMonth(), 1);
                     while (cur < effEnd) {
@@ -2332,7 +2489,7 @@
                         '<div class="prop-row"><span class="prop-label">Temps &amp; charge</span><div class="prop-value">' +
                             '<div class="tc-grid">' +
                                 '<div class="tc-box"><div class="tcl">Estimé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (estim || '') + '" placeholder="0" onchange="updateField(\'estimationH\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
-                                '<div class="tc-box"><div class="tcl">Passé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
+                                '<div class="tc-box"><div class="tcl">Passé</div><div class="tcv"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" ' + (CRA_ACTIVE ? 'readonly title="Saisi via la Feuille de temps" ' : '') + 'onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><small>h</small></div></div>' +
                             '</div>' +
                             (estim > 0 ? '<div class="tc-bar"><i class="' + (timeOver ? 'over' : '') + '" style="width:' + timePercent + '%"></i></div><div class="tc-foot"><span>' + Math.round((passe/estim)*100) + '% consommé</span><span>reste ' + Math.max(estim-passe,0) + ' h</span></div>' : '') +
                             ((data.assignees.length && TASK_COLS.has('charges')) ? '<div style="margin-top:13px"><div class="prop-label" style="margin-bottom:6px">Charge par personne</div>' + data.assignees.map(function(id){ return '<div class="charge-row"><span class="an">'+escapeHtml(getTeamMemberName(id))+'</span><input type="number" min="0" step="0.5" value="'+chargeOf(id)+'" onchange="updateCharge('+id+', this.value)"><span style="font-size:0.75rem;color:var(--text-muted)">h</span></div>'; }).join('') + '<div style="margin-top:6px;font-size:0.78rem;color:var(--text-muted)">Total : <strong>' + chargeTotalH + '</strong> h</div></div>' : '') + chargeConsolHtml +
@@ -2958,13 +3115,23 @@
                 useDemoMode();
                 return;
             }
+            // #7 respect des droits : bandeau lecture seule + garde transverse sur toutes les ecritures.
+            TF.readOnlyBanner();
+            TF.guardWrites(grist, {
+                onReadOnly: () => showToast('Lecture seule : modification non autorisee', 'error'),
+                onDenied: () => { showToast('Modification refusee par vos droits', 'error'); loadAllData(); }
+            });
             // Phase 2 : ici on est dans Grist. Toute erreur est logguée mais ne bascule PAS en démo.
-            try {
-                await ensureSchema();
-            } catch (e) {
-                console.error('ensureSchema error (continuing):', e);
-                showToast('Schéma: ' + (e?.message || e), 'error');
+            // En lecture seule, on ne tente pas de creer le schema (ecritures bloquees).
+            if (!TF.isReadOnly()) {
+                try {
+                    await ensureSchema();
+                } catch (e) {
+                    console.error('ensureSchema error (continuing):', e);
+                    showToast('Schéma: ' + (e?.message || e), 'error');
+                }
             }
+            try { CRA_ACTIVE = (await grist.docApi.listTables()).includes('TimeEntries'); } catch (e) {}
             try {
                 await loadAllData();
             } catch (e) {
@@ -3089,6 +3256,7 @@
         { const s = document.getElementById('sortSelect'); if (s) s.value = sortMode; }
         // Idem pour le <select> de couleur
         { const s = document.getElementById('colorSelect'); if (s) s.value = colorMode; }
+        { const s = document.getElementById('levelSelect'); if (s) s.value = workLevel; }
         // Relancer le rendu quand le widget est redimensionné (ex: panel ouvert/fermé, fenêtre)
         new ResizeObserver(() => render()).observe(document.getElementById('timelineScroll'));
         // Décorateur panneau (look « Propriétés / B ») : icône devant chaque libellé, sans toucher au rendu

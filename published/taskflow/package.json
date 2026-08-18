@@ -1,6 +1,6 @@
 {
   "name": "taskflow",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Suite de widgets de gestion de projet pour Grist",
   "authors": [
     {
@@ -14,7 +14,7 @@
       "name": "TaskFlow — Suite complète",
       "url": "",
       "accessLevel": "full",
-      "description": "Suite tout-en-un : Dashboard, Kanban, Gantt, Calendar, Plan, Whiteboard dans un seul widget"
+      "description": "Suite tout-en-un : Dashboard, Kanban, Gantt, Calendar, Plan, Feuille de temps, Organigramme, Whiteboard dans un seul widget"
     },
     {
       "widgetId": "taskflow-kanban",
@@ -50,6 +50,20 @@
       "url": "plan/",
       "accessLevel": "full",
       "description": "Plan de charge : capacité/charge par personne, prévu/réalisé/reste/dispo, disponibilités"
+    },
+    {
+      "widgetId": "taskflow-cra",
+      "name": "TaskFlow Feuille de temps",
+      "url": "cra/",
+      "accessLevel": "full",
+      "description": "Saisie hebdomadaire du temps passé par tâche, avec validation par le chef"
+    },
+    {
+      "widgetId": "taskflow-orgchart",
+      "name": "TaskFlow Organigramme",
+      "url": "orgchart/",
+      "accessLevel": "full",
+      "description": "Annuaire et organigramme des entités, avec droits d'accès dérivés de la hiérarchie"
     }
   ]
 }
