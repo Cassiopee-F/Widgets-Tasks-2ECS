@@ -9,10 +9,40 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
-// Configuration
-const GITHUB_USER = process.env.GITHUB_USER || 'VOTRE_USER';
-const REPO_NAME = process.env.REPO_NAME || 'Widgets-Grist';
+/**
+ * Compte et depot proprietaires des URLs publiees.
+ *
+ * La CI les fournit (`github.repository_owner`). En local, personne ne les
+ * exporte : le repli historique `VOTRE_USER` produisait alors un manifest ou
+ * les quinze widgets pointaient vers un compte inexistant — un fichier
+ * parfaitement valide, donc silencieux, qu'un `npm run manifest` de routine
+ * suffisait a commiter. On deduit donc le compte du remote git, et on refuse
+ * d'ecrire plutot que d'inventer une URL.
+ */
+function origineGit() {
+  try {
+    const url = execFileSync('git', ['config', '--get', 'remote.origin.url'], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+    }).trim();
+    // git@github.com:owner/repo.git | https://github.com/owner/repo.git
+    const m = url.match(/[:/]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+    return m ? { user: m[1], repo: m[2] } : null;
+  } catch {
+    return null;
+  }
+}
+
+const origine = origineGit();
+const GITHUB_USER = process.env.GITHUB_USER || origine?.user;
+const REPO_NAME = process.env.REPO_NAME || origine?.repo || 'Widgets-Grist';
+if (!GITHUB_USER) {
+  console.error('Compte GitHub introuvable : ni GITHUB_USER, ni remote git.');
+  console.error('Relancez avec GITHUB_USER=<compte> node scripts/generate-manifest.js');
+  process.exit(1);
+}
 const BASE_URL = `https://${GITHUB_USER}.github.io/${REPO_NAME}`;
 const PUBLISHED_DIR = path.join(__dirname, '..', 'published');
 const OUTPUT_FILE = path.join(PUBLISHED_DIR, 'manifest.json');
