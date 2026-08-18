@@ -11,6 +11,8 @@ import {
   MARGE_MAX_M,
   EPAISSEUR_MIN_M,
   margeRelief,
+  paliersDemDifferents,
+  altitudeOrigineStable,
 } from '../lib/terrain-base.js';
 
 const centre = (f) => (f?.geometry?.coordinates ? [f.geometry.coordinates] : []);
@@ -263,4 +265,56 @@ test('seules les surfaces en volume sont concernées', () => {
 test('relief coupé : aucune couche concernée', () => {
   assert.equal(needsTerrainBase({ geometryType: 'Polygon', style: {} }, false), false);
   assert.equal(needsTerrainBase(null, true), false);
+});
+
+/* ---------- quand rejouer l'echantillonnage ---------- */
+
+test('un panoramique ne fait pas re-sonder le relief', () => {
+  // C'etait LE defaut : le cache d'altitude etait vide a chaque `moveend`, donc
+  // un simple deplacement faisait re-sonder tous les objets. Ceux dont la tuile
+  // DEM n'etait pas revenue retombaient a zero et la scene 3D sautait — les
+  // modeles « bougeaient avec la carte ».
+  assert.equal(paliersDemDifferents(12.1, 12.9), false);
+  assert.equal(paliersDemDifferents(12.0, 12.0), false);
+});
+
+test('changer de palier de zoom rejoue l’echantillonnage', () => {
+  // La resolution des tuiles MNT change a chaque entier : l'altitude relevee a
+  // z11 n'est pas celle que MapLibre rendra a z14.
+  assert.equal(paliersDemDifferents(11.9, 12.1), true);
+  assert.equal(paliersDemDifferents(14, 11), true);
+});
+
+test('premier calage : aucun palier connu, on echantillonne', () => {
+  assert.equal(paliersDemDifferents(null, 12), true);
+  assert.equal(paliersDemDifferents(undefined, 12), true);
+  assert.equal(paliersDemDifferents(NaN, 12), true);
+});
+
+/* ---------- altitude de l'origine de la scene 3D ---------- */
+
+test('tuile absente : l’origine garde sa derniere altitude connue', () => {
+  // Le repli historique `|| 0` ramenait l'origine au niveau de la mer des
+  // qu'elle sortait des tuiles chargees — et toute la scene avec elle.
+  assert.equal(altitudeOrigineStable(null, 214), 214);
+  assert.equal(altitudeOrigineStable(undefined, 214), 214);
+  assert.equal(altitudeOrigineStable(NaN, 214), 214);
+});
+
+test('altitude disponible : elle prime sur la precedente', () => {
+  assert.equal(altitudeOrigineStable(220, 214), 220);
+});
+
+test('zero est une altitude valide, pas une absence', () => {
+  // Bord de mer : confondre les deux relevait l'origine sans raison.
+  assert.equal(altitudeOrigineStable(0, 214), 0);
+});
+
+test('altitude negative acceptee (bathymetrie, depression)', () => {
+  assert.equal(altitudeOrigineStable(-12, 214), -12);
+});
+
+test('aucune valeur connue : niveau de la mer, faute de mieux', () => {
+  assert.equal(altitudeOrigineStable(null, null), 0);
+  assert.equal(altitudeOrigineStable(null, undefined), 0);
 });
