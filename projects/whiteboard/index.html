@@ -1120,6 +1120,11 @@ const SCHEMA = [
 /* ══════════════════════════════════════════════════════
    STATE
    ══════════════════════════════════════════════════════ */
+/* Sélection additive : Maj historiquement, Ctrl parce que c'est le réflexe le plus répandu,
+   Cmd sur macOS où Ctrl+clic ouvre le menu contextuel. Ne s'applique PAS au mode vote,
+   où Maj garde son sens propre (dé-voter). */
+const selAdditive = (e) => !!(e && (e.shiftKey || e.ctrlKey || e.metaKey));
+
 const S = {
   tool: 'select', color: C.DCOL,
   els: new Map(),          // id → element data
@@ -4145,8 +4150,8 @@ function onDown(e) {
       }
 
       const _wasSelected = S.sel.has(id);
-      if (e.shiftKey) {
-        // Shift : toggle l'élément dans la sélection
+      if (selAdditive(e)) {
+        // Maj/Ctrl/Cmd : toggle l'élément dans la sélection
         if (_wasSelected) S.sel.delete(id); else S.sel.add(id);
       } else if (!_wasSelected) {
         // Clic sur élément non sélectionné : nouvelle sélection unique
@@ -4172,8 +4177,9 @@ function onDown(e) {
         cc.setPointerCapture(e.pointerId);
       }
     } else {
-      if (!e.shiftKey) { S.sel.clear(); hlSel(); }
-      if (e.shiftKey) {
+      if (!selAdditive(e)) { S.sel.clear(); hlSel(); }
+      if (selAdditive(e)) {
+        // Lasso : glisser sur le vide avec Maj/Ctrl/Cmd enfoncé
         S.selRect = { sx: pt.x, sy: pt.y };
         const r = Q('#selr');
         r.setAttribute('x', pt.x); r.setAttribute('y', pt.y);
