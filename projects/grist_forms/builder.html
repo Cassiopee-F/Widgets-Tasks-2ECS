@@ -1,0 +1,3864 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form Builder — essence formulaires Grist</title>
+<link rel="stylesheet" href="shared/dsfr-like.css">
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  .app-header {
+    background: #fff;
+    border-bottom: 1px solid var(--grey-900, #ddd);
+    padding: 1rem 0;
+    box-shadow: 0 1px 0 rgba(0, 0, 145, 0.06);
+  }
+  #steps {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #fff;
+    border-bottom: 1px solid var(--grey-925, #e5e5e5);
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  #steps .fr-btn { border-radius: 4px; }
+  #steps .fr-btn.is-active {
+    background: var(--blue-france, #000091);
+    color: #fff;
+    border-color: var(--blue-france, #000091);
+  }
+  .builder-step {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--grey-925, #e5e5e5);
+    box-shadow: 0 1px 3px rgba(22, 22, 22, 0.06);
+  }
+  .sections-stage {
+    max-width: 40rem;
+    margin: 0 auto 1.5rem;
+    padding: 1.25rem 1rem 0.5rem;
+    background: var(--grey-950, #eee);
+    border-radius: 8px;
+    border: 1px dashed var(--grey-900, #ddd);
+  }
+  .sections-stage > .fr-h6 {
+    text-align: center;
+    color: var(--grey-625, #666);
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .section-card {
+    background: #fff;
+    border: 1px solid var(--grey-900, #ddd);
+    border-radius: 8px;
+    padding: 1.5rem 1.35rem 1.25rem;
+    margin-bottom: 1.75rem;
+    box-shadow: 0 2px 10px rgba(22, 22, 22, 0.06);
+  }
+  .section-card__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--grey-925, #e5e5e5);
+  }
+  .section-step {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--blue-france, #000091);
+    background: #e8e8f8;
+    border-radius: 4px;
+    padding: 0.35rem 0.55rem;
+    margin-top: 0.35rem;
+  }
+  .inline-section-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--grey-200, #161616);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    background: transparent;
+    font-family: inherit;
+  }
+  .inline-section-title:hover {
+    background: var(--grey-975, #f6f6f6);
+    border-color: var(--grey-925, #e5e5e5);
+  }
+  .inline-section-title:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--blue-france, #000091);
+    box-shadow: 0 0 0 2px rgba(0, 0, 145, 0.12);
+  }
+  .inline-section-title::placeholder { color: #999; font-weight: 500; }
+  .section-card__actions { flex: 0 0 auto; margin-top: 0.15rem; }
+  .section-card--intro,
+  .section-card--outro {
+    border-left: 4px solid var(--blue-france, #000091);
+  }
+  .section-card--outro {
+    border-left-color: var(--success, #18753c);
+  }
+  .section-card--outro .section-step {
+    color: var(--success, #18753c);
+    background: #e8f5ee;
+  }
+  .intro-audience {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--grey-900, #ddd);
+  }
+  .intro-audience__fields {
+    margin-top: 0.75rem;
+  }
+  .field-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .field-hint__icon {
+    display: inline-flex;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: var(--grey-800, #666);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    justify-content: center;
+    align-items: center;
+    cursor: help;
+    flex: 0 0 auto;
+    position: relative;
+  }
+  .field-hint__icon:hover::after,
+  .field-hint__icon:focus-visible::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.35rem);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 18rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 4px;
+    background: #1e1e1e;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.35;
+    white-space: normal;
+    z-index: 20;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+  }
+  .intro-audience__status {
+    margin: 0.35rem 0 0;
+  }
+  .inline-form-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--blue-france, #000091);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    background: transparent;
+    font-family: inherit;
+    width: 100%;
+  }
+  .inline-form-title:hover {
+    background: var(--grey-975, #f6f6f6);
+    border-color: var(--grey-925, #e5e5e5);
+  }
+  .inline-form-title:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--blue-france, #000091);
+    box-shadow: 0 0 0 2px rgba(0, 0, 145, 0.12);
+  }
+  .inline-form-title::placeholder { color: #999; font-weight: 500; }
+  .inline-form-desc,
+  .inline-success-msg {
+    display: block;
+    width: 100%;
+    font: inherit;
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    color: var(--grey-425, #3a3a3a);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.35rem 0.4rem;
+    background: transparent;
+    resize: vertical;
+    min-height: 2.5rem;
+  }
+  .inline-form-desc:hover,
+  .inline-success-msg:hover {
+    background: var(--grey-975, #f6f6f6);
+    border-color: var(--grey-925, #e5e5e5);
+  }
+  .inline-form-desc:focus,
+  .inline-success-msg:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--blue-france, #000091);
+    box-shadow: 0 0 0 2px rgba(0, 0, 145, 0.12);
+  }
+  .inline-form-desc::placeholder,
+  .inline-success-msg::placeholder { color: #999; }
+  .inline-success-msg {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--success, #18753c);
+    min-height: 3rem;
+  }
+  .section-card__static-label {
+    pointer-events: none;
+    border: none !important;
+    padding-left: 0;
+  }
+  .brand-slot {
+    margin: 0 0 0.85rem;
+    padding: 0.65rem 0.75rem;
+    background: var(--grey-975, #f6f6f6);
+    border: 1px dashed var(--grey-900, #ddd);
+    border-radius: 6px;
+  }
+  .brand-slot__preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .brand-slot__preview img {
+    max-height: 72px;
+    max-width: 100%;
+    object-fit: contain;
+  }
+  .brand-slot__preview--success img { max-height: 120px; }
+  .brand-slot__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .brand-slot__row .fr-input { flex: 1 1 12rem; min-width: 0; }
+  .brand-slot__file {
+    font-size: 0.8125rem;
+  }
+  .form-meta-strip {
+    max-width: 40rem;
+    margin: 0 auto 1rem;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border: 1px solid var(--grey-925, #e5e5e5);
+    border-radius: 6px;
+  }
+  .section-card .add-field-btn {
+    width: 100%;
+    margin-top: 0.75rem;
+    border-style: dashed;
+  }
+  .sections-stage .add-section-btn {
+    display: block;
+    width: 100%;
+    margin: 0.25rem 0 1rem;
+    border-style: dashed;
+  }
+  .field-editor {
+    background: var(--grey-975, #f6f6f6);
+    border: 1px solid var(--grey-925, #e5e5e5);
+    border-left: 4px solid var(--blue-france, #000091);
+    border-radius: 6px;
+    padding: 1rem 1rem 0.85rem;
+    margin-bottom: 1rem;
+  }
+  .field-editor__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .inline-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--grey-200, #161616);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.2rem 0.35rem;
+    background: transparent;
+    font-family: inherit;
+  }
+  .inline-label:hover {
+    background: #fff;
+    border-color: var(--grey-925, #e5e5e5);
+  }
+  .inline-label:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--blue-france, #000091);
+    box-shadow: 0 0 0 2px rgba(0, 0, 145, 0.12);
+  }
+  .inline-label::placeholder { color: #999; font-weight: 500; }
+  .field-preview {
+    margin: 0 0 0.85rem;
+    padding: 0 0.15rem;
+  }
+  .field-preview.is-static {
+    pointer-events: none;
+    opacity: 0.72;
+  }
+  .field-preview.is-editable .fr-input,
+  .field-preview.is-editable textarea.fr-input {
+    opacity: 1;
+  }
+  .field-preview .fr-input,
+  .field-preview .fr-select {
+    background: #fff;
+    box-shadow: none;
+    border-color: var(--grey-900, #ddd);
+  }
+  .field-preview__hint {
+    font-size: 0.7rem;
+    color: var(--grey-625, #666);
+    margin: 0 0 0.25rem;
+  }
+  .field-props {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1rem;
+    align-items: flex-end;
+    padding-top: 0.65rem;
+    border-top: 1px dashed var(--grey-900, #ddd);
+    margin-bottom: 0.25rem;
+  }
+  .field-props .fr-input-group,
+  .field-props .fr-select-group,
+  .field-props .fr-checkbox-group {
+    margin-bottom: 0;
+    min-width: 8rem;
+  }
+  .field-props .fr-checkbox-group {
+    padding-bottom: 0.35rem;
+  }
+  .behavior-panel {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: #f0f4ff;
+    border: 1px solid #b3b3ea;
+    border-radius: 4px;
+    overflow: visible;
+  }
+  .behavior-panel.cascade {
+    background: #f0f9ff;
+    border-color: #7dd3fc;
+  }
+  .behavior-panel.dynamic {
+    background: #faf5ff;
+    border-color: #d8b4fe;
+  }
+  .behavior-panel h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+    color: #000091;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .behavior-panel__intro {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: #3a3a3a;
+    margin: 0 0 0.65rem;
+  }
+  .behavior-panel__empty {
+    margin: 0.5rem 0 0;
+    padding: 0.55rem 0.65rem;
+    background: #fff;
+    border: 1px dashed #99a;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: #555;
+  }
+  .behavior-panel__empty strong { color: #161616; }
+  .behavior-panel label.is-disabled,
+  .behavior-panel input:disabled + label {
+    color: #929292;
+    cursor: not-allowed;
+  }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0 0.5rem; }
+  .cfg-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+    background: #e5e5e5;
+    color: #3a3a3a;
+  }
+  .cfg-badge.path { background: #fef3c7; color: #92400e; }
+  .cfg-badge.cascade { background: #e0f2fe; color: #0369a1; }
+  .cfg-badge.dynamic { background: #f3e8ff; color: #6b21a8; }
+  .cfg-badge.cond { background: #fef3c7; color: #92400e; }
+  .rule-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    align-items: end;
+  }
+  .rule-row .fr-hint-text {
+    font-size: 0.7rem;
+    line-height: 1.35;
+    margin: 0.15rem 0 0;
+  }
+  .behavior-panel .field-hint__icon:hover::after,
+  .behavior-panel .field-hint__icon:focus-visible::after {
+    z-index: 30;
+  }
+  @media (max-width: 640px) {
+    .rule-row { grid-template-columns: 1fr; }
+  }
+  .preview-frame {
+    background: #fff;
+    border: 1px solid var(--grey-900, #ddd);
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 145, 0.06);
+  }
+  #toast-container {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 22rem;
+  }
+  .app-toast {
+    padding: 0.65rem 1rem;
+    border-radius: 4px;
+    color: #fff;
+    background: var(--success, #18753c);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    font-size: 0.875rem;
+  }
+  .app-toast.error { background: var(--error, #ce0500); }
+  details.json-preview { margin-top: 1rem; }
+  details.json-preview pre {
+    background: var(--grey-975, #f6f6f6);
+    border: 1px solid var(--grey-900, #ddd);
+    border-radius: 4px;
+    padding: 0.75rem;
+    overflow: auto;
+    font-size: 0.75rem;
+  }
+  .wizard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+    margin: 1.25rem 0;
+  }
+  .wizard-card {
+    background: #fff;
+    border: 1px solid var(--grey-900, #ddd);
+    border-radius: 4px;
+    padding: 1.25rem;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .wizard-card:hover {
+    border-color: var(--blue-france, #000091);
+    box-shadow: 0 2px 8px rgba(0, 0, 145, 0.08);
+  }
+  .wizard-card h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    color: var(--blue-france, #000091);
+  }
+  .wizard-card p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #666;
+  }
+  .mode-hint {
+    font-size: 0.8125rem;
+    color: #666;
+    margin: 0.5rem 0 0;
+  }
+  .mode-hint button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--blue-france, #000091);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: inherit;
+  }
+  .publish-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 0.25rem;
+    max-width: 14rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="fr-container">
+    <div class="fr-grid-row fr-grid-row--middle fr-grid-row--gutters">
+      <div class="fr-col">
+        <h1 class="fr-h4 fr-mb-0">Form Builder — essence formulaires Grist</h1>
+        <p class="fr-text--sm fr-mb-0">Composer, prévisualiser et publier un formulaire intra-doc</p>
+      </div>
+      <div class="fr-col fr-col--auto">
+        <span id="status-badge" class="fr-badge fr-badge--info">Initialisation…</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav id="steps" aria-label="Étapes du builder"></nav>
+
+<main class="fr-container fr-my-4w">
+  <section id="forms-list" class="builder-step"><p class="fr-text--sm">Chargement…</p></section>
+  <section id="builder" class="builder-step" hidden></section>
+  <section id="preview" class="builder-step" hidden></section>
+  <section id="publish-log" class="builder-step" hidden></section>
+</main>
+
+<div id="toast-container"></div>
+
+<script src="shared/grist-bridge.js"></script>
+<script src="shared/types.js"></script>
+<script src="shared/attachments.js"></script>
+<script src="shared/session-context.js"></script>
+<script src="runtime/engine.js"></script>
+<script src="shared/survey-project.js"></script>
+<script src="shared/ensure-schema.js"></script>
+<script src="shared/audience-setup.js"></script>
+<script src="shared/formulaires-table.js"></script>
+<script src="shared/publish.js"></script>
+<script src="shared/ux.js"></script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════
+const S = {
+  isDemo: false,
+  step: 'forms',
+  tables: [],           // [{ id, tableId }] (tables candidates comme cible de formulaire)
+  columnsByTable: {},   // tableId -> [{ colId, type, label }]
+  forms: [],            // lignes de la table Formulaires
+  currentRowId: null,   // id de ligne Formulaires en édition (null = nouveau)
+  currentDef: null,     // FormDef en cours d'édition
+  publishLog: [],
+  showAdvanced: false,
+  wizardOpen: false,
+  autoTable: true
+};
+
+const GRIST_TYPES = ['Text', 'Int', 'Numeric', 'Bool', 'Date', 'DateTime', 'Choice', 'ChoiceList', 'Ref', 'RefList', 'Attachments'];
+const WIDGETS_BY_TYPE = {
+  Text: ['text', 'textarea'], Int: ['number', 'likert'], Numeric: ['number'], Bool: ['checkbox'],
+  Date: ['date'], DateTime: ['datetime'], Choice: ['select', 'radio'], ChoiceList: ['multiselect'],
+  Attachments: ['file'],
+  Ref: ['select'], RefList: ['multiselect']
+};
+const CONDITION_OPERATORS = ['==', '!=', '>', '>=', '<', '<=', 'contains'];
+
+const STEPS = [
+  { id: 'forms', label: '1. Mes formulaires' },
+  { id: 'builder', label: '2. Questions' },
+  { id: 'preview', label: '3. Aperçu' },
+  { id: 'publish', label: '4. Mettre en ligne' }
+];
+
+// Données mock hors Grist — assez pour composer/prévisualiser un formulaire complet.
+const DEMO_TABLES = [
+  { tableId: 'Contacts', columns: [
+    { colId: 'Nom', type: 'Text', label: 'Nom' },
+    { colId: 'Email', type: 'Text', label: 'Email' },
+    { colId: 'Groupe', type: 'Choice', label: 'Groupe' },
+    { colId: 'Age', type: 'Int', label: 'Âge' },
+    { colId: 'Actif', type: 'Bool', label: 'Actif' }
+  ] },
+  { tableId: 'Demandes', columns: [
+    { colId: 'Titre', type: 'Text', label: 'Titre' },
+    { colId: 'Description', type: 'Text', label: 'Description' },
+    { colId: 'Statut', type: 'Choice', label: 'Statut' },
+    { colId: 'DateEnvoi', type: 'Date', label: 'Date envoi' }
+  ] },
+  { tableId: 'Regions', columns: [
+    { colId: 'Nom', type: 'Text', label: 'Nom' }
+  ] }
+];
+let demoNextId = 1;
+
+// ═══════════════════════════════════════════════════════════
+// UTILITAIRES
+// ═══════════════════════════════════════════════════════════
+function esc(t) {
+  return (window.GristBridge && GristBridge.util && GristBridge.util.esc) ? GristBridge.util.esc(t) : String(t == null ? '' : t);
+}
+
+function hintIcon(tip) {
+  return `<span class="field-hint__icon" tabindex="0" role="note" aria-label="Aide" data-tip="${esc(tip)}">?</span>`;
+}
+
+function hintLabel(text, tip, forId) {
+  const forAttr = forId ? ` for="${esc(forId)}"` : '';
+  return `<label class="fr-label field-hint"${forAttr}><span>${esc(text)}</span>${hintIcon(tip)}</label>`;
+}
+
+function toast(message, type) {
+  const container = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = 'app-toast ' + (type === 'error' ? 'error' : 'success');
+  div.textContent = message;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 4500);
+}
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message || 'Délai dépassé')), ms))
+  ]);
+}
+
+function newSection(n) {
+  return { id: 's' + n, label: 'Étape ' + n, gate: null, condition: null, fields: [] };
+}
+
+function newField() {
+  return {
+    colId: '', label: '', type: 'Text', widget: 'text', required: false,
+    options: {}, condition: null, cascade: null, dynamicFilter: null,
+    profile: null, theme: null, polarity: '',
+    _colIdLocked: false
+  };
+}
+
+function newFormDef() {
+  return {
+    manifest_version: '1.0.0',
+    id: 'form-' + Date.now().toString(36),
+    title: '',
+    description: '',
+    classification: 'cerema_internal',
+    successMessage: 'Merci !',
+    branding: { logoUrl: '', logoAlt: '', successImageUrl: '', successImageAlt: '' },
+    audience: { mode: 'none', tableId: '', emailCol: 'Email', groupCol: '', probe: false },
+    tableId: '',
+    composeMode: 'ensureSchema',
+    sections: [newSection(1)],
+    choices: {}
+  };
+}
+
+function ensureAudience(def) {
+  if (!def.audience || typeof def.audience !== 'object') {
+    def.audience = { mode: 'none', tableId: '', emailCol: '', groupCol: '', probe: false };
+  } else {
+    if (!def.audience.mode) def.audience.mode = 'none';
+    if (def.audience.emailCol == null) def.audience.emailCol = '';
+    if (def.audience.groupCol == null) def.audience.groupCol = '';
+    if (def.audience.tableId == null) def.audience.tableId = '';
+    if (def.audience.probe == null) def.audience.probe = false;
+  }
+  return def.audience;
+}
+
+function onAudienceInput(key, value) {
+  const a = ensureAudience(S.currentDef);
+  if (key === 'probe') {
+    a.probe = !!value;
+    if (value && a.mode === 'bind' && a.tableId && a.emailCol) {
+      applyProbeEmailSetup(a).then(function () { renderBuilder(); });
+    }
+    return;
+  }
+  if (key === 'mode') {
+    a.mode = value === 'bind' ? 'bind' : 'none';
+    if (a.mode === 'bind' && a.tableId) applyAudienceColumnDefaults(a);
+    renderBuilder();
+    return;
+  }
+  if (key === 'tableId') {
+    a.tableId = value;
+    applyAudienceColumnDefaults(a, true);
+    renderBuilder();
+    return;
+  }
+  a[key] = value;
+}
+
+/** Types compatibles pour lier email / groupe. */
+function audienceEmailCandidates(cols) {
+  return (cols || []).filter((c) => {
+    const t = String(c.type || '');
+    return t === 'Text' || t === 'Choice';
+  });
+}
+
+function audienceGroupCandidates(cols) {
+  return (cols || []).filter((c) => {
+    const t = String(c.type || '');
+    return t === 'Text' || t === 'Choice' || t === 'ChoiceList' ||
+      t.indexOf('Ref:') === 0 || t.indexOf('RefList:') === 0;
+  });
+}
+
+function pickColByHints(cols, hints) {
+  for (let i = 0; i < hints.length; i++) {
+    const re = hints[i];
+    const hit = cols.find((c) => re.test(c.colId || '') || re.test(c.label || ''));
+    if (hit) return hit.colId;
+  }
+  return '';
+}
+
+function detectAudienceEmailCol(cols) {
+  const cands = audienceEmailCandidates(cols);
+  return pickColByHints(cands, [/e-?mail/i, /courriel/i, /^mail$/i]) || (cands[0] && cands[0].colId) || '';
+}
+
+function detectAudienceGroupCol(cols) {
+  const cands = audienceGroupCandidates(cols);
+  return pickColByHints(cands, [/groupe/i, /group/i, /equipe|équipe/i, /r[oô]le/i, /profil/i, /statut/i]) || '';
+}
+
+/** force=true : recalcule même si déjà renseigné (changement de table). */
+function applyAudienceColumnDefaults(aud, force) {
+  const cols = S.columnsByTable[aud.tableId] || [];
+  const emailOk = audienceEmailCandidates(cols).some((c) => c.colId === aud.emailCol);
+  const groupOk = !aud.groupCol || audienceGroupCandidates(cols).some((c) => c.colId === aud.groupCol);
+  if (force || !aud.emailCol || !emailOk) aud.emailCol = detectAudienceEmailCol(cols);
+  if (force || !groupOk) aud.groupCol = detectAudienceGroupCol(cols);
+}
+
+function colSelectOptions(candidates, selected, emptyLabel) {
+  const ids = new Set(candidates.map((c) => c.colId));
+  let opts = `<option value="">${esc(emptyLabel || '—')}</option>`;
+  candidates.forEach((c) => {
+    opts += `<option value="${esc(c.colId)}" ${selected === c.colId ? 'selected' : ''}>${esc(c.label || c.colId)} (${esc(c.type)})</option>`;
+  });
+  if (selected && !ids.has(selected)) {
+    opts += `<option value="${esc(selected)}" selected>${esc(selected)} (hors liste)</option>`;
+  }
+  return opts;
+}
+
+async function applyProbeEmailSetup(aud) {
+  if (!window.AudienceSetup) return;
+  const cols = S.columnsByTable[aud.tableId] || [];
+  const plan = AudienceSetup.planProbeEmailSetup(aud.tableId, aud.emailCol, cols);
+  if (!plan.ok) {
+    if (plan.reason === 'formula_column') {
+      toast('Choisissez une colonne saisissable (pas une colonne formule).', 'error');
+    } else if (plan.reason === 'column_not_found') {
+      toast('Colonne email introuvable dans cette table.', 'error');
+    }
+    aud.probe = false;
+    return;
+  }
+  if (plan.alreadyConfigured) {
+    toast('La colonne email est déjà prête pour la reconnaissance automatique.');
+    return;
+  }
+  if (S.isDemo) {
+    const col = cols.find(c => c.colId === aud.emailCol);
+    if (col) {
+      col.formula = AudienceSetup.PROBE_EMAIL_FORMULA;
+      col.isFormula = false;
+      col.recalcWhen = AudienceSetup.PROBE_RECALC_WHEN;
+    }
+    toast('Mode démo : formule de reconnaissance simulée sur la colonne email.');
+    return;
+  }
+  try {
+    await GristBridge.applyUserActions(plan.actions);
+    await reloadColumnsForTable(aud.tableId);
+    toast('Formule appliquée : l’email du compte Grist sera lu à chaque nouvelle ligne.');
+  } catch (e) {
+    aud.probe = false;
+    toast('Impossible de configurer la colonne email : ' + (e && e.message ? e.message : e), 'error');
+  }
+}
+
+function renderAudienceBlock(aud) {
+  const enabled = aud.mode === 'bind';
+  const cols = aud.tableId ? (S.columnsByTable[aud.tableId] || []) : [];
+  const emailCands = audienceEmailCandidates(cols);
+  const groupCands = audienceGroupCandidates(cols);
+  const emailMeta = aud.emailCol ? cols.find(c => c.colId === aud.emailCol) : null;
+  const probeReady = !!(emailMeta && window.AudienceSetup && AudienceSetup.isProbeTriggerConfigured(emailMeta));
+  const audEnableTip = 'Permet d’afficher ou de masquer des questions selon l’email ou le groupe de la personne connectée. Utile pour réserver un bloc à certains agents ou exclure le public.';
+  const tableTip = 'Table du document qui liste les personnes (emails) et éventuellement leurs groupes.';
+  const emailTip = 'Colonne qui identifie chaque personne, en général « Email ».';
+  const groupTip = 'Colonne pour filtrer par groupe (ex. Agents, Public). Laissez vide si vous ne filtrez que par email.';
+  const probeTip = 'Configure automatiquement la colonne email pour lire l’adresse du compte Grist connecté (formule à la création de ligne). Nécessaire pour reconnaître la personne sans qu’elle se déclare.';
+  return `
+    <div class="intro-audience">
+      <div class="fr-checkbox-group">
+        <input type="checkbox" id="aud-enable" ${enabled ? 'checked' : ''}
+          onchange="App.onAudienceInput('mode', this.checked ? 'bind' : 'none')">
+        <label class="fr-label field-hint" for="aud-enable">
+          <span>Réserver des questions à certaines personnes ou groupes</span>
+          ${hintIcon(audEnableTip)}
+        </label>
+      </div>
+      ${enabled ? `
+        <div class="intro-audience__fields fr-grid-row fr-grid-row--gutters">
+          <div class="fr-col-12 fr-col-md-4">
+            <div class="fr-select-group">${hintLabel('Table des personnes', tableTip)}
+            <select class="fr-select" onchange="App.onAudienceInput('tableId', this.value)">
+              <option value="">—</option>
+              ${S.tables.map(t => `<option value="${esc(t.tableId)}" ${aud.tableId === t.tableId ? 'selected' : ''}>${esc(t.tableId)}</option>`).join('')}
+            </select></div>
+          </div>
+          <div class="fr-col-12 fr-col-md-3">
+            <div class="fr-select-group">${hintLabel('Colonne email', emailTip)}
+            <select class="fr-select" onchange="App.onAudienceInput('emailCol', this.value)" ${!aud.tableId ? 'disabled' : ''}>
+              ${colSelectOptions(emailCands, aud.emailCol, aud.tableId ? '—' : 'Choisir une table')}
+            </select></div>
+          </div>
+          <div class="fr-col-12 fr-col-md-3">
+            <div class="fr-select-group">${hintLabel('Colonne groupe (optionnel)', groupTip)}
+            <select class="fr-select" onchange="App.onAudienceInput('groupCol', this.value)" ${!aud.tableId ? 'disabled' : ''}>
+              ${colSelectOptions(groupCands, aud.groupCol, 'Aucune')}
+            </select></div>
+          </div>
+          <div class="fr-col-12 fr-col-md-2">
+            <div class="fr-checkbox-group" style="padding-top:1.5rem">
+              <input type="checkbox" id="aud-probe" ${aud.probe ? 'checked' : ''}
+                onchange="App.onAudienceInput('probe', this.checked)" ${!aud.tableId || !aud.emailCol ? 'disabled' : ''}>
+              <label class="fr-label field-hint" for="aud-probe">
+                <span>Reconnaître la personne connectée</span>
+                ${hintIcon(probeTip)}
+              </label>
+            </div>
+          </div>
+        </div>
+        ${aud.tableId && !emailCands.length ? `<p class="fr-hint-text">Aucune colonne Texte/Choice utilisable pour l’email dans cette table.</p>` : ''}
+        ${aud.probe && aud.emailCol ? `<p class="fr-hint-text intro-audience__status">${probeReady
+          ? '✓ Colonne email prête : l’adresse du compte Grist sera détectée automatiquement.'
+          : 'Cochez ci-dessus pour appliquer la configuration sur la colonne email.'}</p>` : ''}
+      ` : ''}
+    </div>
+  `;
+}
+
+const CONDITION_PANEL_TIP = 'Affiche ou masque selon des critères. Utile pour des chemins différents ou réserver des questions. Ne remplace pas les droits d’accès Grist.';
+const CONDITION_COMBO_TIP = 'ET = toutes les règles doivent être vraies. OU = au moins une règle suffit.';
+const CONDITION_SOURCE_TIP = 'Choisissez ce qui est évalué : contexte (widget, session), audience (personne/groupe) ou une réponse précédente.';
+const CONDITION_VALUE_TIP = 'Valeur attendue pour que la règle soit vraie. Pour une liste (audience), séparez par des virgules.';
+
+const CONTEXT_RULE_OPTS = [
+  { key: 'context:inGristWidget', label: 'Dans le widget Grist', tip: 'Vrai si le formulaire est ouvert dans une page Grist (pas une page web isolée).' },
+  { key: 'context:canWriteNative', label: 'Peut enregistrer dans Grist', tip: 'Vrai si la personne peut écrire dans le document via l’API Grist (accès suffisant).' },
+  { key: 'context:isLoggedIn', label: 'Personne connectée', tip: 'Vrai si une session Grist est détectée (connecté ou dans le widget).' },
+  { key: 'context:userEmail', label: 'Email de session', tip: 'Email du compte Grist connecté (si reconnu). Compare comme un texte.' }
+];
+const AUDIENCE_RULE_OPTS = [
+  { key: 'audience:email', label: 'Email (liste ou session)', tip: 'Compare l’email reconnu à une liste. Configurez l’audience dans Accueil ; cochez « Reconnaître la personne connectée » si besoin.' },
+  { key: 'audience:group', label: 'Groupe', tip: 'Compare le groupe de la personne (ex. Agents, Public). Nécessite une table audience avec colonne groupe dans Accueil.' }
+];
+
+const OPERATOR_TIPS = {
+  '==': 'Exactement égal à la valeur.',
+  '!=': 'Différent de la valeur.',
+  '>': 'Strictement supérieur.',
+  '>=': 'Supérieur ou égal.',
+  '<': 'Strictement inférieur.',
+  '<=': 'Inférieur ou égal.',
+  'contains': 'Contient le texte (non sensible à la casse).',
+  'notContains': 'Ne contient pas le texte.',
+  'in': 'La valeur est dans la liste (virgules). Ex. : Agents, Public',
+  'notIn': 'La valeur n’est pas dans la liste.'
+};
+
+function allRuleOpts() {
+  return CONTEXT_RULE_OPTS.concat(AUDIENCE_RULE_OPTS);
+}
+
+function ruleOptionTip(selKey) {
+  const hit = allRuleOpts().find(o => o.key === selKey);
+  return hit ? hit.tip : 'Réponse d’une question affichée avant celle-ci.';
+}
+
+function operatorTip(op, isAud, isCtx) {
+  if (isAud && op === 'in') return 'La personne doit appartenir à l’un des groupes/emails listés.';
+  if (isAud && op === 'notIn') return 'Exclut les personnes dont le groupe/email est dans la liste.';
+  if (isCtx && (op === '==' || op === '!=')) return 'Oui/Non pour les critères de contexte (widget, connecté, etc.).';
+  return OPERATOR_TIPS[op] || 'Compare la source à la valeur saisie.';
+}
+
+function ruleSelectKey(rule) {
+  const src = rule.source || 'field';
+  const path = rule.path || rule.field || '';
+  if (src === 'context' || path.indexOf('context.') === 0) {
+    const p = rule.path || path.replace(/^context\./, '');
+    return 'context:' + p;
+  }
+  if (src === 'audience' || path.indexOf('audience.') === 0) {
+    const p = rule.path || path.replace(/^audience\./, '');
+    return 'audience:' + p;
+  }
+  return 'field:' + (rule.field || path);
+}
+
+function applyRuleSourceKey(rule, key) {
+  if (key.indexOf('context:') === 0) {
+    rule.source = 'context';
+    rule.path = key.slice(8);
+    rule.field = 'context.' + rule.path;
+    rule.bind = null;
+    if (rule.path === 'inGristWidget' || rule.path === 'canWriteNative' || rule.path === 'isLoggedIn') {
+      rule.operator = '==';
+      if (rule.value === '' || rule.value == null) rule.value = true;
+    }
+  } else if (key.indexOf('audience:') === 0) {
+    rule.source = 'audience';
+    rule.path = key.slice(9);
+    rule.field = 'audience.' + rule.path;
+    const aud = ensureAudience(S.currentDef);
+    rule.bind = aud.mode === 'bind' ? {
+      tableId: aud.tableId,
+      emailCol: aud.emailCol,
+      groupCol: aud.groupCol
+    } : null;
+    if (rule.path === 'group') rule.operator = 'in';
+  } else {
+    rule.source = 'field';
+    rule.path = key.indexOf('field:') === 0 ? key.slice(6) : key;
+    rule.field = rule.path;
+    rule.bind = null;
+  }
+}
+
+function ensureBranding(def) {
+  if (!def.branding || typeof def.branding !== 'object') {
+    def.branding = { logoUrl: '', logoAlt: '', successImageUrl: '', successImageAlt: '' };
+  } else {
+    ['logoUrl', 'logoAlt', 'successImageUrl', 'successImageAlt'].forEach((k) => {
+      if (def.branding[k] == null) def.branding[k] = '';
+    });
+  }
+  return def.branding;
+}
+
+/** N’autorise que http(s) et data:image pour éviter javascript: etc. */
+function safeImageUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const u = url.trim();
+  if (/^https?:\/\//i.test(u) || /^data:image\//i.test(u)) return u;
+  return '';
+}
+
+function renderBrandSlot(opts) {
+  const { kind, urlKey, altKey, url, alt, previewClass, logoUrl, logoAlt } = opts;
+  const safe = safeImageUrl(url);
+  const canReuseLogo = kind === 'success' && !!safeImageUrl(logoUrl);
+  const preview = safe
+    ? `<div class="brand-slot__preview ${previewClass || ''}"><img src="${esc(safe)}" alt="${esc(alt || '')}"></div>`
+    : `<div class="brand-slot__preview ${previewClass || ''}"><span class="fr-hint-text">Aucun logo / image</span></div>`;
+  return `
+    <div class="brand-slot">
+      ${preview}
+      <div class="brand-slot__row">
+        <input class="fr-input" type="url" value="${esc(url || '')}"
+          placeholder="URL de l’image (https://…)"
+          aria-label="${kind === 'logo' ? 'URL du logo' : 'URL de l’image de fin'}"
+          oninput="App.onBrandingInput('${urlKey}', this.value)"
+          onchange="App.onBrandingInput('${urlKey}', this.value); App.refreshBuilderBrand()">
+        <input class="brand-slot__file" type="file" accept="image/*"
+          aria-label="Importer une image"
+          onchange="App.onBrandingFile('${urlKey}', this)">
+      </div>
+      ${canReuseLogo ? `
+        <button type="button" class="fr-btn fr-btn--secondary fr-btn--sm fr-mt-1w"
+          onclick="App.reuseIntroImage()">Réutiliser l’image d’accueil</button>
+      ` : ''}
+      <div class="fr-input-group fr-mt-1w fr-mb-0">
+        <label class="fr-label">Texte alternatif</label>
+        <input class="fr-input" value="${esc(alt || '')}" placeholder="Ex. Logo de l’organisation"
+          oninput="App.onBrandingInput('${altKey}', this.value)">
+      </div>
+      ${url && !safe ? `<p class="fr-hint-text" style="color:var(--error,#ce0500)">URL non autorisée (http(s) ou image embarquée uniquement).</p>` : ''}
+      ${safe ? `<button type="button" class="fr-btn fr-btn--tertiary-no-outline fr-btn--sm fr-mt-1w" onclick="App.onBrandingInput('${urlKey}', ''); App.refreshBuilderBrand()">Retirer l’image</button>` : ''}
+    </div>
+  `;
+}
+
+function boolFieldColIds(def) {
+  const out = [];
+  def.sections.forEach(sec => sec.fields.forEach(f => { if (f.type === 'Bool' && f.colId) out.push(f.colId); }));
+  return out;
+}
+
+function allFieldColIds(def, excludeSi, excludeFi) {
+  const out = [];
+  def.sections.forEach((sec, si) => sec.fields.forEach((f, fi) => {
+    if (si === excludeSi && fi === excludeFi) return;
+    if (f.colId) out.push(f.colId);
+  }));
+  return out;
+}
+
+function refFieldColIdsExcept(def, excludeSi, excludeFi) {
+  const out = [];
+  def.sections.forEach((sec, si) => sec.fields.forEach((f, fi) => {
+    if (si === excludeSi && fi === excludeFi) return;
+    if (f.type === 'Ref' && f.colId) out.push(f.colId);
+  }));
+  return out;
+}
+
+/** Champs utilisables comme source de condition (étapes précédentes, ou avant dans la même). */
+function priorFields(def, si, fi) {
+  const out = [];
+  def.sections.forEach((sec, sIdx) => {
+    sec.fields.forEach((f, fIdx) => {
+      if (sIdx > si) return;
+      if (sIdx === si && (fi == null || fIdx >= fi)) return;
+      if (!f.colId) return;
+      out.push({
+        colId: f.colId,
+        label: f.label || f.colId,
+        type: f.type,
+        sectionLabel: sec.label,
+        choices: (def.choices && def.choices[f.colId]) || (f.options && f.options.choices) || []
+      });
+    });
+  });
+  return out;
+}
+
+function findFieldMeta(def, colId) {
+  for (const sec of def.sections) {
+    for (const f of sec.fields) {
+      if (f.colId === colId) {
+        return {
+          colId: f.colId,
+          label: f.label || f.colId,
+          type: f.type,
+          choices: (def.choices && def.choices[f.colId]) || (f.options && f.options.choices) || [],
+          refTable: (f.options && f.options.refTable) || f.refTable || ''
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function resolveRefTableOfField(f) {
+  if (!f) return '';
+  return (f.options && f.options.refTable) || f.refTable || '';
+}
+
+function fieldTypeShortLabel(type) {
+  const map = { Ref: 'Référence', Choice: 'Liste', Text: 'Texte', Bool: 'Oui/Non' };
+  return map[type] || type || '';
+}
+
+/** Message si aucun champ parent éligible au-dessus de la question courante. */
+function emptyParentFieldsHint(def, si, fi, eligibleTypes) {
+  const allPrior = [];
+  def.sections.forEach((sec, sIdx) => {
+    sec.fields.forEach((f, fIdx) => {
+      if (sIdx > si) return;
+      if (sIdx === si && fIdx >= fi) return;
+      allPrior.push(f);
+    });
+  });
+  if (!allPrior.length) {
+    return 'C’est la <strong>première question</strong> de l’étape (ou du formulaire). Ajoutez une question <strong>au-dessus</strong> avant de filtrer.';
+  }
+  const withoutCol = allPrior.filter(f => !f.colId);
+  const wrongType = allPrior.filter(f => f.colId && eligibleTypes.indexOf(f.type) === -1);
+  if (withoutCol.length && !allPrior.some(f => f.colId && eligibleTypes.indexOf(f.type) !== -1)) {
+    return 'Des questions existent au-dessus, mais sans <strong>colonne définie</strong>. Renseignez le libellé (ou le colId) puis revenez ici.';
+  }
+  if (wrongType.length && eligibleTypes.length === 1 && eligibleTypes[0] === 'Ref') {
+    return 'Ajoutez <strong>au-dessus</strong> une question de type <strong>Référence</strong> (ex. Région), puis filtrez cette liste (ex. Commune).';
+  }
+  if (wrongType.length) {
+    return 'Ajoutez <strong>au-dessus</strong> une question <strong>Liste, Texte, Oui/Non ou Référence</strong> dont la valeur servira de filtre.';
+  }
+  return 'Aucun champ parent disponible pour le moment.';
+}
+
+function renderParentSelectOptions(parents, selectedColId) {
+  return parents.map(p =>
+    `<option value="${esc(p.colId)}" ${selectedColId === p.colId ? 'selected' : ''}>${esc(p.label || p.colId)} (${esc(fieldTypeShortLabel(p.type))})</option>`
+  ).join('');
+}
+
+function renderRefBehaviorPanels(def, si, fi, f, refParents, dynParents, filterColOpts, refTable) {
+  if (!refTable) {
+    return `
+      <div class="behavior-panel behavior-panel--intro">
+        <p class="behavior-panel__intro">Pour filtrer cette liste selon une autre question, choisissez d’abord une <strong>table liée</strong> ci-dessus.</p>
+      </div>`;
+  }
+
+  const cascadeTip = 'Une <strong>autre question Référence</strong> placée au-dessus filtre cette liste (ex. Région → Commune). Une seule méthode de filtre à la fois.';
+  const dynamicTip = 'Liste / Texte / Oui-Non : filtre direct. Référence : on lit une colonne sur la ligne choisie, puis on filtre les lignes (ex. même Groupe).';
+  const canCascade = refParents.length > 0;
+  const canDynamic = dynParents.length > 0;
+  const cascadeEmptyHint = emptyParentFieldsHint(def, si, fi, ['Ref']);
+  const dynamicEmptyHint = emptyParentFieldsHint(def, si, fi, ['Ref', 'Choice', 'Text', 'Bool']);
+  const filterColsLoaded = filterColOpts && filterColOpts.trim().length > 0;
+
+  const df = f.dynamicFilter;
+  const parentMeta = df && df.parentField ? findFieldMeta(def, df.parentField) : null;
+  const parentIsRef = !!(parentMeta && parentMeta.type === 'Ref');
+  const parentTable = parentIsRef ? (parentMeta.refTable || '') : '';
+  const parentRowCols = parentTable ? (S.columnsByTable[parentTable] || []) : (refTable ? (S.columnsByTable[refTable] || []) : []);
+  const parentValueColOpts = parentRowCols.map(c =>
+    `<option value="${esc(c.colId)}" ${df && df.parentValueColumn === c.colId ? 'selected' : ''}>${esc(c.label || c.colId)}</option>`
+  ).join('');
+  const needsParentValueCol = parentIsRef && df && df.parentResolve === 'refRow';
+  const missingParentValueCol = needsParentValueCol && !df.parentValueColumn;
+
+  return `
+    <p class="behavior-panel__intro fr-mb-1w">Deux façons de réduire cette liste (cochez <strong>une seule</strong>) — les deux nécessitent une question <strong>au-dessus</strong> dans le parcours.</p>
+    <div class="behavior-panel cascade">
+      <h4>Cascade Référence → Référence ${hintIcon(cascadeTip)}</h4>
+      <div class="fr-checkbox-group">
+        <input type="checkbox" id="casc-${si}-${fi}" ${f.cascade ? 'checked' : ''} ${canCascade ? '' : 'disabled'}
+          onchange="App.onFieldCascadeToggle(${si}, ${fi}, this.checked)">
+        <label class="fr-label ${canCascade ? '' : 'is-disabled'}" for="casc-${si}-${fi}">
+          Filtrer selon une autre question Référence
+        </label>
+      </div>
+      ${!canCascade ? `<div class="behavior-panel__empty">${cascadeEmptyHint}</div>` : ''}
+      ${f.cascade && canCascade ? `
+        <div class="fr-select-group fr-mt-1w">
+          ${hintLabel('Question Référence au-dessus', 'Liste des questions Ref déjà placées avant celle-ci dans le parcours.')}
+          <select class="fr-select" onchange="App.onFieldCascadeParent(${si}, ${fi}, this.value)">
+            <option value="">— Choisir —</option>
+            ${renderParentSelectOptions(refParents, f.cascade.parentField)}
+          </select>
+        </div>
+        <p class="fr-hint-text">Colonne de liaison (auto) : <strong>${esc(f.cascade.parentRefCol || '—')}</strong></p>
+      ` : ''}
+    </div>
+    <div class="behavior-panel dynamic">
+      <h4>Filtre par valeur d’une autre question ${hintIcon(dynamicTip)}</h4>
+      <div class="fr-checkbox-group">
+        <input type="checkbox" id="dyn-${si}-${fi}" ${f.dynamicFilter ? 'checked' : ''} ${canDynamic ? '' : 'disabled'}
+          onchange="App.onFieldDynamicToggle(${si}, ${fi}, this.checked)">
+        <label class="fr-label ${canDynamic ? '' : 'is-disabled'}" for="dyn-${si}-${fi}">
+          Filtrer selon la valeur d’une question au-dessus
+        </label>
+      </div>
+      ${!canDynamic ? `<div class="behavior-panel__empty">${dynamicEmptyHint}</div>` : ''}
+      ${f.dynamicFilter && canDynamic ? `
+        <div class="fr-grid-row fr-grid-row--gutters fr-mt-1w">
+          <div class="fr-col-12 fr-col-md-4">
+            <div class="fr-select-group">
+              ${hintLabel('Question au-dessus', 'Liste / Texte / Oui-Non : valeur directe. Référence : lit une colonne sur la ligne choisie.')}
+              <select class="fr-select" onchange="App.onFieldDynamic(${si}, ${fi}, 'parentField', this.value)">
+                <option value="">— Choisir —</option>
+                ${renderParentSelectOptions(dynParents, f.dynamicFilter.parentField)}
+              </select>
+            </div>
+          </div>
+          ${parentIsRef ? `
+          <div class="fr-col-12 fr-col-md-4">
+            <div class="fr-select-group">
+              ${hintLabel('Lire sur la ligne choisie', 'Colonne du contact / enregistrement sélectionné au-dessus (ex. Groupe).')}
+              <select class="fr-select" onchange="App.onFieldDynamic(${si}, ${fi}, 'parentValueColumn', this.value)">
+                <option value="">— Choisir —</option>${parentValueColOpts}
+              </select>
+            </div>
+          </div>
+          ` : ''}
+          <div class="fr-col-12 fr-col-md-${parentIsRef ? '4' : '8'}">
+            <div class="fr-select-group">
+              ${hintLabel('Filtrer les lignes où', 'Colonne de « ' + esc(refTable) + ' » comparée à la valeur résolue (souvent la même, ex. Groupe).')}
+              <select class="fr-select" onchange="App.onFieldDynamic(${si}, ${fi}, 'filterColumn', this.value)">
+                <option value="">— Choisir —</option>${filterColOpts}
+              </select>
+            </div>
+          </div>
+        </div>
+        ${missingParentValueCol ? `<div class="behavior-panel__empty">Indiquez quelle colonne lire sur la ligne choisie (ex. <strong>Groupe</strong>).</div>` : ''}
+        ${!filterColsLoaded ? `<div class="behavior-panel__empty">Colonnes de <strong>${esc(refTable)}</strong> introuvables — resélectionnez la table liée ou enregistrez le formulaire pour recharger le schéma.</div>` : ''}
+      ` : ''}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// GRIST / DÉMO — chargement des données
+// ═══════════════════════════════════════════════════════════
+async function ensureFormulairesTable() {
+  const tables = await GristBridge.loadTable('_grist_Tables');
+  const exists = tables.some(t => t.tableId === 'Formulaires');
+  if (!exists) {
+    await GristBridge.applyUserActions(FormulairesTable.planCreateFormulairesTable());
+  }
+}
+
+async function loadTablesAndColumns() {
+  const tables = await GristBridge.loadTable('_grist_Tables');
+  const columns = await GristBridge.loadTable('_grist_Tables_column');
+  S.tables = tables
+    .filter(t => t.tableId && !/^_grist/.test(t.tableId) && t.tableId !== 'Formulaires')
+    .map(t => ({ id: t.id, tableId: t.tableId }));
+  S.columnsByTable = {};
+  S.tables.forEach(t => { S.columnsByTable[t.tableId] = []; });
+  columns.forEach(c => {
+    if (c.isFormula) return; // colonnes calculées non pertinentes comme cible de champ
+    const table = S.tables.find(t => t.id === c.parentId);
+    if (!table) return;
+    S.columnsByTable[table.tableId].push({
+      colId: c.colId,
+      type: c.type,
+      label: c.label || c.colId,
+      formula: c.formula || '',
+      isFormula: !!c.isFormula,
+      recalcWhen: c.recalcWhen
+    });
+  });
+}
+
+async function reloadColumnsForTable(tableId) {
+  const tables = await GristBridge.loadTable('_grist_Tables');
+  const table = tables.find(t => t.tableId === tableId);
+  if (!table) return;
+  const columns = await GristBridge.loadTable('_grist_Tables_column');
+  S.columnsByTable[tableId] = columns
+    .filter(c => c.parentId === table.id && !c.isFormula)
+    .map(c => ({
+      colId: c.colId,
+      type: c.type,
+      label: c.label || c.colId,
+      formula: c.formula || '',
+      isFormula: !!c.isFormula,
+      recalcWhen: c.recalcWhen
+    }));
+}
+
+async function refreshTablesAfterSchemaChange() {
+  await loadTablesAndColumns();
+}
+
+/** Pose visibleCol méta Grist (id) depuis options.visibleCol (nom de colonne). */
+async function applyVisibleColMeta(formDef) {
+  if (!window.EnsureSchema || !EnsureSchema.planVisibleColUpdates) return;
+  try {
+    const tables = await GristBridge.loadTable('_grist_Tables');
+    const columns = await GristBridge.loadTable('_grist_Tables_column');
+    const vis = EnsureSchema.planVisibleColUpdates(formDef, tables, columns);
+    if (vis.ok && vis.actions && vis.actions.length) {
+      await GristBridge.applyUserActions(vis.actions);
+    }
+  } catch (e) {
+    console.warn('[grist_forms] visibleCol méta non appliqué:', e);
+  }
+}
+
+/** Applique un plan ensureSchema en mémoire (mode démo). */
+function applyEnsureSchemaDemo(plan, tableId) {
+  plan.actions.forEach(function (a) {
+    if (a[0] === 'AddTable') {
+      const cols = a[2] || [];
+      if (!S.tables.some(t => t.tableId === tableId)) {
+        S.tables.push({ id: S.tables.length + 1, tableId: tableId });
+      }
+      S.columnsByTable[tableId] = cols.map(function (c) {
+        return { colId: c.id, type: c.type, label: c.label || c.id };
+      });
+    } else if (a[0] === 'AddColumn') {
+      const colId = a[2];
+      const def = a[3] || {};
+      S.columnsByTable[tableId] = S.columnsByTable[tableId] || [];
+      if (!S.columnsByTable[tableId].some(c => c.colId === colId)) {
+        S.columnsByTable[tableId].push({ colId: colId, type: def.type, label: def.label || colId });
+      }
+    }
+  });
+}
+
+async function loadFormulaires() {
+  S.forms = await GristBridge.loadTable('Formulaires');
+}
+
+function loadDemoData() {
+  S.tables = DEMO_TABLES.map((t, i) => ({ id: i + 1, tableId: t.tableId }));
+  S.columnsByTable = {};
+  DEMO_TABLES.forEach(t => { S.columnsByTable[t.tableId] = t.columns.slice(); });
+}
+
+async function initRealMode() {
+  console.log('[builder] GristBridge prêt (window.grist.docApi détecté)');
+  await ensureFormulairesTable();
+  await loadTablesAndColumns();
+  await loadFormulaires();
+}
+
+async function init() {
+  try { grist.ready({ requiredAccess: 'full' }); } catch (e) { /* grist-plugin-api absent : on tentera quand même, la détection réelle suit */ }
+  try {
+    if (!window.grist || !window.grist.docApi) throw new Error('grist.docApi indisponible (hors iframe Grist)');
+    await withTimeout(initRealMode(), 6000, 'Pas de réponse de Grist');
+  } catch (e) {
+    console.warn('[builder] Mode démo :', e && e.message);
+    S.isDemo = true;
+    loadDemoData();
+  }
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDU — navigation par étapes
+// ═══════════════════════════════════════════════════════════
+function render() {
+  renderStatusBadge();
+  renderSteps();
+  goStep(S.step || 'forms');
+}
+
+function renderStatusBadge() {
+  const badge = document.getElementById('status-badge');
+  if (!badge) return;
+  if (S.isDemo) {
+    badge.className = 'fr-badge fr-badge--warning';
+    badge.textContent = 'Mode démo (hors Grist)';
+  } else {
+    badge.className = 'fr-badge fr-badge--success';
+    badge.textContent = 'Connecté à Grist';
+  }
+}
+
+function renderSteps() {
+  const nav = document.getElementById('steps');
+  nav.innerHTML = STEPS.map(s => `
+    <button type="button" class="fr-btn ${S.step === s.id ? 'is-active' : 'fr-btn--secondary'}" onclick="App.goStep('${s.id}')">${s.label}</button>
+  `).join('');
+}
+
+function goStep(step) {
+  S.step = step;
+  renderSteps();
+  document.querySelectorAll('.builder-step').forEach(el => { el.hidden = true; });
+  if (step === 'forms') { renderFormsList(); document.getElementById('forms-list').hidden = false; }
+  if (step === 'builder') { renderBuilder(); document.getElementById('builder').hidden = false; }
+  if (step === 'preview') { renderPreviewStep(); document.getElementById('preview').hidden = false; }
+  if (step === 'publish') { renderPublishStep(); document.getElementById('publish-log').hidden = false; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAPE 1 — Liste des formulaires / wizard
+// ═══════════════════════════════════════════════════════════
+function renderFormsList() {
+  const el = document.getElementById('forms-list');
+
+  if (S.wizardOpen) {
+    const templates = (window.FormUx && FormUx.templates) ? FormUx.templates() : [];
+    const tplCards = templates.map(t => `
+      <button type="button" class="wizard-card" onclick="App.applyTemplate('${esc(t.id)}')">
+        <h3>${esc(t.label)}</h3>
+        <p>${esc(t.description)}</p>
+      </button>
+    `).join('');
+    el.innerHTML = `
+      <div class="fr-grid-row fr-grid-row--gutters fr-grid-row--middle fr-mb-2w">
+        <div class="fr-col"><h2 class="fr-h5 fr-mb-0">Nouveau formulaire</h2></div>
+        <div class="fr-col fr-col--auto"><button class="fr-btn fr-btn--secondary" onclick="App.cancelWizard()">Annuler</button></div>
+      </div>
+      <p class="fr-text--sm">Comment voulez-vous commencer ?</p>
+      <div class="wizard-grid">
+        <button type="button" class="wizard-card" onclick="App.startWizardCreate()">
+          <h3>Créer un questionnaire</h3>
+          <p>Les réponses iront dans une nouvelle table créée automatiquement.</p>
+        </button>
+        <button type="button" class="wizard-card" onclick="App.startWizardBind()">
+          <h3>Brancher sur une table existante</h3>
+          <p>Reliez les questions aux colonnes déjà présentes dans Grist.</p>
+        </button>
+      </div>
+      <h3 class="fr-h6 fr-mt-3w">Ou partir d’un modèle</h3>
+      <div class="wizard-grid">${tplCards}</div>
+    `;
+    return;
+  }
+
+  const rows = S.forms.map(f => `
+    <tr>
+      <td>${esc(f.Nom)}</td>
+      <td>${esc(f.TableCible)}</td>
+      <td>${esc(f.Version)}</td>
+      <td>
+        <span class="fr-badge ${f.Statut === 'publie' ? 'fr-badge--success' : 'fr-badge--info'}">${esc(f.Statut)}</span>
+        ${f.Statut === 'publie' ? `<span class="publish-hint">Toute modification des questions exige de remettre en ligne</span>` : ''}
+      </td>
+      <td><button class="fr-btn fr-btn--sm" onclick="App.editForm(${f.id})">Éditer</button></td>
+    </tr>
+  `).join('');
+
+  el.innerHTML = `
+    <div class="fr-grid-row fr-grid-row--gutters fr-grid-row--middle fr-mb-2w">
+      <div class="fr-col"><h2 class="fr-h5 fr-mb-0">Mes formulaires</h2></div>
+      <div class="fr-col fr-col--auto"><button class="fr-btn" onclick="App.newForm()">+ Nouveau formulaire</button></div>
+    </div>
+    ${S.forms.length
+      ? `<table class="fr-table"><thead><tr><th>Nom</th><th>Table cible</th><th>Version</th><th>Statut</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<p class="fr-text--sm">Aucun formulaire pour le moment${S.isDemo ? ' (mode démo)' : ''}.</p>`}
+  `;
+}
+
+function newForm() {
+  S.wizardOpen = true;
+  renderFormsList();
+}
+
+function cancelWizard() {
+  S.wizardOpen = false;
+  renderFormsList();
+}
+
+function startWizardCreate() {
+  S.wizardOpen = false;
+  S.currentRowId = null;
+  S.currentDef = newFormDef();
+  S.autoTable = true;
+  S.publishLog = [];
+  goStep('builder');
+}
+
+function startWizardBind() {
+  S.wizardOpen = false;
+  S.currentRowId = null;
+  S.currentDef = newFormDef();
+  S.currentDef.composeMode = 'bind';
+  S.currentDef.tableId = (S.tables[0] && S.tables[0].tableId) || '';
+  S.autoTable = false;
+  S.publishLog = [];
+  goStep('builder');
+}
+
+function applyTemplate(templateId) {
+  if (!window.FormUx) { toast('FormUx indisponible', 'error'); return; }
+  const tpl = FormUx.templates().find(t => t.id === templateId);
+  if (!tpl) { toast('Modèle introuvable', 'error'); return; }
+  const built = tpl.build();
+  const base = newFormDef();
+  Object.assign(base, built, {
+    id: base.id,
+    manifest_version: base.manifest_version,
+    classification: base.classification,
+    composeMode: 'ensureSchema',
+    tableId: FormUx.tableNameFromTitle(built.title || 'Questionnaire')
+  });
+  S.wizardOpen = false;
+  S.currentRowId = null;
+  S.currentDef = base;
+  S.autoTable = true;
+  S.publishLog = [];
+  goStep('builder');
+}
+
+function editForm(id) {
+  const row = S.forms.find(f => f.id === id);
+  if (!row) return;
+  let def;
+  try { def = JSON.parse(row.Def); } catch (e) { toast('Def JSON invalide pour ce formulaire', 'error'); return; }
+  S.currentDef = def;
+  ensureBranding(def);
+  ensureAudience(def);
+  S.currentRowId = id;
+  S.publishLog = [];
+  S.wizardOpen = false;
+  S.autoTable = def.composeMode === 'ensureSchema';
+  goStep('builder');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAPE 2 — Construction (sections / champs)
+// ═══════════════════════════════════════════════════════════
+function renderBuilder() {
+  const el = document.getElementById('builder');
+  const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  if (!S.currentDef) {
+    el.innerHTML = `<p class="fr-text--sm">Sélectionnez ou créez un formulaire depuis l'étape « Mes formulaires ».</p>`;
+    return;
+  }
+  const def = S.currentDef;
+  ensureBranding(def);
+  ensureAudience(def);
+  const brand = def.branding;
+  const aud = def.audience;
+  const isEnsure = def.composeMode === 'ensureSchema';
+  const tableOptions = S.tables.map(t =>
+    `<option value="${esc(t.tableId)}" ${t.tableId === def.tableId ? 'selected' : ''}>${esc(t.tableId)}</option>`
+  ).join('');
+  const cols = S.columnsByTable[def.tableId] || [];
+  const colsDatalist = `<datalist id="cols-datalist">${cols.map(c => `<option value="${esc(c.colId)}">`).join('')}</datalist>`;
+  const sectionsHtml = def.sections.map((section, si) => renderSectionEditor(def, section, si)).join('');
+
+  el.innerHTML = `
+    <h2 class="fr-h5">Questions</h2>
+
+    <div class="sections-stage">
+      <h3 class="fr-h6">Parcours</h3>
+
+      <div class="section-card section-card--intro">
+        <div class="section-card__head">
+          <span class="section-step">Accueil</span>
+          <input class="inline-form-title" value="${esc(def.title)}"
+            placeholder="Titre du questionnaire"
+            aria-label="Titre du questionnaire"
+            oninput="App.onDefInput('title', this.value)"
+            onblur="App.onTitleBlur()">
+        </div>
+        ${renderBrandSlot({
+          kind: 'logo',
+          urlKey: 'logoUrl',
+          altKey: 'logoAlt',
+          url: brand.logoUrl,
+          alt: brand.logoAlt
+        })}
+        <textarea class="inline-form-desc" rows="2"
+          placeholder="Description affichée en tête du formulaire…"
+          aria-label="Description"
+          oninput="App.onDefInput('description', this.value)">${esc(def.description)}</textarea>
+        ${renderAudienceBlock(aud)}
+      </div>
+
+      ${sectionsHtml}
+      <button type="button" class="fr-btn fr-btn--secondary add-section-btn" onclick="App.addSection()">+ Ajouter une section</button>
+
+      <div class="section-card section-card--outro">
+        <div class="section-card__head">
+          <span class="section-step">Fin</span>
+          <span class="inline-section-title section-card__static-label">Page de confirmation</span>
+        </div>
+        ${renderBrandSlot({
+          kind: 'success',
+          urlKey: 'successImageUrl',
+          altKey: 'successImageAlt',
+          url: brand.successImageUrl,
+          alt: brand.successImageAlt,
+          logoUrl: brand.logoUrl,
+          logoAlt: brand.logoAlt,
+          previewClass: 'brand-slot__preview--success'
+        })}
+        <textarea class="inline-success-msg" rows="2"
+          placeholder="Merci ! Votre réponse a bien été enregistrée."
+          aria-label="Message de succès"
+          oninput="App.onDefInput('successMessage', this.value)">${esc(def.successMessage)}</textarea>
+      </div>
+    </div>
+
+    <div class="form-meta-strip fr-mt-2w">
+      ${isEnsure ? `
+        <div class="fr-input-group fr-mb-0">
+          <label class="fr-label">Les réponses seront enregistrées dans la table :</label>
+          <input class="fr-input" list="tables-datalist" value="${esc(def.tableId)}"
+            placeholder="Reponses_…"
+            onchange="App.onTableChange(this.value)" oninput="App.onDefInput('tableId', this.value); App.onManualTableEdit()">
+          <datalist id="tables-datalist">${S.tables.map(t => `<option value="${esc(t.tableId)}">`).join('')}</datalist>
+        </div>
+        <p class="mode-hint">Mode : création automatique des colonnes
+          — <button type="button" onclick="App.onComposeModeChange('bind')">passer aux colonnes existantes</button></p>
+        <div class="fr-alert fr-alert--info fr-mt-1w"><p>À l’enregistrement, les colonnes manquantes seront créées automatiquement.</p></div>
+      ` : `
+        <div class="fr-select-group fr-mb-0">
+          <label class="fr-label">Table existante</label>
+          <select class="fr-select" onchange="App.onTableChange(this.value)">${tableOptions}</select>
+        </div>
+        <p class="mode-hint">Mode : colonnes existantes
+          — <button type="button" onclick="App.onComposeModeChange('ensureSchema')">passer à la création automatique</button></p>
+      `}
+    </div>
+    ${colsDatalist}
+
+    <details class="json-preview fr-mt-2w" ${S.showAdvanced ? 'open' : ''}>
+      <summary>Options avancées</summary>
+      <div class="fr-grid-row fr-grid-row--gutters fr-mt-1w">
+        <div class="fr-col-12 fr-col-md-6">
+          <div class="fr-input-group"><label class="fr-label">Identifiant du formulaire (FormId)</label>
+          <input class="fr-input" value="${esc(def.id)}" oninput="App.onDefInput('id', this.value)"></div>
+        </div>
+        <div class="fr-col-12 fr-col-md-6">
+          <div class="fr-input-group"><label class="fr-label">Classification</label>
+          <input class="fr-input" value="${esc(def.classification)}" oninput="App.onDefInput('classification', this.value)"></div>
+        </div>
+      </div>
+      <p class="fr-hint-text fr-mt-1w">Chemins d’étapes, conditions, cascade et filtres se règlent directement sur chaque étape / question.</p>
+    </details>
+
+    <div class="fr-mt-4w"><button class="fr-btn" onclick="App.saveForm()">Enregistrer</button></div>
+  `;
+  requestAnimationFrame(() => {
+    window.scrollTo(0, scrollY);
+  });
+}
+
+function renderFieldPreview(f, si, fi) {
+  const configuredPh = (f.options && f.options.placeholder) || '';
+  const isTextLike = f.type === 'Text' || f.type === 'Int' || f.type === 'Numeric';
+  if (isTextLike && (f.widget === 'text' || f.widget === 'textarea' || f.type === 'Int' || f.type === 'Numeric')) {
+    const onPh = `App.onFieldOption(${si}, ${fi}, 'placeholder', this.value)`;
+    const control = f.widget === 'textarea'
+      ? `<textarea class="fr-input" rows="2" placeholder="Saisir le placeholder…"
+          aria-label="Placeholder" oninput="${onPh}">${esc(configuredPh)}</textarea>`
+      : `<input class="fr-input" type="${f.type === 'Int' || f.type === 'Numeric' ? 'number' : 'text'}"
+          value="${esc(configuredPh)}" placeholder="Saisir le placeholder…"
+          aria-label="Placeholder" oninput="${onPh}">`;
+    return `<div class="field-preview is-editable">
+      ${control}
+    </div>`;
+  }
+  const ph = 'Aperçu du champ';
+  let inner = '';
+  if (f.type === 'Bool') {
+    inner = `<div class="fr-checkbox-group"><input type="checkbox" disabled><label class="fr-label">Oui / Non</label></div>`;
+  } else if (f.type === 'Choice') {
+    inner = `<select class="fr-select" disabled><option>${esc(ph)}</option></select>`;
+  } else if (f.type === 'ChoiceList') {
+    inner = `<div class="fr-checkbox-group"><input type="checkbox" disabled><label class="fr-label">Option…</label></div>`;
+  } else if (f.type === 'Attachments') {
+    inner = `<input class="fr-input" type="text" disabled value="Pièce jointe…">`;
+  } else if (f.type === 'Date') {
+    inner = `<input class="fr-input" type="date" disabled>`;
+  } else if (f.type === 'Ref' || f.type === 'RefList') {
+    inner = `<select class="fr-select" disabled><option>Liste liée…</option></select>`;
+  } else {
+    inner = `<input class="fr-input" type="text" disabled placeholder="${esc(ph)}">`;
+  }
+  return `<div class="field-preview is-static">${inner}</div>`;
+}
+
+function renderConditionValueInput(scope, si, fi, ruleIndex, sourceField, currentValue) {
+  const v = currentValue != null ? String(currentValue) : '';
+  const onChange = scope === 'section'
+    ? `App.onSectionRule(${si}, ${ruleIndex}, 'value', this.value)`
+    : `App.onFieldRule(${si}, ${fi}, ${ruleIndex}, 'value', this.value)`;
+  if (!sourceField) {
+    return `<input class="fr-input" value="${esc(v)}" oninput="${onChange}" placeholder="Valeur">`;
+  }
+  if (sourceField.type === 'Bool') {
+    return `<select class="fr-select" onchange="${onChange}">
+      <option value="true" ${v === 'true' || currentValue === true ? 'selected' : ''}>Oui</option>
+      <option value="false" ${v === 'false' || currentValue === false ? 'selected' : ''}>Non</option>
+    </select>`;
+  }
+  if (sourceField.type === 'Choice' && sourceField.choices && sourceField.choices.length) {
+    return `<select class="fr-select" onchange="${onChange}">
+      <option value="">—</option>
+      ${sourceField.choices.map(c => {
+        const val = typeof c === 'object' ? c.value : c;
+        const lab = typeof c === 'object' ? (c.label || c.value) : c;
+        return `<option value="${esc(val)}" ${String(val) === v ? 'selected' : ''}>${esc(lab)}</option>`;
+      }).join('')}
+    </select>`;
+  }
+  if (sourceField.type === 'Date') {
+    return `<input class="fr-input" type="date" value="${esc(v)}" onchange="${onChange}">`;
+  }
+  if (sourceField.type === 'Int' || sourceField.type === 'Numeric') {
+    return `<input class="fr-input" type="number" value="${esc(v)}" oninput="${onChange}">`;
+  }
+  return `<input class="fr-input" value="${esc(v)}" oninput="${onChange}" placeholder="Valeur">`;
+}
+
+function renderConditionEditor(scope, si, fi, condition, prior) {
+  const compound = FormUx.normalizeToCompound(condition);
+  const enabled = !!condition;
+  const toggleFn = scope === 'section'
+    ? `App.onSectionConditionToggle(${si}, this.checked)`
+    : `App.onFieldConditionToggle(${si}, ${fi}, this.checked)`;
+  const opFn = scope === 'section'
+    ? `App.onSectionConditionOp(${si}, this.value)`
+    : `App.onFieldConditionOp(${si}, ${fi}, this.value)`;
+  const addFn = scope === 'section'
+    ? `App.onSectionRuleAdd(${si})`
+    : `App.onFieldRuleAdd(${si}, ${fi})`;
+
+  if (!enabled) {
+    return `
+      <div class="behavior-panel">
+        <div class="fr-checkbox-group">
+          <input type="checkbox" id="cond-${scope}-${si}-${fi != null ? fi : 's'}" onchange="${toggleFn}">
+          <label class="fr-label field-hint" for="cond-${scope}-${si}-${fi != null ? fi : 's'}">
+            <span>${scope === 'section' ? 'Afficher cette étape seulement si…' : 'Afficher cette question seulement si…'}</span>
+            ${hintIcon(CONDITION_PANEL_TIP)}
+          </label>
+        </div>
+      </div>`;
+  }
+
+  const rulesHtml = compound.rules.map((rule, ri) => {
+    const selKey = ruleSelectKey(rule);
+    const isCtx = selKey.indexOf('context:') === 0;
+    const isAud = selKey.indexOf('audience:') === 0;
+    const src = (!isCtx && !isAud)
+      ? (findFieldMeta(S.currentDef, rule.field || rule.path) || prior.find(p => p.colId === (rule.field || rule.path)))
+      : (isCtx ? { type: 'Bool' } : { type: 'Text' });
+    const ops = isAud
+      ? [
+          { value: 'in', label: 'dans' },
+          { value: 'notIn', label: 'pas dans' },
+          { value: '==', label: 'égal à' },
+          { value: '!=', label: 'différent de' }
+        ]
+      : (isCtx && (rule.path === 'userEmail' || selKey === 'context:userEmail')
+        ? FormUx.operatorsForType('Text')
+        : (isCtx ? [{ value: '==', label: 'égal à' }, { value: '!=', label: 'différent de' }] : FormUx.operatorsForType(src && src.type)));
+    const opOpts = ops.map(o =>
+      `<option value="${esc(o.value)}" ${rule.operator === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+    ).join('');
+    const fieldSelect = scope === 'section'
+      ? `App.onSectionRule(${si}, ${ri}, 'field', this.value)`
+      : `App.onFieldRule(${si}, ${fi}, ${ri}, 'field', this.value)`;
+    const opSelect = scope === 'section'
+      ? `App.onSectionRule(${si}, ${ri}, 'operator', this.value)`
+      : `App.onFieldRule(${si}, ${fi}, ${ri}, 'operator', this.value)`;
+    const delFn = scope === 'section'
+      ? `App.onSectionRuleRemove(${si}, ${ri})`
+      : `App.onFieldRuleRemove(${si}, ${fi}, ${ri})`;
+    const valueHint = isAud
+      ? 'Emails ou groupes, séparés par des virgules'
+      : (isCtx && rule.path !== 'userEmail' ? 'Oui ou Non' : 'Valeur attendue');
+    const srcTip = ruleOptionTip(selKey);
+    const opTip = operatorTip(rule.operator, isAud, isCtx);
+    return `
+      <div class="rule-row">
+        <div class="fr-select-group">${hintLabel('Source', CONDITION_SOURCE_TIP)}
+          <select class="fr-select" onchange="${fieldSelect}">
+            <option value="">—</option>
+            <optgroup label="Contexte">${CONTEXT_RULE_OPTS.map(o =>
+              `<option value="${esc(o.key)}" ${selKey === o.key ? 'selected' : ''}>${esc(o.label)}</option>`
+            ).join('')}</optgroup>
+            <optgroup label="Audience">${AUDIENCE_RULE_OPTS.map(o =>
+              `<option value="${esc(o.key)}" ${selKey === o.key ? 'selected' : ''}>${esc(o.label)}</option>`
+            ).join('')}</optgroup>
+            ${prior.length ? `<optgroup label="Questions précédentes">${prior.map(p =>
+              `<option value="field:${esc(p.colId)}" ${selKey === 'field:' + p.colId ? 'selected' : ''}>${esc(p.label)}</option>`
+            ).join('')}</optgroup>` : ''}
+          </select>
+          <p class="fr-hint-text">${esc(srcTip)}</p>
+        </div>
+        <div class="fr-select-group">${hintLabel('Opérateur', opTip)}
+          <select class="fr-select" onchange="${opSelect}">${opOpts}</select>
+        </div>
+        <div class="fr-input-group">${hintLabel('Valeur', isAud ? valueHint : (isCtx && rule.path !== 'userEmail' ? 'Oui = critère vrai, Non = critère faux.' : CONDITION_VALUE_TIP))}
+          ${isCtx && rule.path !== 'userEmail'
+            ? `<select class="fr-select" onchange="${scope === 'section'
+                ? `App.onSectionRule(${si}, ${ri}, 'value', this.value === 'true')`
+                : `App.onFieldRule(${si}, ${fi}, ${ri}, 'value', this.value === 'true')`}">
+                <option value="true" ${rule.value === true || rule.value === 'true' ? 'selected' : ''}>Oui</option>
+                <option value="false" ${rule.value === false || rule.value === 'false' ? 'selected' : ''}>Non</option>
+              </select>`
+            : (isAud
+              ? `<input class="fr-input" value="${esc(Array.isArray(rule.value) ? rule.value.join(', ') : (rule.value != null ? rule.value : ''))}"
+                  placeholder="${esc(valueHint)}"
+                  oninput="${scope === 'section'
+                    ? `App.onSectionRule(${si}, ${ri}, 'value', this.value)`
+                    : `App.onFieldRule(${si}, ${fi}, ${ri}, 'value', this.value)`}">`
+              : renderConditionValueInput(scope, si, fi, ri, src, rule.value))}
+        </div>
+        <button type="button" class="fr-btn fr-btn--tertiary-no-outline" title="Supprimer la règle" onclick="${delFn}">✕</button>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="behavior-panel">
+      <div class="fr-checkbox-group">
+        <input type="checkbox" id="cond-${scope}-${si}-${fi != null ? fi : 's'}" checked onchange="${toggleFn}">
+        <label class="fr-label field-hint" for="cond-${scope}-${si}-${fi != null ? fi : 's'}">
+          <span>${scope === 'section' ? 'Afficher cette étape seulement si…' : 'Afficher cette question seulement si…'}</span>
+          ${hintIcon(CONDITION_PANEL_TIP)}
+        </label>
+      </div>
+      <div class="fr-select-group fr-mt-1w">
+        ${hintLabel('Combinaison des règles', CONDITION_COMBO_TIP)}
+        <select class="fr-select" onchange="${opFn}">
+          <option value="and" ${compound.op === 'and' ? 'selected' : ''}>Toutes (ET)</option>
+          <option value="or" ${compound.op === 'or' ? 'selected' : ''}>Au moins une (OU)</option>
+        </select>
+      </div>
+      ${rulesHtml}
+      <button type="button" class="fr-btn fr-btn--secondary fr-btn--sm" onclick="${addFn}">+ Ajouter une règle</button>
+    </div>`;
+}
+
+function renderSectionEditor(def, section, si) {
+  const fieldsHtml = section.fields.map((f, fi) => renderFieldEditor(def, si, f, fi)).join('');
+  const prior = priorFields(def, si, null);
+  const condSummary = FormUx.summarizeCondition(section.condition || (section.gate ? { field: section.gate, operator: '==', value: true } : null));
+  const pathBadge = (section.condition || section.gate)
+    ? `<span class="cfg-badge path">Chemin : ${esc(condSummary || section.gate)}</span>` : '';
+
+  // Migrate gate → condition display if only gate set
+  let sectionCond = section.condition;
+  if (!sectionCond && section.gate) {
+    sectionCond = { field: section.gate, operator: '==', value: true };
+  }
+
+  return `
+    <div class="section-card">
+      <div class="section-card__head">
+        <span class="section-step">Étape ${si + 1}</span>
+        <input class="inline-section-title" value="${esc(section.label)}"
+          placeholder="Titre de l’étape"
+          aria-label="Titre de l’étape ${si + 1}"
+          oninput="App.onSectionInput(${si}, 'label', this.value)">
+        <div class="section-card__actions">
+          <button type="button" class="fr-btn fr-btn--tertiary-no-outline" title="Supprimer l’étape" onclick="App.removeSection(${si})">🗑</button>
+        </div>
+      </div>
+      ${pathBadge ? `<div class="badge-row">${pathBadge}</div>` : ''}
+      ${si === 0 ? '' : renderConditionEditor('section', si, null, sectionCond, prior)}
+      ${fieldsHtml}
+      <button type="button" class="fr-btn fr-btn--secondary fr-btn--sm add-field-btn" onclick="App.addField(${si})">+ Ajouter une question</button>
+    </div>
+  `;
+}
+
+function renderFieldEditor(def, si, f, fi) {
+  const isBind = def.composeMode === 'bind';
+  const isChoiceLike = f.type === 'Choice' || f.type === 'ChoiceList';
+  const isRefLike = f.type === 'Ref' || f.type === 'RefList';
+  const choicesValue = (def.choices[f.colId] || []).join('\n');
+  const typeKey = (window.FormUx && FormUx.fieldTypeKey) ? FormUx.fieldTypeKey(f) : 'text';
+  const simpleOpts = ((window.FormUx && FormUx.SIMPLE_TYPES) || []).map(t =>
+    `<option value="${esc(t.key)}" ${typeKey === t.key ? 'selected' : ''}>${esc(t.label)}</option>`
+  ).join('');
+  const advancedOpts = ((window.FormUx && FormUx.ADVANCED_TYPES) || []).map(t =>
+    `<option value="${esc(t.key)}" ${typeKey === t.key ? 'selected' : ''}>${esc(t.label)}</option>`
+  ).join('');
+  const widgetChoices = WIDGETS_BY_TYPE[f.type] || ['text'];
+  const widgetOptions = widgetChoices.map(w => `<option value="${w}" ${f.widget === w ? 'selected' : ''}>${w}</option>`).join('');
+  const prior = priorFields(def, si, fi);
+  const refParents = prior.filter(p => p.type === 'Ref');
+  const dynParents = prior.filter(p => p.type === 'Ref' || p.type === 'Choice' || p.type === 'Text' || p.type === 'Bool');
+  const refTableOptions = S.tables.map(t =>
+    `<option value="${esc(t.tableId)}" ${resolveRefTableOfField(f) === t.tableId ? 'selected' : ''}>${esc(t.tableId)}</option>`
+  ).join('');
+  const childCols = resolveRefTableOfField(f) ? (S.columnsByTable[resolveRefTableOfField(f)] || []) : [];
+  const filterColOpts = childCols.map(c =>
+    `<option value="${esc(c.colId)}" ${f.dynamicFilter && f.dynamicFilter.filterColumn === c.colId ? 'selected' : ''}>${esc(c.label || c.colId)}</option>`
+  ).join('');
+  const visibleColOpts = childCols.map(c =>
+    `<option value="${esc(c.colId)}" ${(f.options && f.options.visibleCol) === c.colId ? 'selected' : ''}>${esc(c.label || c.colId)}</option>`
+  ).join('');
+
+  const badges = [];
+  if (f.condition) badges.push(`<span class="cfg-badge cond">${esc(FormUx.summarizeCondition(f.condition))}</span>`);
+  if (f.cascade && f.cascade.parentField) badges.push(`<span class="cfg-badge cascade">Cascade ← ${esc(f.cascade.parentField)}</span>`);
+  if (f.dynamicFilter && f.dynamicFilter.parentField) {
+    const dynLabel = f.dynamicFilter.parentResolve === 'refRow' && f.dynamicFilter.parentValueColumn
+      ? `${f.dynamicFilter.parentField}.${f.dynamicFilter.parentValueColumn}`
+      : f.dynamicFilter.parentField;
+    badges.push(`<span class="cfg-badge dynamic">Filtre ← ${esc(dynLabel)}</span>`);
+  }
+
+  return `
+    <div class="field-editor">
+      <div class="field-editor__head">
+        <input class="inline-label" value="${esc(f.label)}"
+          placeholder="Libellé de la question"
+          aria-label="Libellé de la question"
+          oninput="App.onFieldInput(${si}, ${fi}, 'label', this.value)"
+          onblur="App.onFieldLabelBlur(${si}, ${fi})">
+        <button type="button" class="fr-btn fr-btn--tertiary-no-outline" title="Supprimer" onclick="App.removeField(${si}, ${fi})">🗑</button>
+      </div>
+      ${renderFieldPreview(f, si, fi)}
+      <div class="field-props">
+        ${isBind ? `
+          <div class="fr-input-group"><label class="fr-label">Colonne</label>
+          <input class="fr-input" list="cols-datalist" value="${esc(f.colId)}" onchange="App.onFieldColIdChange(${si}, ${fi}, this.value)"></div>
+        ` : ''}
+        <div class="fr-select-group"><label class="fr-label">Type</label>
+        <select class="fr-select" onchange="App.onFieldTypeKeyChange(${si}, ${fi}, this.value)">
+          ${simpleOpts}
+          <optgroup label="Avancé">${advancedOpts}</optgroup>
+        </select></div>
+        <div class="fr-checkbox-group"><input type="checkbox" id="req-${si}-${fi}" ${f.required ? 'checked' : ''} onchange="App.onFieldInput(${si}, ${fi}, 'required', this.checked)">
+        <label class="fr-label" for="req-${si}-${fi}">Requis</label></div>
+      </div>
+      <div class="badge-row">${badges.join('')}</div>
+
+      ${isChoiceLike ? `
+        <div class="fr-input-group"><label class="fr-label">Options (une par ligne)</label>
+        <textarea class="fr-input" rows="3" oninput="App.onFieldChoices(${si}, ${fi}, this.value)">${esc(choicesValue)}</textarea></div>
+      ` : ''}
+
+      ${isRefLike ? `
+        <div class="fr-grid-row fr-grid-row--gutters fr-mt-1w">
+          <div class="fr-col-12 fr-col-md-6">
+            <div class="fr-select-group"><label class="fr-label">Table liée</label>
+            <select class="fr-select" onchange="App.onFieldRefTable(${si}, ${fi}, this.value)"><option value="">—</option>${refTableOptions}</select></div>
+          </div>
+          <div class="fr-col-12 fr-col-md-6">
+            <div class="fr-select-group"><label class="fr-label">Colonne affichée</label>
+            <select class="fr-select" onchange="App.onFieldVisibleCol(${si}, ${fi}, this.value)">
+              <option value="">Nom (défaut)</option>${visibleColOpts}
+            </select></div>
+          </div>
+        </div>
+        ${f.type === 'Ref' ? renderRefBehaviorPanels(def, si, fi, f, refParents, dynParents, filterColOpts, resolveRefTableOfField(f)) : ''}
+      ` : ''}
+
+      ${renderConditionEditor('field', si, fi, f.condition, prior)}
+
+      <details class="json-preview">
+        <summary>Technique</summary>
+        <div class="fr-grid-row fr-grid-row--gutters fr-mt-1w">
+          ${!isBind ? `
+            <div class="fr-col-12 fr-col-md-6">
+              <div class="fr-input-group"><label class="fr-label">colId</label>
+              <input class="fr-input" value="${esc(f.colId)}" onchange="App.onFieldColIdChange(${si}, ${fi}, this.value)"></div>
+            </div>
+          ` : ''}
+          <div class="fr-col-12 fr-col-md-6">
+            <div class="fr-select-group"><label class="fr-label">Widget</label>
+            <select class="fr-select" onchange="App.onFieldInput(${si}, ${fi}, 'widget', this.value)">${widgetOptions}</select></div>
+          </div>
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+// ── Handlers de mutation d'état (App.*) ──────────────────────────────────
+function onDefInput(prop, value) {
+  S.currentDef[prop] = value;
+  if (prop === 'title' && S.currentDef.composeMode === 'ensureSchema' && S.autoTable) {
+    S.currentDef.tableId = FormUx.tableNameFromTitle(value);
+  }
+}
+
+function onBrandingInput(key, value) {
+  const b = ensureBranding(S.currentDef);
+  b[key] = value == null ? '' : String(value);
+}
+
+function onBrandingFile(urlKey, inputEl) {
+  const file = inputEl && inputEl.files && inputEl.files[0];
+  if (!file) return;
+  if (!/^image\//i.test(file.type || '')) {
+    toast('Fichier image requis (PNG, JPG, SVG, WebP…)', 'error');
+    return;
+  }
+  if (file.size > 1.5 * 1024 * 1024) {
+    toast('Image trop lourde (max. 1,5 Mo). Préférez une URL.', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    onBrandingInput(urlKey, reader.result || '');
+    renderBuilder();
+  };
+  reader.onerror = () => toast('Impossible de lire le fichier', 'error');
+  reader.readAsDataURL(file);
+}
+
+function refreshBuilderBrand() {
+  renderBuilder();
+}
+
+function reuseIntroImage() {
+  const b = ensureBranding(S.currentDef);
+  if (!safeImageUrl(b.logoUrl)) return;
+  b.successImageUrl = b.logoUrl;
+  b.successImageAlt = b.logoAlt || b.successImageAlt || '';
+  renderBuilder();
+}
+
+function onTitleBlur() {
+  const def = S.currentDef;
+  if (!def) return;
+  if (def.composeMode === 'ensureSchema' && S.autoTable) {
+    def.tableId = FormUx.tableNameFromTitle(def.title);
+    renderBuilder();
+  }
+}
+
+function onManualTableEdit() {
+  S.autoTable = false;
+}
+
+function onTableChange(value) {
+  S.currentDef.tableId = value;
+  if (S.currentDef.composeMode === 'ensureSchema') S.autoTable = false;
+  renderBuilder();
+}
+
+function onComposeModeChange(value) {
+  S.currentDef.composeMode = value;
+  if (value === 'ensureSchema') {
+    S.autoTable = true;
+    if (!S.currentDef.tableId && S.currentDef.title) {
+      S.currentDef.tableId = FormUx.tableNameFromTitle(S.currentDef.title);
+    }
+  } else {
+    S.autoTable = false;
+    if (!S.currentDef.tableId && S.tables[0]) S.currentDef.tableId = S.tables[0].tableId;
+  }
+  renderBuilder();
+}
+
+function addSection() { S.currentDef.sections.push(newSection(S.currentDef.sections.length + 1)); renderBuilder(); }
+function removeSection(si) { S.currentDef.sections.splice(si, 1); renderBuilder(); }
+function addField(si) { S.currentDef.sections[si].fields.push(newField()); renderBuilder(); }
+function removeField(si, fi) {
+  const f = S.currentDef.sections[si].fields[fi];
+  if (f && f.colId && S.currentDef.choices[f.colId]) delete S.currentDef.choices[f.colId];
+  S.currentDef.sections[si].fields.splice(fi, 1);
+  renderBuilder();
+}
+
+function onSectionInput(si, prop, value) { S.currentDef.sections[si][prop] = value; }
+function onFieldInput(si, fi, prop, value) { S.currentDef.sections[si].fields[fi][prop] = value; }
+function onFieldOption(si, fi, key, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.options = f.options || {};
+  if (value === '' || value == null) delete f.options[key];
+  else f.options[key] = value;
+}
+
+function onFieldLabelBlur(si, fi) {
+  const def = S.currentDef;
+  const f = def.sections[si].fields[fi];
+  if (def.composeMode !== 'ensureSchema') return;
+  if (f._colIdLocked) return;
+  if (!f.label) return;
+  const oldColId = f.colId;
+  const next = FormUx.slugify(f.label);
+  if (!next || next === oldColId) return;
+  f.colId = next;
+  if (oldColId && oldColId !== next && def.choices[oldColId]) {
+    def.choices[next] = def.choices[oldColId];
+    delete def.choices[oldColId];
+  }
+  renderBuilder();
+}
+
+function onFieldColIdChange(si, fi, value) {
+  const def = S.currentDef;
+  const f = def.sections[si].fields[fi];
+  const oldColId = f.colId;
+  f.colId = value;
+  f._colIdLocked = true;
+  if (def.composeMode === 'bind') {
+    const col = (S.columnsByTable[def.tableId] || []).find(c => c.colId === value);
+    if (col) {
+      const rawType = col.type || 'Text';
+      f.type = FormTypes.normalizeGristType(rawType);
+      f.widget = FormTypes.defaultWidget(rawType);
+      if (!f.label) f.label = col.label || value;
+      f.options = f.options || {};
+      if (rawType.indexOf('Ref:') === 0) { f.refTable = rawType.slice(4); f.options.refTable = f.refTable; }
+      else if (rawType.indexOf('RefList:') === 0) { f.refTable = rawType.slice(8); f.options.refTable = f.refTable; }
+    }
+  }
+  if (oldColId && oldColId !== value && def.choices[oldColId]) {
+    def.choices[value] = def.choices[oldColId];
+    delete def.choices[oldColId];
+  }
+  renderBuilder();
+}
+
+function onFieldTypeChange(si, fi, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.type = value;
+  f.widget = FormTypes.defaultWidget(value);
+  renderBuilder();
+}
+
+function onFieldTypeKeyChange(si, fi, key) {
+  const f = S.currentDef.sections[si].fields[fi];
+  FormUx.applyTypeKey(f, key);
+  renderBuilder();
+}
+
+function onFieldChoices(si, fi, text) {
+  const f = S.currentDef.sections[si].fields[fi];
+  const list = text.split('\n').map(s => s.trim()).filter(Boolean);
+  if (f.colId) S.currentDef.choices[f.colId] = list;
+}
+
+function onFieldRefTable(si, fi, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.options = f.options || {};
+  if (value) { f.refTable = value; f.options.refTable = value; }
+  else { delete f.refTable; delete f.options.refTable; }
+  if (!f.options.visibleCol) f.options.visibleCol = 'Nom';
+  renderBuilder();
+  if (value && !S.isDemo && window.GristBridge) {
+    reloadColumnsForTable(value).then(function () { renderBuilder(); }).catch(function () { /* ignore */ });
+  }
+}
+
+function onFieldVisibleCol(si, fi, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.options = f.options || {};
+  if (value) f.options.visibleCol = value; else delete f.options.visibleCol;
+}
+
+function onFieldCascadeToggle(si, fi, checked) {
+  const f = S.currentDef.sections[si].fields[fi];
+  const refPrior = priorFields(S.currentDef, si, fi).filter(p => p.type === 'Ref');
+  if (checked && !refPrior.length) {
+    toast('Ajoutez d’abord une question Référence au-dessus de celle-ci.', 'error');
+    return;
+  }
+  f.cascade = checked ? { parentField: '', parentRefCol: '' } : null;
+  if (checked) f.dynamicFilter = null;
+  renderBuilder();
+}
+
+function onFieldCascadeParent(si, fi, parentColId) {
+  const def = S.currentDef;
+  const f = def.sections[si].fields[fi];
+  if (!f.cascade) f.cascade = { parentField: '', parentRefCol: '' };
+  f.cascade.parentField = parentColId || '';
+  f.cascade.parentRefCol = '';
+  const parent = findFieldMeta(def, parentColId);
+  const childTable = resolveRefTableOfField(f);
+  const parentTable = parent && parent.refTable;
+  if (childTable && parentTable) {
+    const cols = S.columnsByTable[childTable] || [];
+    f.cascade.parentRefCol = FormUx.detectRefColumn(cols, parentTable) || '';
+  }
+  renderBuilder();
+}
+
+function onFieldCascade(si, fi, prop, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  if (!f.cascade) f.cascade = { parentField: '', parentRefCol: '' };
+  f.cascade[prop] = value;
+}
+
+function onFieldDynamicToggle(si, fi, checked) {
+  const f = S.currentDef.sections[si].fields[fi];
+  const dynPrior = priorFields(S.currentDef, si, fi).filter(p =>
+    p.type === 'Ref' || p.type === 'Choice' || p.type === 'Text' || p.type === 'Bool');
+  if (checked && !dynPrior.length) {
+    toast('Ajoutez d’abord une question (Liste, Texte, Oui/Non ou Référence) au-dessus.', 'error');
+    return;
+  }
+  f.dynamicFilter = checked ? { parentField: '', filterColumn: '' } : null;
+  if (checked) f.cascade = null;
+  renderBuilder();
+}
+
+function onFieldDynamic(si, fi, prop, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  if (!f.dynamicFilter) f.dynamicFilter = { parentField: '', filterColumn: '' };
+  if (prop === 'parentField') {
+    f.dynamicFilter.parentField = value || '';
+    const parentMeta = value ? findFieldMeta(S.currentDef, value) : null;
+    if (parentMeta && parentMeta.type === 'Ref') {
+      f.dynamicFilter.parentResolve = 'refRow';
+      if (!f.dynamicFilter.parentValueColumn) {
+        const cols = parentMeta.refTable ? (S.columnsByTable[parentMeta.refTable] || []) : [];
+        const guess = cols.find(c => /groupe|group|type|categorie|catégorie|org/i.test(c.colId || c.label || ''));
+        f.dynamicFilter.parentValueColumn = guess ? guess.colId : '';
+        if (!f.dynamicFilter.filterColumn && f.dynamicFilter.parentValueColumn) {
+          f.dynamicFilter.filterColumn = f.dynamicFilter.parentValueColumn;
+        }
+      }
+    } else {
+      f.dynamicFilter.parentResolve = 'value';
+      delete f.dynamicFilter.parentValueColumn;
+    }
+  } else if (prop === 'parentValueColumn') {
+    f.dynamicFilter.parentValueColumn = value || '';
+    f.dynamicFilter.parentResolve = 'refRow';
+    if (value && !f.dynamicFilter.filterColumn) f.dynamicFilter.filterColumn = value;
+  } else {
+    f.dynamicFilter[prop] = value;
+  }
+  renderBuilder();
+}
+
+function setConditionOn(target, checked) {
+  if (!checked) {
+    target.condition = null;
+    if (target.gate !== undefined) target.gate = null;
+    return;
+  }
+  target.condition = FormUx.compactCondition(FormUx.normalizeToCompound(null)) ||
+    { field: '', operator: '==', value: '' };
+  // Ensure editable compound in memory via normalize on next render
+  const c = FormUx.normalizeToCompound(target.condition);
+  target.condition = FormUx.compactCondition(c) || { field: '', operator: '==', value: '' };
+}
+
+function mutateCompound(target, mutator) {
+  const compound = FormUx.normalizeToCompound(target.condition);
+  mutator(compound);
+  target.condition = FormUx.compactCondition(compound);
+  if (target.gate !== undefined) {
+    // Sync gate shortcut when single Bool == true
+    const c = target.condition;
+    if (c && !c.op && c.operator === '==' && (c.value === true || c.value === 'true')) {
+      const meta = findFieldMeta(S.currentDef, c.field);
+      target.gate = (meta && meta.type === 'Bool') ? c.field : null;
+    } else {
+      target.gate = null;
+    }
+  }
+}
+
+function onSectionConditionToggle(si, checked) {
+  const sec = S.currentDef.sections[si];
+  setConditionOn(sec, checked);
+  if (checked) {
+    mutateCompound(sec, function (c) {
+      c.op = 'and';
+      c.rules = [FormUx.emptyRule()];
+    });
+    // keep uncompacted for editing: store compound if empty field
+    sec.condition = { op: 'and', rules: [FormUx.emptyRule()] };
+  }
+  renderBuilder();
+}
+
+function onFieldConditionToggle(si, fi, checked) {
+  const f = S.currentDef.sections[si].fields[fi];
+  if (!checked) { f.condition = null; renderBuilder(); return; }
+  f.condition = { op: 'and', rules: [FormUx.emptyRule()] };
+  renderBuilder();
+}
+
+function onSectionConditionOp(si, value) {
+  mutateCompound(S.currentDef.sections[si], function (c) { c.op = value === 'or' ? 'or' : 'and'; });
+  // Keep compound form while editing
+  const sec = S.currentDef.sections[si];
+  sec.condition = FormUx.normalizeToCompound(sec.condition);
+  sec.condition.op = value === 'or' ? 'or' : 'and';
+  renderBuilder();
+}
+
+function onFieldConditionOp(si, fi, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.condition = FormUx.normalizeToCompound(f.condition);
+  f.condition.op = value === 'or' ? 'or' : 'and';
+  renderBuilder();
+}
+
+function onSectionRuleAdd(si) {
+  const sec = S.currentDef.sections[si];
+  sec.condition = FormUx.normalizeToCompound(sec.condition);
+  sec.condition.rules.push(FormUx.emptyRule());
+  renderBuilder();
+}
+
+function onFieldRuleAdd(si, fi) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.condition = FormUx.normalizeToCompound(f.condition);
+  f.condition.rules.push(FormUx.emptyRule());
+  renderBuilder();
+}
+
+function onSectionRuleRemove(si, ri) {
+  const sec = S.currentDef.sections[si];
+  sec.condition = FormUx.normalizeToCompound(sec.condition);
+  sec.condition.rules.splice(ri, 1);
+  if (!sec.condition.rules.length) sec.condition = null;
+  else sec.condition = FormUx.compactCondition(sec.condition) || sec.condition;
+  if (!sec.condition) sec.gate = null;
+  renderBuilder();
+}
+
+function onFieldRuleRemove(si, fi, ri) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.condition = FormUx.normalizeToCompound(f.condition);
+  f.condition.rules.splice(ri, 1);
+  if (!f.condition.rules.length) f.condition = null;
+  else f.condition = FormUx.compactCondition(f.condition) || f.condition;
+  renderBuilder();
+}
+
+function coerceRuleValue(raw, sourceType) {
+  if (sourceType === 'Bool') {
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+  }
+  if (sourceType === 'Int' || sourceType === 'Numeric' || sourceType === 'Ref') {
+    const n = Number(raw);
+    if (raw !== '' && Number.isFinite(n)) return n;
+  }
+  return raw;
+}
+
+function parseAudienceValue(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw == null || raw === '') return '';
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw);
+  if (s.indexOf(',') !== -1) {
+    return s.split(',').map(x => x.trim()).filter(Boolean);
+  }
+  return s;
+}
+
+function onSectionRule(si, ri, prop, value) {
+  const sec = S.currentDef.sections[si];
+  sec.condition = FormUx.normalizeToCompound(sec.condition);
+  const rule = sec.condition.rules[ri];
+  if (!rule) return;
+  if (prop === 'field') {
+    applyRuleSourceKey(rule, value);
+    if (rule.source === 'field') {
+      rule.value = '';
+      const meta = findFieldMeta(S.currentDef, rule.field);
+      const ops = FormUx.operatorsForType(meta && meta.type);
+      rule.operator = (ops[0] && ops[0].value) || '==';
+    }
+  } else if (prop === 'operator') {
+    rule.operator = value;
+  } else if (prop === 'value') {
+    rule.value = rule.source === 'audience' ? parseAudienceValue(value) : coerceRuleValue(value,
+      (findFieldMeta(S.currentDef, rule.field) || {}).type);
+    return;
+  }
+  if (sec.condition.rules.length === 1 && sec.condition.rules[0].field) {
+    const compact = FormUx.compactCondition(sec.condition);
+    sec.condition = compact;
+    const c = sec.condition;
+    if (c && !c.op && c.operator === '==' && (c.value === true || c.value === 'true')) {
+      const meta = findFieldMeta(S.currentDef, c.field);
+      sec.gate = (meta && meta.type === 'Bool') ? c.field : null;
+    } else sec.gate = null;
+  }
+  renderBuilder();
+}
+
+function onFieldRule(si, fi, ri, prop, value) {
+  const f = S.currentDef.sections[si].fields[fi];
+  f.condition = FormUx.normalizeToCompound(f.condition);
+  const rule = f.condition.rules[ri];
+  if (!rule) return;
+  if (prop === 'field') {
+    applyRuleSourceKey(rule, value);
+    if (rule.source === 'field') {
+      rule.value = '';
+      const meta = findFieldMeta(S.currentDef, rule.field);
+      const ops = FormUx.operatorsForType(meta && meta.type);
+      rule.operator = (ops[0] && ops[0].value) || '==';
+    }
+  } else if (prop === 'operator') {
+    rule.operator = value;
+  } else if (prop === 'value') {
+    rule.value = rule.source === 'audience' ? parseAudienceValue(value) : coerceRuleValue(value,
+      (findFieldMeta(S.currentDef, rule.field) || {}).type);
+    return;
+  }
+  if (f.condition.rules.length === 1 && f.condition.rules[0].field) {
+    f.condition = FormUx.compactCondition(f.condition);
+  }
+  renderBuilder();
+}
+
+// Legacy no-ops kept if referenced
+function onFieldCondition(si, fi, prop, value) {
+  onFieldRule(si, fi, 0, prop, value);
+}
+
+// ── Enregistrement (upsert Formulaires + ensureSchema si mode actif) ────
+async function saveForm() {
+  const def = S.currentDef;
+  if (!def.title) { toast('Le titre du formulaire est requis', 'error'); return; }
+  if (!def.tableId) { toast('Indiquez un nom pour la table des réponses', 'error'); return; }
+
+  try {
+    if (def.composeMode === 'ensureSchema') {
+      const tableExists = S.tables.some(t => t.tableId === def.tableId);
+      if (!tableExists) S.columnsByTable[def.tableId] = S.columnsByTable[def.tableId] || [];
+      const existingColumns = (S.columnsByTable[def.tableId] || []).map(c => ({ id: c.colId, type: c.type }));
+      const plan = EnsureSchema.planEnsureSchema(def, existingColumns, { tableExists: tableExists });
+      if (!plan.ok) {
+        const msgs = FormUx.humanizeBindingErrors(plan.errors);
+        toast(msgs.join(' ; '), 'error');
+        return;
+      }
+      if (plan.actions.length) {
+        const hasAddColumn = plan.actions.some(a => a[0] === 'AddColumn');
+        if (tableExists && hasAddColumn) {
+          if (!confirm('Cette table existe déjà. Ajouter les colonnes manquantes ?')) return;
+        }
+        if (S.isDemo) {
+          applyEnsureSchemaDemo(plan, def.tableId);
+        } else {
+          await GristBridge.applyUserActions(plan.actions);
+          await refreshTablesAfterSchemaChange();
+          if (S.tables.some(t => t.tableId === def.tableId)) {
+            await reloadColumnsForTable(def.tableId);
+          }
+          await applyVisibleColMeta(def);
+        }
+        const createdTable = plan.actions.some(a => a[0] === 'AddTable');
+        toast(
+          createdTable
+            ? 'Table « ' + def.tableId + ' » créée depuis le formulaire'
+            : plan.actions.length + ' colonne(s) créée(s) sur ' + def.tableId,
+          'success'
+        );
+      } else if (!S.isDemo) {
+        // Binding déjà aligné : tenter quand même visibleCol méta (Ref)
+        await applyVisibleColMeta(def);
+      }
+    }
+
+    const existingRow = S.currentRowId ? S.forms.find(r => r.id === S.currentRowId) : null;
+    const meta = {
+      version: existingRow ? existingRow.Version : 0,
+      statut: existingRow ? existingRow.Statut : 'brouillon',
+      publishedSectionRef: existingRow ? existingRow.PublishedSectionRef : undefined,
+      updatedAt: GristBridge.util.fromDate(new Date())
+    };
+    const fields = FormulairesTable.rowFromFormDef(def, meta);
+
+    if (S.isDemo) {
+      saveDemoFormulaireRow(fields);
+    } else if (S.currentRowId) {
+      await GristBridge.updateRow('Formulaires', S.currentRowId, fields);
+      await loadFormulaires();
+    } else {
+      await GristBridge.addRow('Formulaires', fields);
+      await loadFormulaires();
+      const found = S.forms.find(r => r.FormId === def.id);
+      if (found) S.currentRowId = found.id;
+    }
+
+    toast('Formulaire enregistré', 'success');
+    const row = S.currentRowId ? S.forms.find(r => r.id === S.currentRowId) : null;
+    if (row && row.Statut === 'publie') {
+      toast('Pensez à remettre en ligne le formulaire');
+    }
+  } catch (e) {
+    toast('Erreur à l\'enregistrement : ' + (e && e.message), 'error');
+    throw e;
+  }
+}
+
+function saveDemoFormulaireRow(fields) {
+  if (S.currentRowId) {
+    const row = S.forms.find(r => r.id === S.currentRowId);
+    Object.assign(row, fields);
+  } else {
+    const row = Object.assign({ id: demoNextId++ }, fields);
+    S.forms.push(row);
+    S.currentRowId = row.id;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAPE 3 — Aperçu (même moteur que le runtime publié)
+// ═══════════════════════════════════════════════════════════
+function renderPreviewStep() {
+  const el = document.getElementById('preview');
+  if (!S.currentDef) {
+    el.innerHTML = `<p class="fr-text--sm">Sélectionnez ou créez un formulaire pour voir l'aperçu.</p>`;
+    return;
+  }
+  const def = S.currentDef;
+  let smJson = '';
+  try { smJson = JSON.stringify(SurveyProject.formDefToSurveyManifest(def), null, 2); } catch (e) { smJson = 'Erreur de projection : ' + e.message; }
+
+  el.innerHTML = `
+    <div class="fr-grid-row fr-grid-row--gutters fr-grid-row--middle fr-mb-2w">
+      <div class="fr-col"><h2 class="fr-h5 fr-mb-0">Aperçu</h2></div>
+      <div class="fr-col fr-col--auto">
+        <button class="fr-btn fr-btn--secondary" onclick="App.refreshPreview()">Actualiser</button>
+      </div>
+    </div>
+    <div class="preview-frame" id="preview-mount"></div>
+    <details class="json-preview">
+      <summary>Technique</summary>
+      <div class="fr-mt-1w">
+        <button class="fr-btn fr-btn--secondary fr-btn--sm" onclick="App.downloadSurveyManifest()">Télécharger Survey Manifest (.json)</button>
+      </div>
+      <details class="json-preview"><summary>FormDef (JSON)</summary><pre>${esc(JSON.stringify(def, null, 2))}</pre></details>
+      <details class="json-preview"><summary>Projection Survey Manifest (JSON)</summary><pre>${esc(smJson)}</pre></details>
+    </details>
+  `;
+  mountPreview();
+}
+
+function downloadSurveyManifest() {
+  if (!S.currentDef) return;
+  try {
+    const sm = SurveyProject.formDefToSurveyManifest(S.currentDef);
+    const blob = new Blob([JSON.stringify(sm, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (S.currentDef.id || 'survey') + '-manifest.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    toast('Erreur export : ' + (e && e.message), 'error');
+  }
+}
+
+function mountPreview() {
+  const mountEl = document.getElementById('preview-mount');
+  if (!mountEl) return;
+  const previewBridge = {
+    submit(data) {
+      toast('Aperçu : soumission simulée (voir console)', 'success');
+      console.log('[builder preview] soumission simulée', data);
+      return Promise.resolve();
+    }
+  };
+  try {
+    FormEngine.mount(mountEl, S.currentDef, previewBridge);
+  } catch (e) {
+    mountEl.innerHTML = `<div class="fr-alert fr-alert--error"><p>Erreur de rendu : ${esc(e.message)}</p></div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAPE 4 — Publication (CreateViewSection + bundle figé)
+// ═══════════════════════════════════════════════════════════
+function renderPublishStep() {
+  const el = document.getElementById('publish-log');
+  if (!S.currentDef) {
+    el.innerHTML = `<p class="fr-text--sm">Sélectionnez ou créez un formulaire avant de publier.</p>`;
+    return;
+  }
+  const row = S.currentRowId ? S.forms.find(r => r.id === S.currentRowId) : null;
+  const alreadyPublished = row && row.Statut === 'publie';
+  const btnLabel = alreadyPublished ? 'Remettre en ligne' : 'Mettre en ligne';
+  el.innerHTML = `
+    <h2 class="fr-h5">Mettre en ligne</h2>
+    <p>Crée une page Grist dédiée pour remplir le formulaire (bundle figé : moteur, audience, styles).</p>
+    <p class="fr-text--sm">Version : <strong>${esc(row ? row.Version : 0)}</strong> — Statut : <strong>${esc(row ? row.Statut : 'brouillon (non enregistré)')}</strong></p>
+    ${alreadyPublished ? `<div class="fr-alert fr-alert--warning fr-mb-2w"><p>Une version est déjà en ligne. <strong>Remettre en ligne</strong> remplace le formulaire figé sur la page publiée (même URL).</p></div>` : ''}
+    ${S.isDemo ? `<div class="fr-alert fr-alert--info fr-mb-2w"><p>Mode démo : publication simulée, sans écriture Grist.</p></div>` : ''}
+    <button class="fr-btn" onclick="App.publishForm()">${btnLabel}</button>
+    <span class="publish-hint">Le bundle inclut session, audience et moteur de conditions. Les droits Grist restent la vraie barrière de sécurité.</span>
+    <details class="json-preview fr-mt-3w">
+      <summary>Journal technique</summary>
+      <div id="publish-log-entries" class="fr-mt-1w"></div>
+    </details>
+  `;
+  renderPublishLogEntries();
+}
+
+function renderPublishLogEntries() {
+  const box = document.getElementById('publish-log-entries');
+  if (!box) return;
+  box.innerHTML = S.publishLog.map(l => `<p class="fr-text--sm">${esc(l)}</p>`).join('');
+}
+
+function logPublish(msg) {
+  S.publishLog.push(new Date().toLocaleTimeString('fr-FR') + ' — ' + msg);
+  renderPublishLogEntries();
+}
+
+function fetchScriptSource(relPath) {
+  return fetch(relPath).then(r => {
+    if (!r.ok) throw new Error('Impossible de charger ' + relPath + ' (HTTP ' + r.status + ')');
+    return r.text();
+  });
+}
+
+function extractSectionRef(result) {
+  if (result == null) return null;
+
+  function fromVal(rv) {
+    if (rv == null) return null;
+    if (typeof rv === 'number' && !Number.isNaN(rv)) return rv;
+    if (typeof rv === 'string' && /^\d+$/.test(rv)) return Number(rv);
+    if (typeof rv === 'object') {
+      if (typeof rv.sectionRef === 'number') return rv.sectionRef;
+      if (typeof rv.viewSectionRef === 'number') return rv.viewSectionRef;
+      if (typeof rv.id === 'number') return rv.id;
+      if (Array.isArray(rv.viewSections) && rv.viewSections.length) {
+        const vs = rv.viewSections[0];
+        const nested = fromVal(vs);
+        if (nested != null) return nested;
+      }
+    }
+    return null;
+  }
+
+  let found = fromVal(result);
+  if (found != null) return found;
+
+  if (result.retValues != null) {
+    const list = Array.isArray(result.retValues) ? result.retValues : [result.retValues];
+    for (let i = 0; i < list.length; i++) {
+      found = fromVal(list[i]);
+      if (found != null) return found;
+      if (Array.isArray(list[i])) {
+        for (let j = 0; j < list[i].length; j++) {
+          found = fromVal(list[i][j]);
+          if (found != null) return found;
+        }
+      }
+    }
+  }
+
+  function deepFind(obj, depth) {
+    if (!obj || typeof obj !== 'object' || depth > 8) return null;
+    if (typeof obj.sectionRef === 'number') return obj.sectionRef;
+    if (typeof obj.viewSectionRef === 'number') return obj.viewSectionRef;
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i++) {
+        const n = deepFind(obj[i], depth + 1);
+        if (n != null) return n;
+      }
+      return null;
+    }
+    const keys = Object.keys(obj);
+    for (let k = 0; k < keys.length; k++) {
+      const key = keys[k];
+      const v = obj[key];
+      if (typeof v === 'number' && /sectionRef/i.test(key)) return v;
+      const nested = deepFind(v, depth + 1);
+      if (nested != null) return nested;
+    }
+    return null;
+  }
+
+  return deepFind(result, 0);
+}
+
+async function publishForm() {
+  const def = S.currentDef;
+  if (!def) return;
+  try {
+    logPublish('Enregistrement du formulaire avant publication…');
+    await saveForm();
+    renderPublishStep();
+
+    if (S.isDemo) {
+      logPublish('Mode démo : publication simulée (aucune écriture Grist).');
+      toast('Publication simulée (mode démo)', 'success');
+      return;
+    }
+
+    logPublish('Construction du bundle runtime (bridge + types + attachments + session-context + engine + CSS)…');
+    const [bridgeJs, typesJs, attachmentsJs, sessionContextJs, engineJs, cssText] = await Promise.all([
+      fetchScriptSource('shared/grist-bridge.js'),
+      fetchScriptSource('shared/types.js'),
+      fetchScriptSource('shared/attachments.js'),
+      fetchScriptSource('shared/session-context.js'),
+      fetchScriptSource('runtime/engine.js'),
+      fetch('shared/dsfr-like.css').then(function (r) {
+        if (!r.ok) throw new Error('Impossible de charger dsfr-like.css (' + r.status + ')');
+        return r.text();
+      })
+    ]);
+    const fullHtml = Publish.buildRuntimeDocument(def, { bridgeJs, typesJs, attachmentsJs, sessionContextJs, engineJs, cssText });
+    const { html, js } = Publish.splitHtmlJs(fullHtml);
+    const optionsStr = Publish.buildCustomViewOptions({ html, js });
+
+    const tableRow = S.tables.find(t => t.tableId === def.tableId);
+    if (!tableRow) throw new Error('Table cible introuvable : ' + def.tableId);
+
+    logPublish('Création de la page « ' + (def.title || def.id) + ' »…');
+    const createRes = await GristBridge.applyUserActions(Publish.planCreateCustomPage(tableRow.id, def.title || def.id));
+    const sectionRef = extractSectionRef(createRes);
+    if (!sectionRef) throw new Error('Impossible de déterminer la section créée (réponse CreateViewSection inattendue)');
+
+    logPublish('Application du snapshot figé (_html/_js) sur la section ' + sectionRef + '…');
+    await GristBridge.applyUserActions([
+      ['UpdateRecord', '_grist_Views_section', sectionRef, { options: optionsStr }]
+    ]);
+
+    const row = S.forms.find(r => r.id === S.currentRowId);
+    const nextVersion = (row ? row.Version : 0) + 1;
+    await GristBridge.updateRow('Formulaires', S.currentRowId, {
+      Version: nextVersion,
+      Statut: 'publie',
+      PublishedSectionRef: sectionRef,
+      UpdatedAt: GristBridge.util.fromDate(new Date())
+    });
+    await loadFormulaires();
+
+    logPublish('Publication terminée (version ' + nextVersion + ').');
+    toast('Formulaire publié', 'success');
+    renderPublishStep();
+  } catch (e) {
+    logPublish('Erreur : ' + (e && e.message));
+    toast('Échec de la publication : ' + (e && e.message), 'error');
+    renderPublishStep();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// API exposée aux attributs inline (onclick/oninput/onchange)
+// ═══════════════════════════════════════════════════════════
+window.App = {
+  goStep, newForm, editForm,
+  cancelWizard, startWizardCreate, startWizardBind, applyTemplate,
+  onDefInput, onBrandingInput, onBrandingFile, refreshBuilderBrand, reuseIntroImage, onAudienceInput, onTitleBlur, onManualTableEdit, onTableChange, onComposeModeChange,
+  addSection, removeSection, addField, removeField,
+  onSectionInput, onFieldInput, onFieldOption, onFieldLabelBlur, onFieldColIdChange,
+  onFieldTypeChange, onFieldTypeKeyChange, onFieldChoices,
+  onFieldRefTable, onFieldVisibleCol, onFieldCascadeToggle, onFieldCascade, onFieldCascadeParent,
+  onFieldDynamicToggle, onFieldDynamic,
+  onFieldConditionToggle, onFieldCondition,
+  onSectionConditionToggle, onSectionConditionOp, onSectionRuleAdd, onSectionRuleRemove, onSectionRule,
+  onFieldConditionOp, onFieldRuleAdd, onFieldRuleRemove, onFieldRule,
+  saveForm, refreshPreview: mountPreview, downloadSurveyManifest, publishForm
+};
+
+/** Hook E2E : ?e2e=1 ou widget connecté à Grist (postMessage parent). */
+(function installE2EHook() {
+  var e2eByUrl = false;
+  try { e2eByUrl = /([?&])e2e=1(?:&|$)/.test(location.search || ''); } catch (e) { /* ignore */ }
+
+  async function runE2ECreateGrist() {
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist' };
+      applyTemplate('satisfaction');
+      await saveForm();
+      const tableId = S.currentDef && S.currentDef.tableId;
+      const cols = (S.columnsByTable[tableId] || []).map(c => c.colId + ':' + c.type);
+      const formRow = S.forms.find(f => f.FormId === S.currentDef.id);
+      return {
+        ok: true,
+        tableId,
+        columns: cols,
+        formId: S.currentDef.id,
+        formRowId: formRow && formRow.id,
+        formsCount: S.forms.length,
+        statut: formRow && formRow.Statut
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err) };
+    }
+  }
+
+  /** Contact + champ Fichier(s) → ensureSchema Attachments. */
+  async function runE2ECreateWithFile() {
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist' };
+      applyTemplate('contact');
+      addField(0);
+      const fi = (S.currentDef.sections[0].fields || []).length - 1;
+      onFieldTypeKeyChange(0, fi, 'file');
+      onFieldInput(0, fi, 'label', 'Piece jointe');
+      onFieldLabelBlur(0, fi);
+      await saveForm();
+      const tableId = S.currentDef && S.currentDef.tableId;
+      const cols = (S.columnsByTable[tableId] || []).map(c => c.colId + ':' + c.type);
+      const sm = SurveyProject.formDefToSurveyManifest(S.currentDef);
+      const smTypes = ((sm.sections[0] || {}).questions || []).map(q => q.colId + ':' + q.type);
+      return {
+        ok: true,
+        tableId,
+        columns: cols,
+        smTypes: smTypes,
+        hasAttachmentsCol: cols.some(c => /Attachments/.test(c)),
+        formId: S.currentDef.id
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err) };
+    }
+  }
+
+  /** Parcours MANUAL_TEST §4–5 : audience + publish + republish + fill. */
+  async function runE2ELiveAudiencePublish() {
+    const report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report };
+
+      applyTemplate('satisfaction');
+      const def = S.currentDef;
+      def.title = 'Validation live audience ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      note('template', { title: def.title, tableId: def.tableId });
+
+      const aud = ensureAudience(def);
+      onAudienceInput('mode', 'bind');
+      onAudienceInput('tableId', 'Contacts');
+      applyAudienceColumnDefaults(aud, true);
+      aud.probe = true;
+      await applyProbeEmailSetup(aud);
+      const probeCol = (S.columnsByTable.Contacts || []).find(c => c.colId === aud.emailCol);
+      note('audience', {
+        audience: Object.assign({}, aud),
+        probeConfigured: !!(probeCol && AudienceSetup && AudienceSetup.isProbeTriggerConfigured(probeCol))
+      });
+
+      addField(0);
+      const fi = def.sections[0].fields.length - 1;
+      onFieldInput(0, fi, 'label', 'Bloc réservé Agents');
+      onFieldLabelBlur(0, fi);
+      onFieldConditionToggle(0, fi, true);
+      onFieldRule(0, fi, 0, 'field', 'audience:group');
+      onFieldRule(0, fi, 0, 'operator', 'in');
+      onFieldRule(0, fi, 0, 'value', 'Agents');
+      note('condition', { field: def.sections[0].fields[fi].colId, condition: def.sections[0].fields[fi].condition });
+
+      await saveForm();
+      const row = S.forms.find(f => f.FormId === def.id);
+      let parsed = null;
+      try { parsed = JSON.parse(row && row.Def); } catch (e) { /* ignore */ }
+      note('save', {
+        formRowId: row && row.id,
+        hasAudience: parsed && parsed.audience && parsed.audience.mode === 'bind',
+        hasAgentCondition: !!(parsed && parsed.sections && parsed.sections[0] && parsed.sections[0].fields &&
+          parsed.sections[0].fields.some(f => f.condition && (f.condition.source === 'audience' ||
+            String(f.condition.field || '').indexOf('audience.') === 0 ||
+            (f.condition.rules || []).some(r => r.source === 'audience'))))
+      });
+
+      S.publishLog = [];
+      await publishForm();
+      const row1 = S.forms.find(f => f.FormId === def.id);
+      note('publish1', {
+        version: row1 && row1.Version,
+        statut: row1 && row1.Statut,
+        sectionRef: row1 && row1.PublishedSectionRef,
+        log: S.publishLog.slice()
+      });
+
+      const titleV1 = def.title;
+      def.title = titleV1 + ' — republish';
+      await saveForm();
+      S.publishLog = [];
+      await publishForm();
+      const row2 = S.forms.find(f => f.FormId === def.id);
+      note('publish2', {
+        version: row2 && row2.Version,
+        title: def.title,
+        log: S.publishLog.slice()
+      });
+
+      const values = { Note: 'Satisfait', Commentaire: 'Test live validation', Recontact: false };
+      const data = FormEngine.collectSubmitData(def, values, SessionContext.emptyContext ? SessionContext.emptyContext() : {});
+      await GristBridge.addRow(def.tableId, data);
+      const rows = await GristBridge.loadTable(def.tableId);
+      const last = rows && rows.length ? rows[rows.length - 1] : null;
+      note('fill', { tableId: def.tableId, rowsCount: (rows || []).length, lastRow: last });
+
+      const bundleHasSession = (S.publishLog.join('\n') + ' ' + (row2 && row2.Def || '')).indexOf('session-context') !== -1 ||
+        document.documentElement.innerHTML.indexOf('SessionContext') !== -1;
+
+      return {
+        ok: true,
+        report,
+        formId: def.id,
+        tableId: def.tableId,
+        version: row2 && row2.Version,
+        publishedSectionRef: row2 && row2.PublishedSectionRef,
+        bundleHasSession: bundleHasSession
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: (err && err.message) || String(err),
+        report,
+        log: S.publishLog.slice()
+      };
+    }
+  }
+
+  function e2eRowsToColumnar(rows, cols) {
+    var columnar = { id: [] };
+    (cols || []).forEach(function (c) { columnar[c] = []; });
+    (rows || []).forEach(function (r) {
+      columnar.id.push(r.id);
+      (cols || []).forEach(function (c) { columnar[c].push(r[c]); });
+    });
+    return columnar;
+  }
+
+  function e2eGetSelectOptions(mountEl, fieldName) {
+    var sel = mountEl.querySelector('[name="' + fieldName + '"]');
+    if (!sel) return [];
+    return [...sel.querySelectorAll('option')].map(function (o) { return o.value; }).filter(Boolean);
+  }
+
+  async function e2eMountPreview(def, refRecords, interactions) {
+    goStep('preview');
+    await new Promise(function (r) { setTimeout(r, 400); });
+    var mountEl = document.getElementById('preview-mount');
+    if (!mountEl) throw new Error('preview-mount introuvable');
+    FormEngine.mount(mountEl, def, {
+      refRecords: refRecords,
+      submit: function () { return Promise.resolve(); },
+      skipProbe: true
+    });
+    await new Promise(function (r) { setTimeout(r, 200); });
+    var results = [];
+    for (var i = 0; i < (interactions || []).length; i++) {
+      var step = interactions[i];
+      Object.keys(step.set || {}).forEach(function (name) {
+        var sel = mountEl.querySelector('[name="' + name + '"]');
+        if (sel) {
+          sel.value = String(step.set[name]);
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      await new Promise(function (r) { setTimeout(r, 220); });
+      var got = e2eGetSelectOptions(mountEl, step.expectField).slice().sort();
+      var expected = (step.expectIds || []).map(String).sort();
+      var match = expected.join(',') === got.join(',');
+      results.push({
+        label: step.label || step.expectField,
+        expected: expected,
+        got: got,
+        match: match
+      });
+      if (!match) {
+        return { ok: false, error: 'Options « ' + step.expectField + ' » ≠ attendu (' + (step.label || '') + ')', results: results };
+      }
+    }
+    return { ok: true, results: results };
+  }
+
+  /** Tables Régions/Villes pour cascade cas B (créées une fois, données rechargées). */
+  async function ensureCascadeFixture(note) {
+    var regionsTable = 'E2E_Regions';
+    var villesTable = 'E2E_Villes';
+    await loadTablesAndColumns();
+    if (!S.tables.some(function (t) { return t.tableId === regionsTable; })) {
+      await GristBridge.applyUserActions([
+        ['AddTable', regionsTable, [{ id: 'Nom', type: 'Text', label: 'Nom' }]],
+        ['AddTable', villesTable, [
+          { id: 'Nom', type: 'Text', label: 'Nom' },
+          { id: 'Region', type: 'Ref:' + regionsTable, label: 'Région' }
+        ]]
+      ]);
+      await loadTablesAndColumns();
+      note('fixture_create', { regionsTable: regionsTable, villesTable: villesTable });
+    }
+    var regions = await GristBridge.loadTable(regionsTable);
+    var villes = await GristBridge.loadTable(villesTable);
+    if (!(regions || []).length) {
+      await GristBridge.addRow(regionsTable, { Nom: 'Bretagne' });
+      await GristBridge.addRow(regionsTable, { Nom: 'PACA' });
+      regions = await GristBridge.loadTable(regionsTable);
+    }
+    if ((villes || []).length < 3) {
+      var bre = regions.find(function (r) { return r.Nom === 'Bretagne'; }) || regions[0];
+      var paca = regions.find(function (r) { return r.Nom === 'PACA'; }) || regions[1];
+      if (bre) {
+        await GristBridge.addRow(villesTable, { Nom: 'Rennes', Region: bre.id });
+        await GristBridge.addRow(villesTable, { Nom: 'Paris', Region: bre.id });
+      }
+      if (paca) {
+        await GristBridge.addRow(villesTable, { Nom: 'Marseille', Region: paca.id });
+      }
+      villes = await GristBridge.loadTable(villesTable);
+    }
+    note('fixture_data', {
+      regions: (regions || []).map(function (r) { return { id: r.id, Nom: r.Nom }; }),
+      villes: (villes || []).map(function (v) { return { id: v.id, Nom: v.Nom, Region: v.Region }; })
+    });
+    return { regionsTable: regionsTable, villesTable: villesTable, regions: regions, villes: villes };
+  }
+
+  /** Filtre dynamique cas A : Choice Groupe → Ref Contacts sur colonne Groupe. */
+  async function runE2ELiveCaseA() {
+    var report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report: report };
+      await loadTablesAndColumns();
+      var contacts = await GristBridge.loadTable('Contacts');
+      note('contacts', { count: (contacts || []).length });
+      if (!(contacts || []).some(function (r) { return r.Groupe; })) {
+        return { ok: false, error: 'Contacts sans Groupe — voir MANUAL_TEST §3', report: report };
+      }
+
+      var groupes = ['Agents', 'Public', 'Internes'];
+      var def = newFormDef();
+      def.title = 'Validation filtre cas A ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      def.tableId = FormUx.tableNameFromTitle(def.title);
+      def.composeMode = 'ensureSchema';
+      def.choices = { Groupe: groupes };
+      def.sections = [{
+        id: 's1', label: 'Filtre Groupe', gate: null, condition: null,
+        fields: [
+          {
+            colId: 'Groupe', label: 'Groupe', type: 'Choice', widget: 'select', required: true,
+            options: { choices: groupes }, condition: null, cascade: null, dynamicFilter: null
+          },
+          {
+            colId: 'Contact', label: 'Contact', type: 'Ref', widget: 'select', required: true,
+            options: { refTable: 'Contacts', visibleCol: 'Nom' },
+            condition: null, cascade: null,
+            dynamicFilter: { parentField: 'Groupe', filterColumn: 'Groupe' }
+          }
+        ]
+      }];
+      S.currentDef = def;
+      S.currentRowId = null;
+      S.autoTable = true;
+      await saveForm();
+      note('save', { formId: def.id, tableId: def.tableId });
+
+      var columnar = e2eRowsToColumnar(contacts, ['Nom', 'Email', 'Groupe']);
+      var refRecords = { Contacts: columnar };
+      var agentsIds = (contacts || []).filter(function (r) { return String(r.Groupe) === 'Agents'; })
+        .map(function (r) { return r.id; });
+      var publicIds = (contacts || []).filter(function (r) { return String(r.Groupe) === 'Public'; })
+        .map(function (r) { return r.id; });
+      if (!agentsIds.length) {
+        return { ok: false, error: 'Aucun contact Groupe=Agents pour cas A', report: report };
+      }
+
+      var mount = await e2eMountPreview(def, refRecords, [
+        { label: 'sans parent', set: {}, expectField: 'Contact', expectIds: [] },
+        { label: 'Groupe Agents', set: { Groupe: 'Agents' }, expectField: 'Contact', expectIds: agentsIds }
+      ]);
+      note('mount', mount.results);
+      if (!mount.ok) return Object.assign({ report: report }, mount);
+
+      if (publicIds.length) {
+        var mount2 = await e2eMountPreview(def, refRecords, [
+          { label: 'Groupe Public', set: { Groupe: 'Public' }, expectField: 'Contact', expectIds: publicIds }
+        ]);
+        note('mount_public', mount2.results);
+        if (!mount2.ok) return Object.assign({ report: report, formId: def.id }, mount2);
+      }
+
+      return { ok: true, report: report, formId: def.id, tableId: def.tableId };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /** Cascade cas B : Ref Région → Ref Ville (parentRefCol Region). */
+  async function runE2ELiveCaseB() {
+    var report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report: report };
+      var fx = await ensureCascadeFixture(note);
+      var bre = fx.regions.find(function (r) { return r.Nom === 'Bretagne'; }) || fx.regions[0];
+      var paca = fx.regions.find(function (r) { return r.Nom === 'PACA'; }) || fx.regions[1];
+      var breVilles = fx.villes.filter(function (v) { return v.Region === bre.id; }).map(function (v) { return v.id; });
+      var pacaVilles = fx.villes.filter(function (v) { return v.Region === paca.id; }).map(function (v) { return v.id; });
+      if (!breVilles.length || !pacaVilles.length) {
+        return { ok: false, error: 'Données cascade incomplètes (Bretagne/PACA)', report: report };
+      }
+
+      var def = newFormDef();
+      def.title = 'Validation cascade cas B ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      def.tableId = FormUx.tableNameFromTitle(def.title);
+      def.composeMode = 'ensureSchema';
+      def.sections = [{
+        id: 's1', label: 'Lieu', gate: null, condition: null,
+        fields: [
+          {
+            colId: 'Region', label: 'Région', type: 'Ref', widget: 'select', required: true,
+            options: { refTable: fx.regionsTable, visibleCol: 'Nom' },
+            condition: null, cascade: null, dynamicFilter: null
+          },
+          {
+            colId: 'Ville', label: 'Ville', type: 'Ref', widget: 'select', required: true,
+            options: { refTable: fx.villesTable, visibleCol: 'Nom' },
+            condition: null,
+            cascade: { parentField: 'Region', parentRefCol: 'Region' },
+            dynamicFilter: null
+          }
+        ]
+      }];
+      S.currentDef = def;
+      S.currentRowId = null;
+      S.autoTable = true;
+      await saveForm();
+      note('save', { formId: def.id, tableId: def.tableId });
+
+      var refRecords = {};
+      refRecords[fx.regionsTable] = e2eRowsToColumnar(fx.regions, ['Nom']);
+      refRecords[fx.villesTable] = e2eRowsToColumnar(fx.villes, ['Nom', 'Region']);
+
+      var mount = await e2eMountPreview(def, refRecords, [
+        { label: 'sans région', set: {}, expectField: 'Ville', expectIds: [] },
+        { label: 'Bretagne', set: { Region: bre.id }, expectField: 'Ville', expectIds: breVilles },
+        { label: 'PACA', set: { Region: paca.id }, expectField: 'Ville', expectIds: pacaVilles }
+      ]);
+      note('mount', mount.results);
+      if (!mount.ok) return Object.assign({ report: report, formId: def.id }, mount);
+
+      return { ok: true, report: report, formId: def.id, tableId: def.tableId };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /** Filtre dynamique cas C : Ref Contacts → lit Groupe → filtre Contacts. */
+  async function runE2ELiveCaseC() {
+    const report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report };
+      if (typeof FormEngine.resolveParentFilterValue !== 'function') {
+        return { ok: false, error: 'resolveParentFilterValue absent — recharger le widget (cache)', report };
+      }
+
+      await loadTablesAndColumns();
+      let contacts = await GristBridge.loadTable('Contacts');
+      note('contacts', {
+        count: (contacts || []).length,
+        sample: (contacts || []).slice(0, 5).map(function (r) {
+          return { id: r.id, Nom: r.Nom, Groupe: r.Groupe, Email: r.Email };
+        }),
+        cols: ((S.columnsByTable && S.columnsByTable.Contacts) || []).map(function (c) {
+          return c.colId + ':' + c.type;
+        })
+      });
+
+      if (!(contacts || []).length) {
+        return { ok: false, error: 'Table Contacts vide — ajoutez Alice/Bob/Carol avec Groupe', report };
+      }
+      if (!(contacts || []).some(function (r) { return r.Groupe; })) {
+        return { ok: false, error: 'Colonne Groupe absente ou vide sur Contacts', report };
+      }
+
+      // Assurer ≥2 lignes même Groupe pour éprouver le filtre multi
+      var byGroupe = {};
+      (contacts || []).forEach(function (r) {
+        var g = String(r.Groupe || '');
+        if (!g) return;
+        byGroupe[g] = byGroupe[g] || [];
+        byGroupe[g].push(r);
+      });
+      var multiGroupe = Object.keys(byGroupe).find(function (g) { return byGroupe[g].length >= 2; });
+      if (!multiGroupe) {
+        var first = contacts[0];
+        var second = contacts[1];
+        if (first && second && first.Groupe) {
+          await GristBridge.applyUserActions([
+            ['UpdateRecord', 'Contacts', second.id, { Groupe: first.Groupe }]
+          ]);
+          contacts = await GristBridge.loadTable('Contacts');
+          note('contacts_align', {
+            updatedId: second.id,
+            groupe: first.Groupe,
+            sample: (contacts || []).map(function (r) {
+              return { id: r.id, Nom: r.Nom, Groupe: r.Groupe };
+            })
+          });
+        }
+      }
+
+      // FormDef minimal cas C
+      const def = newFormDef();
+      def.title = 'Validation filtre cas C ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      def.tableId = FormUx.tableNameFromTitle(def.title);
+      def.composeMode = 'ensureSchema';
+      def.sections = [{
+        id: 's1', label: 'Contacts liés', gate: null, condition: null,
+        fields: [
+          {
+            colId: 'Contact', label: 'Contact', type: 'Ref', widget: 'select', required: true,
+            options: { refTable: 'Contacts', visibleCol: 'Nom' },
+            condition: null, cascade: null, dynamicFilter: null
+          },
+          {
+            colId: 'Autre', label: 'Autre contact', type: 'Ref', widget: 'select', required: true,
+            options: { refTable: 'Contacts', visibleCol: 'Email' },
+            condition: null, cascade: null,
+            dynamicFilter: {
+              parentField: 'Contact',
+              filterColumn: 'Groupe',
+              parentResolve: 'refRow',
+              parentValueColumn: 'Groupe'
+            }
+          }
+        ]
+      }];
+      S.currentDef = def;
+      S.currentRowId = null;
+      S.autoTable = true;
+      await saveForm();
+      note('save', { formId: def.id, tableId: def.tableId, dynamicFilter: def.sections[0].fields[1].dynamicFilter });
+
+      // Unit resolve sur données live
+      const columnar = { id: [], Nom: [], Email: [], Groupe: [] };
+      (contacts || []).forEach(function (r) {
+        columnar.id.push(r.id);
+        columnar.Nom.push(r.Nom);
+        columnar.Email.push(r.Email);
+        columnar.Groupe.push(r.Groupe);
+      });
+      const refRecords = { Contacts: columnar };
+      const fieldAutre = def.sections[0].fields[1];
+      const alice = (contacts || []).find(function (r) {
+        return String(r.Groupe || '').toLowerCase() === 'agents';
+      }) || (contacts || []).find(function (r) {
+        return !!r.Groupe;
+      }) || contacts[0];
+      const resolved = FormEngine.resolveParentFilterValue(
+        fieldAutre, { Contact: alice.id }, def, refRecords
+      );
+      const filtered = FormEngine.filterDynamicOptions(
+        columnar.id.map(function (id, i) { return { value: id, label: columnar.Email[i] || columnar.Nom[i] }; }),
+        columnar,
+        'Groupe',
+        resolved
+      );
+      const sameGroupeCount = (contacts || []).filter(function (r) {
+        return String(r.Groupe) === String(resolved);
+      }).length;
+      note('resolve', {
+        aliceId: alice.id,
+        aliceNom: alice.Nom,
+        aliceGroupe: alice.Groupe,
+        resolved: resolved,
+        sameGroupeCount: sameGroupeCount,
+        filteredIds: filtered.map(function (o) { return o.value; }),
+        filteredLabels: filtered.map(function (o) { return o.label; })
+      });
+      if (sameGroupeCount < 2) {
+        return { ok: false, error: 'Attendu ≥2 contacts même Groupe après alignement', report };
+      }
+
+      // Mount preview réel
+      goStep('preview');
+      await new Promise(function (r) { setTimeout(r, 400); });
+      const mountEl = document.getElementById('preview-mount');
+      if (!mountEl) return { ok: false, error: 'preview-mount introuvable', report };
+
+      const bridge = {
+        refRecords: refRecords,
+        submit: function () { return Promise.resolve(); },
+        skipProbe: true
+      };
+      FormEngine.mount(mountEl, def, bridge);
+      await new Promise(function (r) { setTimeout(r, 200); });
+
+      const contactSel = mountEl.querySelector('[name="Contact"]');
+      const autreBefore = mountEl.querySelector('[name="Autre"]');
+      const optsBefore = autreBefore
+        ? [...autreBefore.querySelectorAll('option')].map(function (o) { return o.value; }).filter(Boolean)
+        : [];
+      note('preview_before', { optsBefore: optsBefore });
+
+      if (contactSel) {
+        contactSel.value = String(alice.id);
+        contactSel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(function (r) { setTimeout(r, 200); });
+      }
+      const autreAfter = mountEl.querySelector('[name="Autre"]');
+      const optsAfter = autreAfter
+        ? [...autreAfter.querySelectorAll('option')].map(function (o) { return o.value; }).filter(Boolean)
+        : [];
+      const expected = filtered.map(function (o) { return String(o.value); }).sort();
+      const got = optsAfter.slice().sort();
+      const match = expected.length > 0 && expected.join(',') === got.join(',');
+      note('preview_after', {
+        contactValue: contactSel && contactSel.value,
+        optsAfter: optsAfter,
+        expected: expected,
+        match: match
+      });
+
+      // Changement parent : Bob (autre Groupe) → options différentes
+      var bob = (contacts || []).find(function (r) {
+        return String(r.Groupe) !== String(alice.Groupe);
+      });
+      var parentSwitchOk = true;
+      if (bob) {
+        var contactSelBob = mountEl.querySelector('[name="Contact"]');
+        if (contactSelBob) {
+          contactSelBob.value = String(bob.id);
+          contactSelBob.dispatchEvent(new Event('change', { bubbles: true }));
+          await new Promise(function (r) { setTimeout(r, 220); });
+        }
+        var filteredBob = FormEngine.filterDynamicOptions(
+          columnar.id.map(function (id, i) { return { value: id, label: columnar.Email[i] || columnar.Nom[i] }; }),
+          columnar,
+          'Groupe',
+          FormEngine.resolveParentFilterValue(fieldAutre, { Contact: bob.id }, def, refRecords)
+        );
+        var optsBob = e2eGetSelectOptions(mountEl, 'Autre').slice().sort();
+        var expectedBob = filteredBob.map(function (o) { return String(o.value); }).sort();
+        parentSwitchOk = expectedBob.length > 0 && expectedBob.join(',') === optsBob.join(',')
+          && expectedBob.join(',') !== expected.join(',');
+        note('parent_switch', {
+          bobId: bob.id,
+          bobNom: bob.Nom,
+          bobGroupe: bob.Groupe,
+          optsBob: optsBob,
+          expectedBob: expectedBob,
+          differFromAlice: expectedBob.join(',') !== expected.join(','),
+          match: parentSwitchOk
+        });
+      } else {
+        note('parent_switch', { skipped: true, reason: 'Pas de contact autre Groupe' });
+      }
+
+      var allOk = match && parentSwitchOk;
+      return {
+        ok: allOk,
+        error: allOk ? null : (!match
+          ? 'Options Autre après sélection ≠ attendu (filtre Groupe)'
+          : 'Changement parent (Bob) ne met pas à jour les options'),
+        report: report,
+        formId: def.id,
+        tableId: def.tableId
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /** Helpers clics DOM (simule l’utilisateur dans le builder). */
+  function uiTick(ms) { return new Promise(function (r) { setTimeout(r, ms || 180); }); }
+  function uiChange(el, value) {
+    if (!el) throw new Error('élément UI absent');
+    if (value !== undefined && 'value' in el) el.value = value;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function uiBlur(el) {
+    if (!el) throw new Error('élément UI absent');
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  }
+  function uiFieldEditor(fi) {
+    var editors = document.querySelectorAll('.field-editor');
+    if (!editors[fi]) throw new Error('field-editor[' + fi + '] absent');
+    return editors[fi];
+  }
+  async function uiConfigureRefField(fi, label, refTable, visibleCol) {
+    var ed = uiFieldEditor(fi);
+    uiChange(ed.querySelector('.field-props select.fr-select'), 'ref');
+    await uiTick();
+    ed = uiFieldEditor(fi);
+    var refSelects = ed.querySelectorAll('.fr-grid-row select.fr-select');
+    if (refSelects.length < 2) throw new Error('selects Ref absents field ' + fi);
+    uiChange(refSelects[0], refTable);
+    await uiTick();
+    ed = uiFieldEditor(fi);
+    refSelects = ed.querySelectorAll('.fr-grid-row select.fr-select');
+    uiChange(refSelects[1], visibleCol);
+    var labelInput = ed.querySelector('.inline-label');
+    labelInput.value = label;
+    labelInput.dispatchEvent(new Event('input', { bubbles: true }));
+    uiBlur(labelInput);
+    await uiTick();
+  }
+
+  /** Config cas C entièrement via clics UI (checkbox + selects), puis publish + fill runtime. */
+  async function runE2ELiveUiCaseC() {
+    var report = { steps: [], uiClicks: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    function clickLog(desc) { report.uiClicks.push(desc); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report: report };
+      await loadTablesAndColumns();
+
+      startWizardCreate();
+      var title = 'UI clic cas C ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      onDefInput('title', title);
+      renderBuilder();
+      note('wizard', { title: title, step: S.step });
+
+      var addBtn = document.querySelector('.add-field-btn');
+      if (!addBtn) return { ok: false, error: 'Bouton « + Ajouter une question » introuvable', report: report };
+      addBtn.click();
+      clickLog('click add-field #1');
+      await uiTick();
+      addBtn.click();
+      clickLog('click add-field #2');
+      await uiTick();
+
+      await uiConfigureRefField(0, 'Contact', 'Contacts', 'Nom');
+      clickLog('field0: type Ref, table Contacts, visibleCol Nom, label Contact');
+      await uiConfigureRefField(1, 'Autre contact', 'Contacts', 'Email');
+      clickLog('field1: type Ref, table Contacts, visibleCol Email, label Autre contact');
+
+      var dynCheck = document.getElementById('dyn-0-1');
+      if (!dynCheck) return { ok: false, error: 'Checkbox filtre dynamique #dyn-0-1 absente', report: report };
+      dynCheck.checked = true;
+      dynCheck.dispatchEvent(new Event('change', { bubbles: true }));
+      clickLog('check dyn-0-1 filtre dynamique');
+      await uiTick();
+
+      var ed1 = uiFieldEditor(1);
+      var dynSelects = ed1.querySelectorAll('.behavior-panel.dynamic select.fr-select');
+      if (dynSelects.length < 2) {
+        return { ok: false, error: 'Selects filtre dynamique absents (' + dynSelects.length + ')', report: report };
+      }
+      var contactColId = S.currentDef.sections[0].fields[0].colId;
+      uiChange(dynSelects[0], contactColId);
+      clickLog('select parentField=' + contactColId);
+      await uiTick();
+
+      ed1 = uiFieldEditor(1);
+      dynSelects = ed1.querySelectorAll('.behavior-panel.dynamic select.fr-select');
+      if (dynSelects.length < 3) {
+        return { ok: false, error: 'Select parentValueColumn absent (parent Ref ?)', report: report };
+      }
+      uiChange(dynSelects[1], 'Groupe');
+      clickLog('select parentValueColumn=Groupe');
+      await uiTick();
+      uiChange(dynSelects[2], 'Groupe');
+      clickLog('select filterColumn=Groupe');
+
+      var badge = ed1.querySelector('.cfg-badge.dynamic');
+      var df = S.currentDef.sections[0].fields[1].dynamicFilter;
+      note('ui_config', {
+        badgeText: badge ? badge.textContent.trim() : null,
+        dynamicFilter: df,
+        contactColId: contactColId
+      });
+      var okConfig = df && df.parentField === contactColId && df.parentResolve === 'refRow' &&
+        df.parentValueColumn === 'Groupe' && df.filterColumn === 'Groupe';
+      if (!okConfig) return { ok: false, error: 'Config UI cas C incorrecte après clics', report: report };
+
+      goStep('publish');
+      await uiTick(300);
+      var pubBtn = Array.prototype.find.call(
+        document.querySelectorAll('#publish-log button.fr-btn, .builder-step button.fr-btn'),
+        function (b) { return /Mettre en ligne|Remettre en ligne/.test(b.textContent || ''); }
+      );
+      if (!pubBtn) return { ok: false, error: 'Bouton Mettre en ligne introuvable', report: report };
+      note('publish_btn', { label: pubBtn.textContent.trim(), visible: !pubBtn.hidden });
+      clickLog('visible publish button: ' + pubBtn.textContent.trim());
+
+      S.publishLog = [];
+      await publishForm();
+      var row = S.forms.find(function (f) { return f.FormId === S.currentDef.id; });
+      note('publish', {
+        version: row && row.Version,
+        statut: row && row.Statut,
+        sectionRef: row && row.PublishedSectionRef,
+        log: S.publishLog.slice()
+      });
+      if (!row || row.Statut !== 'publie') {
+        return { ok: false, error: 'Publication échouée', report: report, log: S.publishLog.slice() };
+      }
+
+      var contacts = await GristBridge.loadTable('Contacts');
+      var columnar = e2eRowsToColumnar(contacts, ['Nom', 'Email', 'Groupe']);
+      var fillRoot = document.createElement('div');
+      fillRoot.id = 'e2e-fill-mount';
+      fillRoot.style.cssText = 'position:absolute;left:-9999px;';
+      document.body.appendChild(fillRoot);
+      FormEngine.mount(fillRoot, S.currentDef, {
+        refRecords: { Contacts: columnar },
+        addRow: function (table, data) { return GristBridge.addRow(table, data); }
+      });
+      await uiTick(300);
+      var contactSel = fillRoot.querySelector('[name="' + contactColId + '"]');
+      var autreColId = S.currentDef.sections[0].fields[1].colId;
+      var autreSel = fillRoot.querySelector('[name="' + autreColId + '"]');
+      var alice = (contacts || []).find(function (r) { return String(r.Groupe) === 'Agents'; }) || contacts[0];
+      if (contactSel) {
+        contactSel.value = String(alice.id);
+        contactSel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      await uiTick(300);
+      autreSel = fillRoot.querySelector('[name="' + autreColId + '"]');
+      var opts = e2eGetSelectOptions(fillRoot, autreColId);
+      var agentsIds = (contacts || []).filter(function (r) { return String(r.Groupe) === String(alice.Groupe); })
+        .map(function (r) { return String(r.id); }).sort();
+      var optsSorted = opts.slice().sort();
+      var filterOk = agentsIds.join(',') === optsSorted.join(',');
+      note('fill_preview', { aliceId: alice.id, opts: optsSorted, expected: agentsIds, filterOk: filterOk });
+
+      if (autreSel && opts.length) autreSel.value = opts[0];
+      var submitBtn = fillRoot.querySelector('[data-action="submit"]');
+      if (submitBtn) submitBtn.click();
+      await uiTick(500);
+      var rows = await GristBridge.loadTable(S.currentDef.tableId);
+      var written = (rows || []).slice(-1)[0];
+      note('fill_submit', { tableId: S.currentDef.tableId, rowsCount: (rows || []).length, lastRow: written });
+      fillRoot.remove();
+
+      var submitOk = written && String(written[contactColId]) === String(alice.id);
+      var allOk = okConfig && filterOk && submitOk && row.Statut === 'publie';
+      return {
+        ok: allOk,
+        error: allOk ? null : (!filterOk ? 'Fill: filtre incorrect' : (!submitOk ? 'Fill: ligne non écrite' : 'Échec')),
+        report: report,
+        title: title,
+        formId: S.currentDef.id,
+        tableId: S.currentDef.tableId,
+        sectionRef: row.PublishedSectionRef,
+        pageName: title
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /** Config cas A via clics UI : Choice Groupe → Ref Contact filtré. */
+  async function runE2ELiveUiCaseA() {
+    var report = { steps: [], uiClicks: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    function clickLog(desc) { report.uiClicks.push(desc); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report: report };
+      await loadTablesAndColumns();
+      startWizardCreate();
+      var title = 'UI clic cas A ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+      onDefInput('title', title);
+      S.currentDef.choices = { Groupe: ['Agents', 'Public', 'Internes'] };
+      renderBuilder();
+
+      var addBtn = document.querySelector('.add-field-btn');
+      addBtn.click(); await uiTick();
+      addBtn.click(); await uiTick();
+
+      var ed0 = uiFieldEditor(0);
+      uiChange(ed0.querySelector('.field-props select.fr-select'), 'choice');
+      await uiTick();
+      ed0 = uiFieldEditor(0);
+      var label0 = ed0.querySelector('.inline-label');
+      label0.value = 'Groupe';
+      label0.dispatchEvent(new Event('input', { bubbles: true }));
+      uiBlur(label0);
+      var ta = ed0.querySelector('textarea.fr-input');
+      ta.value = 'Agents\nPublic\nInternes';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      clickLog('field0 Choice Groupe');
+      await uiTick();
+
+      await uiConfigureRefField(1, 'Contact', 'Contacts', 'Nom');
+      clickLog('field1 Ref Contacts');
+
+      var dynCheck = document.getElementById('dyn-0-1');
+      dynCheck.checked = true;
+      dynCheck.dispatchEvent(new Event('change', { bubbles: true }));
+      await uiTick();
+      var ed1 = uiFieldEditor(1);
+      var dynSelects = ed1.querySelectorAll('.behavior-panel.dynamic select.fr-select');
+      var groupeColId = S.currentDef.sections[0].fields[0].colId;
+      uiChange(dynSelects[0], groupeColId);
+      await uiTick();
+      ed1 = uiFieldEditor(1);
+      dynSelects = ed1.querySelectorAll('.behavior-panel.dynamic select.fr-select');
+      uiChange(dynSelects[1], 'Groupe');
+      clickLog('filtre parent Groupe → colonne Groupe');
+
+      var df = S.currentDef.sections[0].fields[1].dynamicFilter;
+      note('ui_config', { dynamicFilter: df, groupeColId: groupeColId });
+      if (!df || df.parentField !== groupeColId || df.filterColumn !== 'Groupe') {
+        return { ok: false, error: 'Config UI cas A incorrecte', report: report };
+      }
+
+      await saveForm();
+      goStep('publish');
+      await uiTick(300);
+      S.publishLog = [];
+      await publishForm();
+      var row = S.forms.find(function (f) { return f.FormId === S.currentDef.id; });
+      note('publish', { statut: row && row.Statut, version: row && row.Version });
+
+      return {
+        ok: row && row.Statut === 'publie',
+        error: row && row.Statut === 'publie' ? null : 'Publish cas A échoué',
+        report: report,
+        title: title,
+        pageName: title
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /** Suite complète : cas A, B, C (+ audience/publish optionnel). */
+  async function runE2ELiveAll() {
+    var report = { cases: {}, startedAt: new Date().toISOString() };
+    var caseA = await runE2ELiveCaseA();
+    report.cases.A = caseA;
+    var caseB = await runE2ELiveCaseB();
+    report.cases.B = caseB;
+    var caseC = await runE2ELiveCaseC();
+    report.cases.C = caseC;
+    report.finishedAt = new Date().toISOString();
+    var ok = caseA.ok && caseB.ok && caseC.ok;
+    var errors = [];
+    if (!caseA.ok) errors.push('A: ' + (caseA.error || 'échec'));
+    if (!caseB.ok) errors.push('B: ' + (caseB.error || 'échec'));
+    if (!caseC.ok) errors.push('C: ' + (caseC.error || 'échec'));
+    return { ok: ok, error: ok ? null : errors.join(' ; '), report: report };
+  }
+
+  /** Publie la vue fill (CreateViewSection + bundle). */
+  async function runE2EPublish() {
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist' };
+      if (!S.currentDef) return { ok: false, error: 'Aucun FormDef courant' };
+      S.publishLog = [];
+      await publishForm();
+      const row = S.forms.find(f => f.FormId === S.currentDef.id);
+      return {
+        ok: true,
+        formId: S.currentDef.id,
+        tableId: S.currentDef.tableId,
+        title: S.currentDef.title,
+        statut: row && row.Statut,
+        version: row && row.Version,
+        sectionRef: row && row.PublishedSectionRef,
+        log: S.publishLog.slice()
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), log: S.publishLog.slice() };
+    }
+  }
+
+  /** Setup + publish formulaire contact+fichier pour test upload vue publiée. */
+  async function runE2ELiveUploadPublished() {
+    var report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo', report: report };
+      await runE2ECreateWithFile();
+      note('create', { formId: S.currentDef && S.currentDef.id, tableId: S.currentDef && S.currentDef.tableId });
+      var pub = await runE2EPublish();
+      note('publish', pub);
+      if (!pub.ok) return { ok: false, error: pub.error || 'Publish échoué', report: report, publish: pub };
+      var secRows = await GristBridge.loadTable('_grist_Views_section');
+      var sec = (secRows || []).find(function (r) { return r.id === pub.sectionRef; });
+      var bundleInfo = { sectionRef: pub.sectionRef, found: !!sec };
+      if (sec && sec.options) {
+        try {
+          var outer = JSON.parse(sec.options);
+          var inner = JSON.parse(outer.customView || '{}');
+          var js = (inner.widgetOptions && inner.widgetOptions._js) || '';
+          bundleInfo.hasRuntimeE2E = js.indexOf('grist-forms-runtime-e2e') >= 0;
+          bundleInfo.widgetUrl = inner.widgetDef && inner.widgetDef.url;
+          bundleInfo.jsLen = js.length;
+        } catch (eParse) {
+          bundleInfo.parseError = eParse.message;
+        }
+      }
+      note('bundle', bundleInfo);
+      return {
+        ok: true,
+        publish: pub,
+        bundleInfo: bundleInfo,
+        hint: 'Sur la page publiée : postMessage iframe {type:"grist-forms-runtime-e2e", action:"upload-file"}',
+        report: report
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /**
+   * Test option H : POST /attachments sans X-Requested-With vs baseline (avec header).
+   * Crée un formulaire contact+fichier si besoin.
+   */
+  async function runE2ELiveUploadH() {
+    var report = { steps: [] };
+    function note(name, data) { report.steps.push(Object.assign({ name: name }, data || {})); }
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist', report: report };
+
+      if (!S.currentDef || !(S.currentDef.sections || []).some(function (s) {
+        return (s.fields || []).some(function (f) { return f.type === 'Attachments' || f.widget === 'file'; });
+      })) {
+        await runE2ECreateWithFile();
+        note('setup', { formId: S.currentDef && S.currentDef.id, tableId: S.currentDef && S.currentDef.tableId });
+      }
+
+      var tok = await grist.docApi.getAccessToken({ readOnly: false });
+      note('token', {
+        ok: !!(tok && tok.token && tok.baseUrl),
+        baseUrl: tok && tok.baseUrl,
+        widgetOrigin: location.origin
+      });
+      if (!tok || !tok.token) return { ok: false, error: 'Token indisponible', report: report };
+
+      var file = new File(
+        ['test option H ' + new Date().toISOString()],
+        'test-option-h.txt',
+        { type: 'text/plain' }
+      );
+      var getToken = function () { return Promise.resolve(tok); };
+
+      async function tryMode(label, simpleUpload) {
+        var deps = {
+          getAccessToken: getToken,
+          simpleUpload: simpleUpload
+        };
+        var t0 = Date.now();
+        try {
+          var ids = await FormAttachments.uploadFiles([file], deps);
+          return {
+            label: label,
+            ok: true,
+            ids: ids,
+            simpleUpload: simpleUpload,
+            ms: Date.now() - t0,
+            usedXRequestedWith: simpleUpload === false
+          };
+        } catch (e) {
+          return {
+            label: label,
+            ok: false,
+            error: (e && e.message) || String(e),
+            simpleUpload: simpleUpload,
+            ms: Date.now() - t0,
+            usedXRequestedWith: simpleUpload === false
+          };
+        }
+      }
+
+      var baseline = await tryMode('baseline (X-Requested-With)', false);
+      note('baseline', baseline);
+      var optionH = await tryMode('option H (sans X-Requested-With)', true);
+      note('optionH', optionH);
+
+      var hWins = optionH.ok && !baseline.ok;
+      var bothOk = optionH.ok && baseline.ok;
+      var hOnly = optionH.ok;
+      return {
+        ok: hOnly,
+        hWins: hWins,
+        bothOk: bothOk,
+        conclusion: hWins
+          ? 'Option H débloque CORS (baseline KO, H OK)'
+          : (bothOk
+            ? 'Les deux modes fonctionnent — preflight non bloquant ici'
+            : (optionH.ok ? 'H OK' : 'Option H ne contourne pas CORS : ' + (optionH.error || 'échec'))),
+        baseline: baseline,
+        optionH: optionH,
+        report: report
+      };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err), report: report };
+    }
+  }
+
+  /**
+   * Upload réel + AddRecord (même chemin que le runtime publié).
+   * Prérequis : FormDef courant avec champ Attachments (ex. create-with-file).
+   */
+  async function runE2EUploadFile() {
+    try {
+      if (S.isDemo) return { ok: false, error: 'Mode démo — pas de Grist' };
+      if (!S.currentDef || !S.currentDef.tableId) {
+        return { ok: false, error: 'Aucun FormDef / tableId — lancez create-with-file d’abord' };
+      }
+      const attField = (S.currentDef.sections || []).flatMap(s => s.fields || [])
+        .find(f => f.type === 'Attachments' || f.widget === 'file');
+      if (!attField) return { ok: false, error: 'Pas de champ Attachments sur le FormDef courant' };
+
+      const file = new File(
+        ['preuve upload chrome ' + new Date().toISOString()],
+        'preuve-chrome.txt',
+        { type: 'text/plain' }
+      );
+      const values = {
+        Nom: 'E2E Upload Chrome',
+        Email: 'e2e-upload@test.local',
+        Message: 'Validation upload PJ live',
+        Piece_jointe: [file]
+      };
+      // Aligner colId du champ fichier
+      values[attField.colId] = [file];
+
+      await FormAttachments.resolveAttachmentFields(S.currentDef, values, {
+        getAccessToken: function (opts) { return grist.docApi.getAccessToken(opts); }
+      });
+      const data = FormEngine.collectSubmitData(S.currentDef, values);
+      await GristBridge.addRow(S.currentDef.tableId, data);
+
+      const rows = await GristBridge.loadTable(S.currentDef.tableId);
+      const last = (rows || []).slice().reverse().find(r => r.Nom === 'E2E Upload Chrome') ||
+        (rows && rows[rows.length - 1]);
+      const cell = last && last[attField.colId];
+      return {
+        ok: true,
+        tableId: S.currentDef.tableId,
+        written: data,
+        attachmentCell: cell,
+        rowId: last && last.id,
+        rowsCount: (rows || []).length
+      };
+    } catch (err) {
+      var diag = { message: (err && err.message) || String(err) };
+      try {
+        const tok = await grist.docApi.getAccessToken({ readOnly: false });
+        diag.tokenOk = !!(tok && tok.token && tok.baseUrl);
+        diag.baseUrl = tok && tok.baseUrl;
+      } catch (e2) {
+        diag.tokenError = (e2 && e2.message) || String(e2);
+      }
+      return { ok: false, error: diag.message, diag: diag };
+    }
+  }
+
+  window.App.runE2ECreateGrist = runE2ECreateGrist;
+  window.App.runE2ECreateWithFile = runE2ECreateWithFile;
+  window.App.runE2EPublish = runE2EPublish;
+  window.App.runE2ELiveUploadPublished = runE2ELiveUploadPublished;
+  window.App.runE2ELiveUploadH = runE2ELiveUploadH;
+  window.App.runE2EUploadFile = runE2EUploadFile;
+  window.App.runE2ELiveAudiencePublish = runE2ELiveAudiencePublish;
+  window.App.runE2ELiveCaseA = runE2ELiveCaseA;
+  window.App.runE2ELiveCaseB = runE2ELiveCaseB;
+  window.App.runE2ELiveCaseC = runE2ELiveCaseC;
+  window.App.runE2ELiveUiCaseA = runE2ELiveUiCaseA;
+  window.App.runE2ELiveUiCaseC = runE2ELiveUiCaseC;
+  window.App.runE2ELiveAll = runE2ELiveAll;
+  window.addEventListener('message', function (ev) {
+    const data = ev && ev.data;
+    if (!data || data.type !== 'grist-forms-e2e') return;
+    var runner = null;
+    if (data.action === 'create') runner = runE2ECreateGrist;
+    if (data.action === 'create-with-file') runner = runE2ECreateWithFile;
+    if (data.action === 'publish') runner = runE2EPublish;
+    if (data.action === 'upload-file') runner = runE2EUploadFile;
+    if (data.action === 'live-upload-published') runner = runE2ELiveUploadPublished;
+    if (data.action === 'live-upload-h') runner = runE2ELiveUploadH;
+    if (data.action === 'live-audience') runner = runE2ELiveAudiencePublish;
+    if (data.action === 'live-case-a') runner = runE2ELiveCaseA;
+    if (data.action === 'live-case-b') runner = runE2ELiveCaseB;
+    if (data.action === 'live-case-c') runner = runE2ELiveCaseC;
+    if (data.action === 'live-ui-case-a') runner = runE2ELiveUiCaseA;
+    if (data.action === 'live-ui-case-c') runner = runE2ELiveUiCaseC;
+    if (data.action === 'live-all') runner = runE2ELiveAll;
+    if (!runner) return;
+    if (!e2eByUrl && S.isDemo) return;
+    Promise.resolve(runner()).then(function (result) {
+      try { ev.source && ev.source.postMessage({ type: 'grist-forms-e2e-result', result: result }, '*'); } catch (e2) { /* ignore */ }
+      console.log('[e2e]', result);
+    });
+  });
+})();
+
+// Démarrage
+init();
+</script>
+</body>
+</html>

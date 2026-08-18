@@ -1,0 +1,34 @@
+{
+  "manifest_version": "1.0.0",
+  "id": "demo-contact",
+  "title": "Contact",
+  "description": "",
+  "classification": "cerema_internal",
+  "successMessage": "Merci !",
+  "tableId": "Contacts",
+  "composeMode": "bind",
+  "sections": [
+    {
+      "id": "s1",
+      "label": "Identité",
+      "gate": null,
+      "fields": [
+        {
+          "colId": "Nom",
+          "label": "Nom",
+          "type": "Text",
+          "widget": "text",
+          "required": true,
+          "options": {},
+          "condition": null,
+          "cascade": null,
+          "dynamicFilter": null,
+          "profile": null,
+          "theme": null,
+          "polarity": ""
+        }
+      ]
+    }
+  ],
+  "choices": {}
+}
