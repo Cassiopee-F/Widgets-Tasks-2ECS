@@ -4219,6 +4219,16 @@ function wireMobileNav() {
             } else if (tab === 'couches') {
                 if (CONFIG.viewMode) return;
                 openModule('couches');
+            } else if (tab === 'controles') {
+                // Filtrer sur le terrain est l'usage premier : c'est ce qui
+                // permet de ne garder a l'ecran que les objets qu'on va voir.
+                // En lecture, les controles exposes vivent dans le dock ; le
+                // module d'auteur, lui, reste ferme.
+                if (CONFIG.viewMode) {
+                    showToast('Utilisez les pastilles de la carte pour filtrer', 'info');
+                    return;
+                }
+                openModule('controles');
             } else if (tab === 'recit') {
                 if (CONFIG.viewMode && !(STATE.story?.length)) {
                     showToast('Aucun récit publié', 'info');

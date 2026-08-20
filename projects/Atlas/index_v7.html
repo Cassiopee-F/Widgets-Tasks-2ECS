@@ -875,6 +875,19 @@
             body.mobile-layout .rail { display: none; }
             body.mobile-layout #mobile-nav { display: flex; }
             body.mobile-layout .app-header .cmdk { display: none; }
+            /* Sur 390 px, « Exporter » poussait l'avatar hors de l'ecran : le
+               bouton garde son icone, perd son libelle. Les deux actions de
+               projet passent dans le panneau Couches, ou elles sont a leur
+               place — on ne charge pas la barre d'un telephone. */
+            body.mobile-layout .header-actions #btn-export > span { display: none; }
+            body.mobile-layout .header-actions #btn-export { padding: 6px 10px; }
+            body.mobile-layout .header-actions #btn-load,
+            body.mobile-layout .header-actions #btn-save { display: none; }
+            body.mobile-layout .brand-project { max-width: 8rem; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+            /* L'attribution de gauche passait SOUS la legende : chacune son etage. */
+            body.mobile-layout .maplibregl-ctrl-bottom-left {
+                bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
             /* Lecture mobile : loupe seule (ouvre la palette) */
             body.view-mode.mobile-layout .app-header .cmdk {
                 display: inline-flex; align-items: center; justify-content: center;
@@ -1097,6 +1110,10 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             Couches
         </button>
+        <button type="button" data-mobile-tab="controles" aria-label="Contrôles">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+            Filtres
+        </button>
         <button type="button" data-mobile-tab="recit" aria-label="Récit">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/></svg>
             Récit
@@ -1119,6 +1136,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260820b"></script>
+    <script type="module" src="./app_v7.js?v=20260820c"></script>
 </body>
 </html>
