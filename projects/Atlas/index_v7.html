@@ -735,9 +735,19 @@
             margin-left: 8px;
         }
         .view-mode-badge[hidden] { display: none !important; }
+        /* Une virgule de trop apres #btn-export agregeait ces trois boutons a la
+           regle de l'avatar : ils heritaient d'un fond gris au lieu d'etre
+           masques, et « Charger », « Enregistrer » et « Exporter » restaient
+           donc offerts en lecture. */
         body.view-mode .header-actions #btn-load,
         body.view-mode .header-actions #btn-save,
-        body.view-mode .header-actions #btn-export,
+        body.view-mode .header-actions #btn-export { display: none; }
+
+        /* Lecture : le recit prend la place laissee par les boutons d'edition.
+           Sans point d'entree visible, un recit publie restait inatteignable. */
+        #btn-story { display: none; }
+        body.view-mode .header-actions #btn-story.has-story { display: inline-flex; }
+
         /* Le badge dit les droits réels : il reste visible en lecture. */
         .avatar.ro { background: var(--surface-muted); color: var(--ink); }
 
@@ -948,6 +958,10 @@
                 <button class="btn-ghost" id="btn-save" title="Enregistrer le projet">
                     <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"/></svg>
                 </button>
+                <button class="btn-export" id="btn-story" title="Lire le récit">
+                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"/></svg>
+                    <span>Récit</span>
+                </button>
                 <button class="btn-export" id="btn-export">
                     <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 8l5-5 5 5M5 21h14"/></svg>
                     <span>Exporter</span>
@@ -1105,6 +1119,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260818h"></script>
+    <script type="module" src="./app_v7.js?v=20260818j"></script>
 </body>
 </html>
