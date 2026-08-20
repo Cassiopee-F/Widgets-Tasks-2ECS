@@ -897,6 +897,21 @@
             body.mobile-layout .rail { display: none; }
             body.mobile-layout #mobile-nav { display: flex; }
             body.mobile-layout .app-header .cmdk { display: none; }
+            /* La barre de selection debordait de l'ecran : « 0 objet
+               selectionne », la navigation, « Tout », « Deselectionner » et la
+               croix ne tiennent pas dans 390 px — la croix, qui ferme le mode,
+               sortait du cadre. Elle se compacte : le libelle passe sur deux
+               lignes courtes, « Deselectionner » cede la place a la croix, seule
+               sortie indispensable. */
+            body.mobile-layout .selection-bar {
+                left: 8px; right: 8px; transform: none;
+                max-width: none; padding: 6px 6px 6px 12px; gap: 6px;
+                font-size: 12px; justify-content: space-between;
+            }
+            body.mobile-layout .selection-bar #sel-label { white-space: normal; line-height: 1.15; }
+            body.mobile-layout .selection-bar .vsep { display: none; }
+            body.mobile-layout .selection-bar #sel-clear { display: none; }
+            body.mobile-layout .selection-bar .sel-btn { padding: 6px 9px; }
             /* Sur 390 px, « Exporter » poussait l'avatar hors de l'ecran : le
                bouton garde son icone, perd son libelle. Les deux actions de
                projet passent dans le panneau Couches, ou elles sont a leur
@@ -1176,6 +1191,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260820d"></script>
+    <script type="module" src="./app_v7.js?v=20260820e"></script>
 </body>
 </html>
