@@ -90,24 +90,34 @@ export async function ensureStoryTable(docApi, opts = {}) {
 
 export async function saveStoryToGrist(docApi, story, opts = {}) {
   if (!docApi || opts.viewMode) return;
-  _storySaveChain = _storySaveChain.then(async () => {
+  const travail = _storySaveChain.then(async () => {
     await ensureStoryTable(docApi, opts);
     const rec = await docApi.fetchTable(ATLAS_STORY_TABLE);
     const ids = rec.id || [];
-    if (ids.length) {
-      await docApi.applyUserActions([['BulkRemoveRecord', ATLAS_STORY_TABLE, ids]]);
+
+    // Effacement et reecriture dans UN SEUL `applyUserActions` : Grist applique
+    // la liste comme un tout. En deux appels, le premier etait deja commis
+    // quand le second echouait — un refus d'ACL ou une coupure reseau au
+    // mauvais moment effacait le recit au lieu de le mettre a jour.
+    const actions = [];
+    if (ids.length) actions.push(['BulkRemoveRecord', ATLAS_STORY_TABLE, ids]);
+    if (story?.length) {
+      actions.push(['BulkAddRecord', ATLAS_STORY_TABLE, story.map(() => null), {
+        Step: story.map((_, i) => i + 1),
+        Title: story.map((s) => s.title || ''),
+        Description: story.map((s) => s.text || ''),
+        StateJSON: story.map((s) => JSON.stringify(s.state || {})),
+      }]);
     }
-    if (!story?.length) return;
-    await docApi.applyUserActions([['BulkAddRecord', ATLAS_STORY_TABLE, story.map(() => null), {
-      Step: story.map((_, i) => i + 1),
-      Title: story.map((s) => s.title || ''),
-      Description: story.map((s) => s.text || ''),
-      StateJSON: story.map((s) => JSON.stringify(s.state || {})),
-    }]]);
-  }).catch((e) => {
-    console.warn('[Atlas story] save', e.message);
+    if (actions.length) await docApi.applyUserActions(actions);
   });
-  return _storySaveChain;
+
+  // La chaine ne doit jamais rester en echec, sinon plus aucune sauvegarde
+  // ulterieure ne partirait. L'erreur, elle, remonte a l'appelant : il la
+  // signale et bascule en lecture si les droits manquent. L'avaler ici laissait
+  // croire a un enregistrement qui n'avait pas eu lieu.
+  _storySaveChain = travail.catch(() => {});
+  return travail;
 }
 
 /** Déduplique par numéro d'étape (garde la ligne la plus récente). */

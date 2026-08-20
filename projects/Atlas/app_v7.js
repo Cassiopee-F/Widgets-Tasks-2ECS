@@ -73,7 +73,7 @@ import {
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=20260729m';
+} from './lib/story.js?v=20260818a';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
@@ -155,7 +155,7 @@ const CONFIG = {
 
 const STATE = {
     projectName: '',
-    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437, radius: 500 },
+    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437 },
     layers: [],
     story: [],
     viewerControls: createDefaultViewerControls(),
@@ -2028,6 +2028,10 @@ async function persistStory(immediate = false) {
         } catch (e) {
             console.warn('[Atlas story] save', e.message);
             enterViewModeOnWriteFail(e);
+            // « Etape capturee » s'affiche des le clic, avant meme que
+            // l'enregistrement ne parte. Sans ce signal, un echec restait
+            // invisible et l'utilisateur croyait son recit conserve.
+            showToast('Récit non enregistré — ' + e.message, 'error');
         }
     };
     if (immediate) return save();
@@ -2261,12 +2265,6 @@ function renderLieu() {
                 <div><label class="input-label">Longitude</label><input class="input" id="loc-lng" type="number" step="0.0001" value="${(L.lng ?? '').toString()}"></div>
             </div>
             <button class="btn btn-soft btn-full" style="margin-top:10px" onclick="A.applyManualCoords()">Aller</button>
-        </div>
-        <div class="section">
-            <div class="section-title">Zone de travail</div>
-            <div class="option-cards">
-                ${[200, 500, 1000, 2000].map((r) => `<div class="option-card ${L.radius === r ? 'active' : ''}" onclick="A.setRadius(${r})"><div class="oc-label">${r < 1000 ? r + 'm' : r / 1000 + 'km'}</div></div>`).join('')}
-            </div>
         </div>
         <div class="section">
             <div class="section-title">Nom du projet</div>
@@ -4124,8 +4122,22 @@ function setUserIdentity(u) {
     updateUserBadge();
 }
 
+/**
+ * Point d'entree du recit en lecture.
+ *
+ * Les modules d'auteur etant retires, un recit publie n'avait plus aucun moyen
+ * d'etre lance : le rail disparait et la barre du haut n'offrait que des
+ * actions d'edition. Le bouton prend leur place, et seulement s'il y a
+ * quelque chose a lire.
+ */
+function refreshStoryButton() {
+    const b = $('btn-story');
+    if (b) b.classList.toggle('has-story', !!(STATE.story?.length));
+}
+
 function applyViewModeChrome() {
     document.body.classList.toggle('view-mode', !!CONFIG.viewMode);
+    refreshStoryButton();
     const badge = $('view-mode-badge');
     if (badge) badge.hidden = !CONFIG.viewMode;
     updateUserBadge();
@@ -4141,6 +4153,7 @@ function applyViewModeChrome() {
 
 /** Récit en lecture : FAB seulement (pas de rail / panneau latéral). */
 function refreshStoryNavChrome() {
+    refreshStoryButton();
     const hasStory = (STATE.story?.length || 0) > 0;
     document.body.classList.toggle('view-has-story', !!(CONFIG.viewMode && hasStory));
     const railRecit = document.querySelector('.rail-item[data-module="recit"]');
@@ -4681,7 +4694,6 @@ const A = {
         STATE.location = { ...STATE.location, lat, lng, name: `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E` };
         map.flyTo({ center: [lng, lat], zoom: 16, duration: 1000 }); renderLieu();
     },
-    setRadius(r) { STATE.location.radius = r; renderLieu(); },
     setProjectName(v) { STATE.projectName = v; $('project-name').textContent = v || 'Nouveau projet'; markDirty(); },
 
     // Couches
@@ -5552,6 +5564,7 @@ function wireEvents() {
     $('btn-save').addEventListener('click', saveProject);
     $('btn-load').addEventListener('click', loadProject);
     $('btn-export').addEventListener('click', exportProject);
+    $('btn-story').addEventListener('click', () => A.storyPlay(0));
     $('cmdk-trigger').addEventListener('click', openCmd);
     $('compass').addEventListener('click', () => map.easeTo({ bearing: 0, duration: 600 }));
 
