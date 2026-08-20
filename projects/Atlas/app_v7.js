@@ -716,6 +716,7 @@ const Models3D = {
     sunDir: new THREE.Vector3(0.4, 0.7, 0.4).normalize(),
     dirLight: null, ambLight: null, hemiLight: null, groundShadow: null, _shadowFeasible: false,
     _buildTimer: null, _cullTimer: null, _driftTimer: null, _lastOriginElev: undefined,
+    _wCanvas: 0, _hCanvas: 0,   // derniere taille de canvas appliquee au renderer
     _m4Origin: new THREE.Matrix4(), _m4VP: new THREE.Matrix4(),
     _mRotX: new THREE.Matrix4().makeRotationX(Math.PI / 2),
     _vScale: new THREE.Vector3(), _obj: new THREE.Object3D(), _m4: new THREE.Matrix4(),
@@ -798,6 +799,19 @@ const Models3D = {
                 self._m4VP.fromArray(arr).multiply(self._m4Origin);
                 self.camera.projectionMatrix.copy(self._m4VP);
                 self.renderer.resetState();
+                // three.js releve la taille du canvas A SA CREATION et ne la
+                // revoit jamais : le canvas etant celui de MapLibre, toute
+                // largeur qui change ensuite — l'ouverture d'un panneau, la
+                // fermeture de l'inspecteur — laisse le renderer sur son
+                // ancien viewport. Les objets sont alors dessines a la mauvaise
+                // echelle ET decales, ce qui se lit comme un glissement pendant
+                // la navigation. D'ou le symptome : les modeles ne bougent que
+                // lorsqu'un des panneaux est ouvert.
+                const cv = map.getCanvas();
+                if (self._wCanvas !== cv.width || self._hCanvas !== cv.height) {
+                    self.renderer.setViewport(0, 0, cv.width, cv.height);
+                    self._wCanvas = cv.width; self._hCanvas = cv.height;
+                }
                 self.renderer.render(self.scene, self.camera);
             },
             onRemove() { self.disposeInstances(); self.renderer?.dispose?.(); self.renderer = null; self.scene = null; },
