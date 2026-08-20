@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atlas — installation</title>
+<style>
+  :root {
+    --fond: #F4EFE3;
+    --surface: #FFFFFF;
+    --encre: #1F1B14;
+    --gris: #7A6F5E;
+    --trait: #E3DACA;
+    --accent: #C44536;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fond); color: var(--encre);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 27rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  .marque { display: flex; align-items: center; gap: .5rem; margin-bottom: 2rem; }
+  .marque span { font: 500 1.15rem/1 Georgia, "Times New Roman", serif; }
+  h1 { font: 500 1.75rem/1.25 Georgia, "Times New Roman", serif; margin: 0 0 .5rem; }
+  p { color: var(--gris); margin: 0 0 1rem; }
+  .btn {
+    display: block; text-align: center; text-decoration: none;
+    padding: 1rem; margin: 1.75rem 0 .75rem;
+    background: var(--encre); color: #fff; font-weight: 600;
+    border-radius: 10px;
+  }
+  .btn:active { opacity: .85; }
+  .discret { font-size: .85rem; text-align: center; }
+  ol { color: var(--gris); padding-left: 1.25rem; margin: 2rem 0 0; }
+  li { margin: .6rem 0; }
+  li b { color: var(--encre); font-weight: 600; }
+  .note {
+    margin-top: 2rem; padding: .9rem 1rem; font-size: .9rem;
+    background: var(--surface); border-left: 3px solid var(--accent);
+    border-radius: 8px; color: var(--gris);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #16130E; --surface: #221D16; --encre: #F4EFE3;
+      --gris: #A2988A; --trait: #332C22;
+    }
+    .btn { background: var(--accent); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="marque">
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <path d="M4 24 16 6l12 18-12 4z" fill="#C44536"/>
+      <path d="M16 6v22" stroke="#F4EFE3" stroke-width="1.2"/>
+    </svg>
+    <span>Atlas</span>
+  </div>
+
+  <h1>L’application de terrain</h1>
+  <p>Elle ouvre vos scènes Atlas depuis votre compte Grist, sur le terrain
+     comme au bureau. Android uniquement.</p>
+
+  <a class="btn" href="atlas.apk">Télécharger l’application</a>
+  <p class="discret">Version de test, non signée pour distribution.</p>
+
+  <ol>
+    <li>Ouvrez le fichier téléchargé.</li>
+    <li>Android demandera d’<b>autoriser l’installation depuis cette
+        source</b> — acceptez.</li>
+    <li>Au premier lancement : l’adresse de votre instance Grist et votre
+        clé API.</li>
+  </ol>
+
+  <p class="note">La clé se copie depuis votre profil Grist, rubrique
+     « Clé API ». Elle reste sur le téléphone et n’est envoyée qu’à votre
+     instance.</p>
+</main>
+</body>
+</html>
