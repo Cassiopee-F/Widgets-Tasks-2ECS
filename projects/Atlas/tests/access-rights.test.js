@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { gristGrantFromSearch, resolveAccess, decodeAccessToken, initialsFrom } from '../lib/view-mode.js';
+import { gristGrantFromSearch, resolveAccess, decodeAccessToken, initialsFrom, isWriteAclError } from '../lib/view-mode.js';
 
 describe('gristGrantFromSearch', () => {
   it('lit ce que Grist transmet reellement', () => {
@@ -26,10 +26,23 @@ describe('gristGrantFromSearch', () => {
 });
 
 describe('resolveAccess — les droits Grist font autorite', () => {
-  it('editeur : ecriture accordee sans sonder', () => {
+  it('« access=full » ne suffit pas : il faut sonder', () => {
+    // `access` decrit le niveau accorde AU WIDGET, pas les droits de la
+    // personne. Verifie en simulant un lecteur via `aclAsUser_` : l'iframe
+    // recoit `access=full&readonly=false` malgre l'ACL, et Atlas ouvrait
+    // l'edition a quelqu'un qui n'a pas le droit d'ecrire.
     const r = resolveAccess({ search: '?access=full&readonly=false' });
-    assert.equal(r.viewMode, false);
-    assert.equal(r.needsProbe, false, 'inutile de sonder quand Grist a repondu');
+    assert.equal(r.viewMode, false, 'pas de blocage a priori : la sonde tranchera');
+    assert.equal(r.needsProbe, true, 'seule la sonde d ecriture dit vrai');
+  });
+
+  it('les droits refuses par Grist restent sans appel', () => {
+    // Ce sens-la est fiable : Grist ne declare pas la lecture a tort.
+    for (const q of ['?readonly=true', '?access=none', '?access=read%20table']) {
+      const r = resolveAccess({ search: q });
+      assert.equal(r.viewMode, true, q);
+      assert.equal(r.needsProbe, false, `inutile de sonder : ${q}`);
+    }
   });
 
   it('document partage en lecture : mode visite, sans connexion ni parametre', () => {
@@ -101,5 +114,35 @@ describe('initiales affichees', () => {
     assert.equal(initialsFrom(null, 'marie.dupont@cerema.fr'), 'MD');
     assert.equal(initialsFrom('Cher', null), 'C');
     assert.equal(initialsFrom(null, null), null);
+  });
+});
+
+describe('isWriteAclError — les libelles que Grist renvoie vraiment', () => {
+  it('reconnait le refus des regles d acces', () => {
+    // Mesure sur le document de test, simulation `aclAsUser_` :
+    //   403 {"error":"Blocked by table update access rules"}
+    // Ni « blocked » ni « access rules » n'etaient dans le motif : la sonde
+    // concluait a l'ecriture, et Atlas ouvrait l'edition a un lecteur.
+    for (const m of [
+      'Blocked by table update access rules',
+      'Blocked by row update access rules',
+      'Blocked by column update access rules',
+      'Blocked by table create access rules',
+      'Cannot modify a read-only document',
+      'AUTH: user not authorized to modify',
+      'Access denied',
+    ]) assert.equal(isWriteAclError(new Error(m)), true, m);
+  });
+
+  it('ne prend pas une panne ordinaire pour un refus de droits', () => {
+    // Un editeur ne doit jamais se retrouver bloque en lecture par erreur :
+    // la sonde ecrit sur une ligne inexistante, « not found » est le cas NORMAL.
+    for (const m of [
+      'Record 999999999 not found',
+      "[Sandbox] KeyError 'Maquette_Layers'",
+      'Network error',
+      'Invalid column type',
+      'no such table: Foo',
+    ]) assert.equal(isWriteAclError(new Error(m)), false, m);
   });
 });
