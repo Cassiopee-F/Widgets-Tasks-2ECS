@@ -219,3 +219,39 @@ export function oublierScenes(stockage) {
   if (!stockage || typeof stockage.removeItem !== 'function') return false;
   try { stockage.removeItem(CLE_SCENES); return true; } catch (_) { return false; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Proposer l'application                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Ou se telecharge l'application.
+ *
+ * `releases/latest/download/` suit les publications sans qu'on ait a toucher
+ * l'adresse : le lien pose ici vaut pour toutes les versions suivantes.
+ */
+export const URL_APPLICATION =
+  'https://github.com/nic01asfr/Widgets-Grist/releases/latest/download/atlas.apk';
+
+/** Un APK ne s'installe que sur Android — ailleurs, le proposer serait une impasse. */
+export function estAndroid(agent) {
+  return /android/i.test(String(agent || ''));
+}
+
+/**
+ * Faut-il proposer l'application, et sous quelle forme ?
+ *
+ * Elle ne se propose que la ou elle repond a quelque chose : dans un navigateur
+ * sans decouverte possible. Dans Grist, ou dans l'application elle-meme, le lien
+ * n'aurait aucun sens.
+ *
+ * Sur le telephone qui lit la page, le telechargement est l'action principale.
+ * Sur un ordinateur, l'APK ne s'installe pas : on nomme le lien sans le mettre
+ * en avant, puisque la vraie reponse y est d'ouvrir Atlas dans un document.
+ */
+export function offreApplication(caps, agent) {
+  if (!caps || caps.mode === 'grist' || caps.decouverte) {
+    return { proposer: false, direct: false, url: URL_APPLICATION };
+  }
+  return { proposer: true, direct: estAndroid(agent), url: URL_APPLICATION };
+}

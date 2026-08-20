@@ -5,6 +5,7 @@ import {
   validerConfig, lireConfig, ecrireConfig, oublier, depuis, situer,
   peutChangerDeScene, quitterScene,
   memoriserScenes, lireScenesMemorisees, oublierScenes, CLE_SCENES, PEREMPTION_MS,
+  offreApplication, estAndroid,
 } from '../lib/hote.js';
 
 const stockageFactice = () => {
@@ -232,4 +233,36 @@ test('oublier la liste sans oublier la connexion', () => {
   assert.equal(lireScenesMemorisees(st), null);
   assert.equal(lireConfig(st).jeton, 'K', 'la connexion survit a l oubli des scenes');
   assert.equal(st._m.has(CLE_SCENES), false);
+});
+
+/* ---------- proposer l application la ou elle sert ---------- */
+
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36';
+const BUREAU = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+test('sur le telephone, telecharger l application est l action a offrir', () => {
+  // C'est le seul chemin vers ses propres scenes : l'instance refuse la cle au
+  // controle prealable tant qu'on passe par le moteur web.
+  const o = offreApplication(caps({ decouverte: false }), ANDROID);
+  assert.equal(o.proposer, true);
+  assert.equal(o.direct, true);
+  assert.match(o.url, /\.apk$/);
+});
+
+test('sur un ordinateur, on nomme le lien sans en faire l action principale', () => {
+  // Un APK ne s y installe pas ; la vraie reponse est d ouvrir Atlas dans Grist.
+  const o = offreApplication(caps({ decouverte: false }), BUREAU);
+  assert.equal(o.proposer, true);
+  assert.equal(o.direct, false);
+});
+
+test('dans l application, ou dans Grist, on ne propose rien', () => {
+  assert.equal(offreApplication(caps(), ANDROID).proposer, false, 'deja installee');
+  assert.equal(offreApplication(caps({ mode: 'grist', decouverte: false }), BUREAU).proposer, false);
+  assert.equal(offreApplication(null, ANDROID).proposer, false);
+});
+
+test('un agent absent ne fait pas passer pour Android', () => {
+  assert.equal(estAndroid(undefined), false);
+  assert.equal(estAndroid(ANDROID), true);
 });

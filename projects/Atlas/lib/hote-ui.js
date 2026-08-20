@@ -17,8 +17,8 @@ import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {
   ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, oublier,
   depuis, situer, peutChangerDeScene, quitterScene,
-  memoriserScenes, lireScenesMemorisees,
-} from './hote.js?v=20260820d';
+  memoriserScenes, lireScenesMemorisees, offreApplication,
+} from './hote.js?v=20260820e';
 
 export const VERSION = '1.0.0';
 
@@ -44,6 +44,10 @@ const CSS = `
   font-weight: 600; color: #fff; background: var(--ink, #1F1B14);
   border: 0; border-radius: 8px; cursor: pointer; }
 .hote-btn:disabled { opacity: .55; cursor: default; }
+.hote-btn { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
+.hote-btn.creux { color: var(--ink, #1F1B14); background: none;
+  border: 1px solid var(--hairline-strong, #C9C0A8); font-weight: 500; }
+.hote p a { color: var(--accent, #C44536); text-underline-offset: 2px; }
 .hote-lien { background: none; border: 0; padding: .35rem 0; font: inherit;
   font-size: .87rem; color: var(--accent, #C44536); cursor: pointer; text-align: left; }
 .hote-avis { padding: .75rem .9rem; border-radius: 8px; font-size: .9rem; line-height: 1.5;
@@ -151,7 +155,7 @@ export async function accueillir({ portee = globalThis, document: doc = document
   // On explique, et on laisse continuer — barrer la route serait une regression.
   if (ecran === ECRANS.LOCAL) {
     return new Promise((resoudre) => {
-      montrerLocal(boite, caps, () => { fermer(); resoudre(true); });
+      montrerLocal(boite, caps, () => { fermer(); resoudre(true); }, portee);
     });
   }
 
@@ -190,13 +194,24 @@ export async function accueillir({ portee = globalThis, document: doc = document
 
 /* ------------------------------------------------------------------ */
 
-function montrerLocal(boite, caps, onContinuer) {
+function montrerLocal(boite, caps, onContinuer, portee = globalThis) {
+  const offre = offreApplication(caps, portee?.navigator?.userAgent);
+  // Sur le telephone, l'application est la reponse a ce que l'ecran vient
+  // d'annoncer : elle passe donc devant, et « continuer » devient le second
+  // choix. Sur un ordinateur elle ne s'installe pas — on la nomme, sans plus.
+  const app = !offre.proposer ? ''
+    : offre.direct
+      ? `<a class="hote-btn" id="h-apk" href="${offre.url}">Télécharger l’application</a>
+         <p>Elle seule peut présenter votre clé à l’instance : c’est ce qui vous
+            rendra vos scènes, et le travail hors ligne.</p>`
+      : `<p>Sur Android, <a href="${offre.url}">l’application Atlas</a> retrouve vos
+            scènes et travaille hors ligne. Sur ordinateur, ouvrez Atlas depuis un
+            document Grist.</p>`;
   boite.innerHTML = `${MARQUE}
     <h2>Vos scènes Grist sont hors de portée ici</h2>
     <p>${echapper(caps.raison || '')}</p>
-    <p>Installez l’application pour retrouver vos scènes sur ce téléphone, ou
-       ouvrez Atlas depuis un document Grist sur ordinateur.</p>
-    <button class="hote-btn" id="h-local">Continuer sans se connecter</button>
+    ${app}
+    <button class="hote-btn${offre.direct ? ' creux' : ''}" id="h-local">Continuer sans se connecter</button>
     <p>Vous pourrez charger un fichier, importer depuis OpenStreetMap et
        travailler localement — sans enregistrer dans Grist.</p>`;
   boite.querySelector('#h-local').onclick = onContinuer;
