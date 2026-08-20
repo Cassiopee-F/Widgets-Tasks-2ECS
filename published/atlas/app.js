@@ -13,19 +13,20 @@ import {
   loadSceneManifestLayers,
   materializeDeferredLayer,
   boundsFromVisibleLayers,
-} from './lib/scene-loader.js?v=1.1.2';
-import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.2';
-import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.2';
-import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.2';
+} from './lib/scene-loader.js?v=1.1.3';
+import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.3';
+import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.3';
+import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.3';
 import {
   moveSequence, displayOrder, moveLayerInStack, insertionIndex, sortByRank,
   dropIndex, reorderByDrop,
-} from './lib/layer-order.js?v=1.1.2';
-import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.2';
-import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.2';
+} from './lib/layer-order.js?v=1.1.3';
+import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.3';
+import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.3';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
-} from './lib/terrain-base.js?v=1.1.2';
+  paliersDemDifferents, altitudeOrigineStable, ecartAuSol,
+} from './lib/terrain-base.js?v=1.1.3';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -34,7 +35,7 @@ import {
   saveFeaturesToSource,
   startScenePolling,
   refreshLayerFromTable,
-} from './lib/grist-sync.js?v=1.1.2';
+} from './lib/grist-sync.js?v=1.1.3';
 import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
@@ -45,13 +46,13 @@ import {
   resolveFeaturePropertyKey,
   graduatedStops,
   recolorStops,
-} from './lib/declarative-style.js?v=1.1.2';
+} from './lib/declarative-style.js?v=1.1.3';
 import {
   scanGeoTables,
   detectGeometryColumn,
   tableToGeoJSON,
   isLinkedTableLayer,
-} from './lib/geo-tables.js?v=1.1.2';
+} from './lib/geo-tables.js?v=1.1.3';
 import {
   layerFieldNames,
   controlFieldType,
@@ -66,21 +67,21 @@ import {
   repairSelectControlFromManifest,
   applyStoryControlsToLayer,
   sanitizeBrokenSelectFilters,
-} from './lib/controls.js?v=1.1.2';
+} from './lib/controls.js?v=1.1.3';
 import {
   captureStoryState,
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=1.1.2';
+} from './lib/story.js?v=1.1.3';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
-} from './lib/manifest-binding.js?v=1.1.2';
+} from './lib/manifest-binding.js?v=1.1.3';
 import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
-} from './lib/viewport.js?v=1.1.2';
+} from './lib/viewport.js?v=1.1.3';
 import {
   parseAtlasMode,
   resolveAccess,
@@ -90,16 +91,16 @@ import {
   shouldEnableLight3d,
   parseNo3dParam,
   probeCanWriteDoc,
-} from './lib/view-mode.js?v=1.1.2';
+} from './lib/view-mode.js?v=1.1.3';
 import {
   createDefaultViewerControls,
   getViewerControl,
   setViewerExposed as setViewerExposedFn,
-} from './lib/viewer-controls.js?v=1.1.2';
+} from './lib/viewer-controls.js?v=1.1.3';
 import {
   loadScenePrefs,
   saveScenePrefs,
-} from './lib/scene-prefs.js?v=1.1.2';
+} from './lib/scene-prefs.js?v=1.1.3';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
@@ -154,7 +155,7 @@ const CONFIG = {
 
 const STATE = {
     projectName: '',
-    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437, radius: 500 },
+    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437 },
     layers: [],
     story: [],
     viewerControls: createDefaultViewerControls(),
@@ -255,10 +256,16 @@ const PALETTE_INFO = {
 // ============================================================
 // BIBLIOTHÈQUE DE MODÈLES 3D
 // ============================================================
-// Catalogue 3D généré dans le repo (scripts/generate-models.js → published/models/)
-// Servi via GitHub Pages. Deux sets de style : 'colored' | 'mono'. Modèles en mètres (scale 1).
+// Catalogue 3D genere dans le repo (scripts/generate-models.js) et publie SOUS
+// LE WIDGET, `published/atlas/models/`, depuis qu'il y a ete co-localise.
+// Servi via GitHub Pages. Deux sets de style : 'colored' | 'mono'. Modeles en metres (scale 1).
+//
+// Le defaut a longtemps pointe vers `/Widgets-Grist/models/`, reste du temps ou
+// le catalogue vivait a la racine — un chemin qui renvoie 404 depuis le
+// deplacement. En ligne, la sonde `./models/` rattrapait l'erreur puisque le
+// widget est servi depuis `/atlas/` ; hors de ce cas, aucun modele ne chargeait.
 const MODEL_LIBRARY = {
-    baseRoot: 'https://nic01asfr.github.io/Widgets-Grist/models/',
+    baseRoot: 'https://nic01asfr.github.io/Widgets-Grist/atlas/models/',
     set: 'colored',
     get baseUrl() { return this.baseRoot + this.set + '/'; },
     categories: {
@@ -329,9 +336,12 @@ async function probeLocalModels() {
     if (MODEL_BASE_EXPLICIT) return;
     const cands = [];
     try {
-        cands.push(new URL('../../published/models/', location.href).href); // racine du repo servie
-        cands.push(new URL('./models/', location.href).href);               // modèles à côté du widget
+        // Depuis `projects/Atlas/`, avec la racine du repo servie : c'est le seul
+        // chemin qui permet d'essayer les modeles 3D en developpement local.
+        cands.push(new URL('../../published/atlas/models/', location.href).href);
+        cands.push(new URL('./models/', location.href).href);   // modeles a cote du widget (cas publie)
         cands.push(new URL('../models/', location.href).href);
+        cands.push(new URL('../../published/models/', location.href).href); // ancien emplacement
     } catch (e) { return; }
     for (const base of cands) {
         try {
@@ -560,10 +570,14 @@ function initSymbolization(layer) {
         sym.stroke = { enabled: true, mode: 'follow', color: null, width: 1.5 };
     }
     if (!sym.extrusion) sym.extrusion = { base: 0 };
-    if (sym.label) {
-        if (sym.label.size == null) sym.label.size = 12;
-        if (!sym.label.color) sym.label.color = '#2D2820';
-    }
+    // Comme `stroke` et `extrusion` : cree s'il manque, pas seulement complete.
+    // Une couche enregistree avant l'arrivee des etiquettes — ou restauree
+    // depuis une etape de recit anterieure, `applyStoryLayerMeta` remplacant
+    // toute la symbolisation — arrivait sans `label`, et l'onglet Etiquette
+    // lisait alors `undefined.enabled`.
+    if (!sym.label) sym.label = { enabled: false, field: null };
+    if (sym.label.size == null) sym.label.size = 12;
+    if (!sym.label.color) sym.label.color = '#2D2820';
     return sym;
 }
 
@@ -673,8 +687,19 @@ async function flatDemTile() {
 // ============================================================
 const MAX_3D_INSTANCES = 20000;       // plafond élevé grâce à l'instancing
 const MODEL3D_ZOOM_GATE = 11;          // sous ce zoom on cache la 3D si beaucoup d'objets
+/** Zoom auquel MapLibre a fini de passer du globe au plan (mesure : 0 px d'ecart des z12). */
+const GLOBE_MERCATOR_ZOOM = 12;
 const MODEL3D_GATE_COUNT = 4000;
 const SHADOW_FEATURE_CAP = 1500;       // ombres portées réelles seulement sous ce nombre d'objets visibles
+
+/** Ecart d'altitude a l'origine au-dela duquel la scene 3D est recalculee, en metres. */
+const DERIVE_ORIGINE_M = 0.5;
+
+/** Palier de zoom du dernier echantillonnage du relief, et son minuteur. */
+let _palierDemCale = null;
+let _recalageTimer = null;
+/** Regroupe l'arrivee des tuiles MNT : elles tombent par dizaines, un seul recalage suffit. */
+let _tuilesDemTimer = null;
 
 const Models3D = {
     layerId: 'three-models-3d',
@@ -688,6 +713,7 @@ const Models3D = {
     sunDir: new THREE.Vector3(0.4, 0.7, 0.4).normalize(),
     dirLight: null, ambLight: null, hemiLight: null, groundShadow: null, _shadowFeasible: false,
     _buildTimer: null, _cullTimer: null, _driftTimer: null, _lastOriginElev: undefined,
+    _wCanvas: 0, _hCanvas: 0,   // derniere taille de canvas appliquee au renderer
     _m4Origin: new THREE.Matrix4(), _m4VP: new THREE.Matrix4(),
     _mRotX: new THREE.Matrix4().makeRotationX(Math.PI / 2),
     _vScale: new THREE.Vector3(), _obj: new THREE.Object3D(), _m4: new THREE.Matrix4(),
@@ -734,13 +760,20 @@ const Models3D = {
                 if (!self.renderer || !self.origin) return;
                 const arr = Array.isArray(matrix) ? matrix : (matrix && (matrix.defaultProjectionData?.mainMatrix || matrix.mainMatrix));
                 if (!arr) return;
-                // élévation de l'origine — peut évoluer pendant le chargement des tuiles DEM
-                const elev = STATE.settings.terrain3D ? (map.queryTerrainElevation(self.origin) || 0) : 0;
-                if (self._lastOriginElev !== undefined && Math.abs(elev - self._lastOriginElev) > 0.5) {
-                    clearTimeout(self._driftTimer);
-                    self._driftTimer = setTimeout(() => self.recomputeAll(), 200);
+                // L'altitude qui translate la scene DOIT etre celle qui a servi a
+                // calculer la position verticale des instances (`placement`). La
+                // sonder ici a chaque frame les desynchronisait : `originElev` ne
+                // se rafraichit qu'apres coup, et entre-temps la scene glissait.
+                const elev = STATE.settings.terrain3D ? self.originElev : 0;
+                // Sonde de derive, hors du chemin de rendu : elle ne fait que
+                // declencher un recalcul ou placement et rendu repartent ensemble.
+                if (STATE.settings.terrain3D) {
+                    const sondee = map.queryTerrainElevation(self.origin);
+                    if (Number.isFinite(sondee) && Math.abs(sondee - elev) > DERIVE_ORIGINE_M) {
+                        clearTimeout(self._driftTimer);
+                        self._driftTimer = setTimeout(() => self.recomputeAll(), 200);
+                    }
                 }
-                self._lastOriginElev = elev;
                 const mc = maplibregl.MercatorCoordinate.fromLngLat(self.origin, elev);
                 const s = mc.meterInMercatorCoordinateUnits();
                 self._vScale.set(s, -s, s);
@@ -763,6 +796,19 @@ const Models3D = {
                 self._m4VP.fromArray(arr).multiply(self._m4Origin);
                 self.camera.projectionMatrix.copy(self._m4VP);
                 self.renderer.resetState();
+                // three.js releve la taille du canvas A SA CREATION et ne la
+                // revoit jamais : le canvas etant celui de MapLibre, toute
+                // largeur qui change ensuite — l'ouverture d'un panneau, la
+                // fermeture de l'inspecteur — laisse le renderer sur son
+                // ancien viewport. Les objets sont alors dessines a la mauvaise
+                // echelle ET decales, ce qui se lit comme un glissement pendant
+                // la navigation. D'ou le symptome : les modeles ne bougent que
+                // lorsqu'un des panneaux est ouvert.
+                const cv = map.getCanvas();
+                if (self._wCanvas !== cv.width || self._hCanvas !== cv.height) {
+                    self.renderer.setViewport(0, 0, cv.width, cv.height);
+                    self._wCanvas = cv.width; self._hCanvas = cv.height;
+                }
                 self.renderer.render(self.scene, self.camera);
             },
             onRemove() { self.disposeInstances(); self.renderer?.dispose?.(); self.renderer = null; self.scene = null; },
@@ -795,6 +841,16 @@ const Models3D = {
         this.protoCache.set(url, v); return v;
     },
 
+    /**
+     * Altitude de l'origine de la scene, conservee si la tuile a disparu.
+     *
+     * L'origine est un objet fixe, vite hors champ : le repli `|| 0` la ramenait
+     * au niveau de la mer et faisait sauter toute la scene.
+     */
+    readOriginElev() {
+        if (!STATE.settings.terrain3D || !map) return 0;
+        return altitudeOrigineStable(map.queryTerrainElevation(this.origin), this.originElev);
+    },
     setOrigin(lng, lat) { this.origin = [lng, lat]; this.originMC = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0); this.originScale = this.originMC.meterInMercatorCoordinateUnits(); },
     localMeters(lng, lat) { const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0), s = this.originScale; return { x: (mc.x - this.originMC.x) / s, y: -(mc.y - this.originMC.y) / s }; },
     /**
@@ -812,18 +868,17 @@ const Models3D = {
         if (this.elevCache.size > 8000) this.elevCache.clear();
         this.elevCache.set(k, v); return v;
     },
-    /** Contrat historique : un nombre, zero a defaut. Utilise par le placement. */
-    elevAt(lng, lat) {
-        const v = this.elevRaw(lng, lat);
-        return Number.isFinite(v) ? v : 0;
-    },
-
     // matrice de placement (espace local mètres, Y up) pour une feature
     placement(layer, feature) {
         const p = resolveFeatureProps(feature, layer);
         const [lng, lat] = feature.geometry.coordinates;
         const lm = this.localMeters(lng, lat);
-        const eOff = this.elevAt(lng, lat) - this.originElev;
+        // Altitude relative a l'origine de la scene. Quand la tuile MNT manque,
+        // l'entite se cale SUR l'origine (ecart nul) et non au niveau de la mer :
+        // `readOriginElev` conservant la derniere altitude connue de l'origine,
+        // un repli a zero ici enfoncait tous les objets de cette altitude — sur
+        // un relief a 200 m, la scene entiere disparaissait sous le sol.
+        const eOff = ecartAuSol(this.elevRaw(lng, lat), this.originElev);
         const o = this._obj;
         o.position.set(lm.x + (p.offsetX || 0), eOff + (p.offsetZ || 0), -lm.y - (p.offsetY || 0));
         const sc = p.scale || 1; o.scale.set(sc, sc, sc);
@@ -871,9 +926,18 @@ const Models3D = {
         const all = this.collect();
         const z = map.getZoom();
         this._shadowFeasible = all.length > 0 && all.length <= SHADOW_FEATURE_CAP; // ombres réelles seulement sous ce plafond
+        // Sous le seuil de bascule vers Mercator, le custom layer three.js est
+        // faux par construction : il pose une translation plane alors que
+        // MapLibre projette sur une sphere. Mesure au banc, projection globe :
+        // 570 px d'ecart a z3, 2337 px a z11, exactement 0 des z12. Le garde
+        // historique (`MODEL3D_ZOOM_GATE`, et seulement au-dela de 4000 objets)
+        // laissait donc une petite couche s'afficher grossierement decalee en
+        // vue regionale. A ces echelles un lampadaire mesure de toute facon
+        // moins d'un pixel : mieux vaut ne rien montrer qu'un placement faux.
+        if (z < GLOBE_MERCATOR_ZOOM && (STATE.settings.projection || 'globe') === 'globe') { map.triggerRepaint(); return; }
         if ((z < MODEL3D_ZOOM_GATE && all.length > MODEL3D_GATE_COUNT) || all.length === 0) { map.triggerRepaint(); return; }
         if (!this.origin) this.setOrigin(all[0].lng, all[0].lat);
-        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+        this.originElev = this.readOriginElev();
 
         const byUrl = new Map();
         for (const it of all) { if (!byUrl.has(it.url)) byUrl.set(it.url, []); byUrl.get(it.url).push(it); }
@@ -908,7 +972,7 @@ const Models3D = {
     recomputeAll() {
         if (!this.origin || !map || !this.scene) return;
         this.elevCache.clear();
-        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+        this.originElev = this.readOriginElev();
         for (const [, g] of this.groups) {
             g.items.forEach((it, slot) => {
                 const layer = STATE.layers.find((l) => l.id === it.layerId);
@@ -1023,9 +1087,28 @@ function initMap() {
     map.on('rotate', () => {
         $('compass-svg').style.transform = `rotate(${map.getBearing()}deg)`;
     });
-    // OPTIM (EclExt) : ré-instancie les modèles dans l'emprise + invalide le cache d'élévation
+    // Re-instancie les modeles dans l'emprise. Le cache d'altitude, lui, n'est
+    // PAS invalide ici : il l'etait a chaque `moveend`, si bien qu'un simple
+    // panoramique faisait re-sonder tous les objets — ceux dont la tuile DEM
+    // n'etait pas revenue retombaient a zero et la scene sautait. Les altitudes
+    // ne sont rejouees qu'au changement de palier de zoom (`recalerSiPalierDem`),
+    // seul moment ou la resolution du MNT change vraiment.
+    // Les tuiles du MNT arrivent apres coup, et a une resolution qui depend du
+    // zoom : sur un meme point, `queryTerrainElevation` a rendu 1029,79 m a
+    // z16,8 et 1034,14 m a z18,3 — 4,35 m d'ecart pour la seule finesse du
+    // maillage. Les objets poses sur le releve precedent se retrouvent alors
+    // au-dessus ou sous le sol, ce qui, en vue oblique, se lit comme un
+    // glissement lateral. On rejoue donc le calage quand le relief lui-meme
+    // change, pas seulement quand le zoom franchit un palier.
+    map.on('data', (e) => {
+        if (!STATE.settings.terrain3D) return;
+        if (e.sourceId !== 'terrain-dem' || e.sourceDataType !== 'content') return;
+        clearTimeout(_tuilesDemTimer);
+        _tuilesDemTimer = setTimeout(() => recalerRelief(0), 600);
+    });
+
     map.on('moveend', () => {
-        Models3D.elevCache.clear();
+        recalerSiPalierDem();
         Models3D.cull();
         clearTimeout(_cameraSaveTimer);
         _cameraSaveTimer = setTimeout(saveMapCamera, 400);
@@ -1182,8 +1265,7 @@ function setTerrainSource(src) {
     if (map.getSource('terrain-dem')) { try { map.removeSource('terrain-dem'); } catch (e) {} }
     addTerrainSource();
     if (STATE.settings.terrain3D) applyTerrain();
-    Models3D.recomputeAll();
-    setTimeout(refreshTerrainBases, 250); // le MNT doit d'abord se charger
+    recalerRelief(); // le MNT doit d'abord se charger
 }
 function applySky() {
     if (typeof map.setSky !== 'function') return;
@@ -1416,6 +1498,47 @@ function poserCoucheSurTerrain(layer) {
     const ms = Math.round(performance.now() - t0);
     if (ms > 500) console.warn(`[Atlas terrain] ${layer.name} : ${n} entites posees en ${ms} ms`);
     return n;
+}
+
+/**
+ * Rejoue les deux echantillonnages du relief quand la resolution du MNT change.
+ *
+ * Modeles 3D et surfaces en volume lisent le meme cache d'altitude : les
+ * recaler separement les ferait diverger — un lampadaire flotterait au-dessus
+ * du batiment qui le porte. Ils repartent donc ensemble, et seulement au
+ * franchissement d'un palier entier de zoom.
+ */
+function recalerSiPalierDem() {
+    if (!map || !STATE.settings.terrain3D) return;
+    const z = map.getZoom();
+    if (!paliersDemDifferents(_palierDemCale, z)) return;
+    _palierDemCale = z;
+    Models3D.elevCache.clear();
+    clearTimeout(_recalageTimer);
+    // Le MNT du nouveau palier doit d'abord arriver : sonder trop tot ne
+    // rendrait que l'ancienne resolution, et on aurait paye le calcul pour rien.
+    recalerRelief(350);
+}
+
+/**
+ * Recale modeles 3D et surfaces en volume sur le relief, apres un delai.
+ *
+ * Les deux lisent le meme cache d'altitude : les recaler separement les ferait
+ * diverger. Ce point d'entree unique remplace les quatre paires d'appels
+ * dispersees, qui pouvaient s'entrelacer — un changement d'exageration suivi
+ * d'un changement de source rejouait deux calages concurrents sur des donnees
+ * differentes.
+ *
+ * Le delai laisse le MNT arriver : sonder trop tot ne rend que l'ancienne
+ * resolution, et le calcul est paye pour rien.
+ */
+function recalerRelief(delai = 250) {
+    clearTimeout(_recalageTimer);
+    _recalageTimer = setTimeout(() => {
+        if (map) _palierDemCale = map.getZoom();
+        Models3D.recomputeAll();
+        refreshTerrainBases();
+    }, delai);
 }
 
 /**
@@ -1905,6 +2028,10 @@ async function persistStory(immediate = false) {
         } catch (e) {
             console.warn('[Atlas story] save', e.message);
             enterViewModeOnWriteFail(e);
+            // « Etape capturee » s'affiche des le clic, avant meme que
+            // l'enregistrement ne parte. Sans ce signal, un echec restait
+            // invisible et l'utilisateur croyait son recit conserve.
+            showToast('Récit non enregistré — ' + e.message, 'error');
         }
     };
     if (immediate) return save();
@@ -2039,7 +2166,7 @@ function applyStoryState(s) {
     if (s.terrain3D != null && s.terrain3D !== STATE.settings.terrain3D) {
         STATE.settings.terrain3D = s.terrain3D;
         applyTerrain();
-        setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250);
+        recalerRelief();
     }
     if (s.timeOfDay != null) STATE.settings.timeOfDay = s.timeOfDay;
     if (s.date) STATE.settings.date = new Date(s.date);
@@ -2138,12 +2265,6 @@ function renderLieu() {
                 <div><label class="input-label">Longitude</label><input class="input" id="loc-lng" type="number" step="0.0001" value="${(L.lng ?? '').toString()}"></div>
             </div>
             <button class="btn btn-soft btn-full" style="margin-top:10px" onclick="A.applyManualCoords()">Aller</button>
-        </div>
-        <div class="section">
-            <div class="section-title">Zone de travail</div>
-            <div class="option-cards">
-                ${[200, 500, 1000, 2000].map((r) => `<div class="option-card ${L.radius === r ? 'active' : ''}" onclick="A.setRadius(${r})"><div class="oc-label">${r < 1000 ? r + 'm' : r / 1000 + 'km'}</div></div>`).join('')}
-            </div>
         </div>
         <div class="section">
             <div class="section-title">Nom du projet</div>
@@ -4001,8 +4122,22 @@ function setUserIdentity(u) {
     updateUserBadge();
 }
 
+/**
+ * Point d'entree du recit en lecture.
+ *
+ * Les modules d'auteur etant retires, un recit publie n'avait plus aucun moyen
+ * d'etre lance : le rail disparait et la barre du haut n'offrait que des
+ * actions d'edition. Le bouton prend leur place, et seulement s'il y a
+ * quelque chose a lire.
+ */
+function refreshStoryButton() {
+    const b = $('btn-story');
+    if (b) b.classList.toggle('has-story', !!(STATE.story?.length));
+}
+
 function applyViewModeChrome() {
     document.body.classList.toggle('view-mode', !!CONFIG.viewMode);
+    refreshStoryButton();
     const badge = $('view-mode-badge');
     if (badge) badge.hidden = !CONFIG.viewMode;
     updateUserBadge();
@@ -4018,6 +4153,7 @@ function applyViewModeChrome() {
 
 /** Récit en lecture : FAB seulement (pas de rail / panneau latéral). */
 function refreshStoryNavChrome() {
+    refreshStoryButton();
     const hasStory = (STATE.story?.length || 0) > 0;
     document.body.classList.toggle('view-has-story', !!(CONFIG.viewMode && hasStory));
     const railRecit = document.querySelector('.rail-item[data-module="recit"]');
@@ -4308,6 +4444,31 @@ async function loadLayersFromGrist() {
         mountLoadedLayers(computeLayersBounds());
     } catch (e) { console.warn('loadLayers:', e.message); }
 }
+/** Vrai une fois `Maquette_Layers` connue presente, pour ne pas relister a chaque enregistrement. */
+let _maquetteTablePrete = false;
+
+/**
+ * Garantit l'existence de `Maquette_Layers` avant d'y ecrire.
+ *
+ * `initGristTables` ne tourne QUE sur les documents en mode maquette : en mode
+ * Scene Manifest, la scene vient du manifeste et la table n'est jamais creee.
+ * Enregistrer une couche qui n'est pas issue de qgis2grist tentait donc un
+ * `AddRecord` sur une table absente, et Grist repondait
+ * « [Sandbox] KeyError 'Maquette_Layers' » — l'enregistrement echouait sans
+ * qu'aucune retouche de l'utilisateur ne soit conservee.
+ *
+ * La table est creee A LA DEMANDE, au moment ou l'on enregistre vraiment : un
+ * document qui n'enregistre aucune couche garde une empreinte nulle.
+ */
+async function ensureMaquetteLayersTable() {
+    if (_maquetteTablePrete) return;
+    const tables = await grist.docApi.listTables();
+    if (!tables.includes('Maquette_Layers')) {
+        await grist.docApi.applyUserActions([['AddTable', 'Maquette_Layers', TABLE_SCHEMAS.Maquette_Layers]]);
+    }
+    _maquetteTablePrete = true;
+}
+
 async function saveLayerToGrist(layer, silent) {
     if (!CONFIG.grist.ready) return;
     if (!assertCanWrite('enregistrer les préférences')) return;
@@ -4324,6 +4485,7 @@ async function saveLayerToGrist(layer, silent) {
         return;
     }
     try {
+        await ensureMaquetteLayersTable();
         const styleOut = { ...(layer.style || {}) };
         if (layer.controls?.length) styleOut._controls = layer.controls;
         if (layer.kind === 'table') {
@@ -4532,7 +4694,6 @@ const A = {
         STATE.location = { ...STATE.location, lat, lng, name: `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E` };
         map.flyTo({ center: [lng, lat], zoom: 16, duration: 1000 }); renderLieu();
     },
-    setRadius(r) { STATE.location.radius = r; renderLieu(); },
     setProjectName(v) { STATE.projectName = v; $('project-name').textContent = v || 'Nouveau projet'; markDirty(); },
 
     // Couches
@@ -5024,7 +5185,7 @@ const A = {
     toggleSetting(key) {
         STATE.settings[key] = !STATE.settings[key];
         if (key === 'buildings3D') applyBuildingVisibility();
-        else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 250); }
+        else if (key === 'terrain3D') { applyTerrain(); _palierDemCale = null; recalerRelief(); }
         else if (key === 'labels') applyLabelsVisibility();
         else if (key === 'sky') applySky();
         else if (key === 'shadows') { updateLighting(); $('shadow-toggle')?.classList.toggle('on', STATE.settings.shadows); }
@@ -5038,7 +5199,7 @@ const A = {
     },
     setPitch(v) { map.setPitch(+v); $('v-pitch').textContent = Math.round(v) + '°'; },
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
-    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => { Models3D.recomputeAll(); refreshTerrainBases(); }, 200); } },
+    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); recalerRelief(200); } },
     setBasemap(k) {
         if (CONFIG.viewMode) {
             const allowed = basemapChoicesForDock();
@@ -5403,6 +5564,7 @@ function wireEvents() {
     $('btn-save').addEventListener('click', saveProject);
     $('btn-load').addEventListener('click', loadProject);
     $('btn-export').addEventListener('click', exportProject);
+    $('btn-story').addEventListener('click', () => A.storyPlay(0));
     $('cmdk-trigger').addEventListener('click', openCmd);
     $('compass').addEventListener('click', () => map.easeTo({ bearing: 0, duration: 600 }));
 

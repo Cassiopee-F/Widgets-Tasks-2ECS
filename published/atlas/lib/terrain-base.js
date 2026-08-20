@@ -200,3 +200,60 @@ export function needsTerrainBase(layer, terrainActif) {
   const surfacique = g === 'Polygon' || g === 'MultiPolygon';
   return surfacique && layer.style?.polygonMode !== 'flat';
 }
+
+/**
+ * Les deux echantillonnages du relief doivent-ils etre rejoues ?
+ *
+ * Le MNT arrive par tuiles, et leur resolution change a chaque palier entier de
+ * zoom : une altitude relevee a z11 n'est pas celle que MapLibre rendra a z14.
+ * Il faut donc bien re-echantillonner un jour ou l'autre — mais **pas a chaque
+ * fin de deplacement**.
+ *
+ * C'etait le defaut : le cache d'altitude etait vide a chaque `moveend`, donc
+ * un simple panoramique suffisait a faire re-sonder tous les objets. Ceux dont
+ * la tuile n'etait pas encore revenue retombaient a zero, et la scene entiere
+ * sautait — d'ou les modeles 3D qui « bougeaient avec la carte ». Le meme cache
+ * alimentant le calage des surfaces, les mailles heritaient des memes altitudes
+ * douteuses.
+ *
+ * On ne rejoue donc que sur changement de palier, ou la donnee change vraiment.
+ */
+export function paliersDemDifferents(zoomA, zoomB) {
+  if (!Number.isFinite(zoomA) || !Number.isFinite(zoomB)) return true;
+  return Math.floor(zoomA) !== Math.floor(zoomB);
+}
+
+/**
+ * Altitude de reference de la scene 3D, jamais retombee a zero.
+ *
+ * `queryTerrainElevation` ne repond que pour les tuiles chargees. L'origine de
+ * la scene est un objet fixe, souvent hors du champ apres quelques
+ * deplacements : le repli historique `|| 0` la ramenait alors au niveau de la
+ * mer et translatait toute la scene d'un coup. Mieux vaut conserver la derniere
+ * altitude connue — perimee au pire, jamais absurde.
+ */
+export function altitudeOrigineStable(sondee, precedente) {
+  if (Number.isFinite(sondee)) return sondee;
+  return Number.isFinite(precedente) ? precedente : 0;
+}
+
+/**
+ * Ecart vertical entre une entite et l'origine de la scene 3D, en metres.
+ *
+ * Les instances three.js sont placees relativement a une origine, elle-meme
+ * translatee par l'altitude de son propre point. Les deux echantillonnages
+ * doivent donc suivre la MEME regle de repli, sans quoi ils divergent.
+ *
+ * C'est ce qui est arrive : l'origine conservait sa derniere altitude connue
+ * (`altitudeOrigineStable`) pendant que les entites retombaient au niveau de la
+ * mer. Sur un relief a 200 m, l'ecart valait -200 m et toute la scene passait
+ * sous le sol — les objets 3D semblaient ne plus charger.
+ *
+ * Sans altitude pour l'entite, l'ecart est donc NUL : elle repose sur le plan de
+ * l'origine, jamais au niveau de la mer.
+ */
+export function ecartAuSol(solEntite, altitudeOrigine) {
+  const origine = Number.isFinite(altitudeOrigine) ? altitudeOrigine : 0;
+  if (!Number.isFinite(solEntite)) return 0;
+  return solEntite - origine;
+}
