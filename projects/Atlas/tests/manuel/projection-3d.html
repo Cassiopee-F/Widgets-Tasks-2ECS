@@ -1,0 +1,173 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Banc — placement 3D et projection</title>
+<script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<style>
+  html,body{margin:0;height:100%;font:13px/1.4 system-ui}
+  #map{position:absolute;inset:0}
+  #hud{position:absolute;top:8px;left:8px;z-index:9;background:#fffe;padding:10px 12px;
+       border-radius:8px;box-shadow:0 2px 8px #0003;max-width:380px}
+  #ecart{font:600 22px/1.2 ui-monospace,monospace}
+  button{margin:2px 4px 2px 0;padding:4px 8px}
+  .ok{color:#0a7d32}.ko{color:#c1121f}
+</style>
+<div id="map"></div>
+<div id="hud">
+  <div><b>Ecart cube three.js &rarr; point MapLibre</b></div>
+  <div id="ecart">—</div>
+  <div id="detail" style="color:#555"></div>
+  <hr>
+  <div>Projection :
+    <button onclick="carte.setProjection({type:'globe'})">globe</button>
+    <button onclick="carte.setProjection({type:'mercator'})">mercator</button>
+  </div>
+  <div>Relief :
+    <button onclick="poserTerrain(true)">terrain ON</button>
+    <button onclick="poserTerrain(false)">terrain OFF</button>
+    <span id="terr"></span>
+  </div>
+  <div>Matrice :
+    <button onclick="MATRICE='main'">mainMatrix</button>
+    <button onclick="MATRICE='fallback'">fallbackMatrix</button>
+    <span id="mat"></span>
+  </div>
+  <div style="color:#555;margin-top:6px">
+    Les cercles rouges sont poses par MapLibre, les cubes par le custom layer
+    three.js — memes coordonnees. Tout ecart est une erreur de placement.
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+
+// Laax GR, la ou le defaut a ete constate.
+const CENTRE = [9.2588, 46.8093];
+const PTS = [];
+for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) {
+  PTS.push([CENTRE[0] + i * 0.0015, CENTRE[1] + j * 0.0012]);
+}
+window.MATRICE = 'main';
+
+const carte = window.carte = new maplibregl.Map({
+  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: CENTRE, zoom: 16.5, pitch: 55, bearing: -20, antialias: true,
+});
+
+window.poserTerrain = (actif) => {
+  if (!carte.getSource('dem')) {
+    carte.addSource('dem', { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+  }
+  carte.setTerrain(actif ? { source: 'dem', exaggeration: 1 } : null);
+  document.getElementById('terr').textContent = actif ? '→ ON' : '→ OFF';
+};
+
+carte.on('load', () => {
+  carte.setProjection({ type: 'globe' });
+  carte.addSource('pts', { type: 'geojson', data: {
+    type: 'FeatureCollection',
+    features: PTS.map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: c }, properties: {} })),
+  }});
+  carte.addLayer({ id: 'pts', type: 'circle', source: 'pts',
+    paint: { 'circle-radius': 7, 'circle-color': '#c1121f', 'circle-opacity': 0.9 } });
+  carte.addLayer(coucheCubes());
+});
+
+// --- meme mecanique que Models3D dans Atlas ---
+function coucheCubes() {
+  let scene, camera, renderer, origine, origineMC, echelle, cubes = null;
+  const m4Origine = new THREE.Matrix4(), m4VP = new THREE.Matrix4();
+  const rotX = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+  const vScale = new THREE.Vector3();
+
+  const metresLocaux = (lng, lat) => {
+    const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0);
+    return { x: (mc.x - origineMC.x) / echelle, y: -(mc.y - origineMC.y) / echelle };
+  };
+
+  // Rejoue le placement comme Atlas : altitude du sol sous chaque objet,
+  // relative a celle de l'origine.
+  window.replacer = replacer;
+  function replacer() {
+    if (!cubes) return;
+    const t = !!carte.getTerrain();
+    const solOrigine = t ? (carte.queryTerrainElevation(origine) ?? 0) : 0;
+    let manquantes = 0;
+    PTS.forEach((p, i) => {
+      const lm = metresLocaux(p[0], p[1]);
+      const brut = t ? carte.queryTerrainElevation(p) : 0;
+      if (t && !Number.isFinite(brut)) manquantes++;
+      const sol = Number.isFinite(brut) ? brut : solOrigine;
+      cubes[i].position.set(lm.x, sol - solOrigine + 6, -lm.y);
+    });
+    window.dernierReplacement = { solOrigine, manquantes, total: PTS.length };
+  }
+
+  return {
+    id: 'cubes', type: 'custom', renderingMode: '3d',
+    onAdd(m, gl) {
+      scene = new THREE.Scene(); camera = new THREE.Camera();
+      renderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+      renderer.autoClear = false;
+      scene.add(new THREE.AmbientLight(0xffffff, 2));
+      origine = PTS[0];
+      origineMC = maplibregl.MercatorCoordinate.fromLngLat(origine, 0);
+      echelle = origineMC.meterInMercatorCoordinateUnits();
+      const geo = new THREE.BoxGeometry(6, 12, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x1d4ed8 });
+      cubes = PTS.map((p) => {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.frustumCulled = false;
+        scene.add(mesh);
+        return mesh;
+      });
+      replacer();
+    },
+    render(gl, args) {
+      const pd = args?.defaultProjectionData || args;
+      const arr = window.MATRICE === 'fallback'
+        ? (pd?.fallbackMatrix || pd?.mainMatrix)
+        : (pd?.mainMatrix || (Array.isArray(args) ? args : null));
+      if (!arr) return;
+      const solOrigine = carte.getTerrain() ? (carte.queryTerrainElevation(origine) ?? 0) : 0;
+      const mc = maplibregl.MercatorCoordinate.fromLngLat(origine, solOrigine);
+      const s = mc.meterInMercatorCoordinateUnits();
+      vScale.set(s, -s, s);
+      m4Origine.makeTranslation(mc.x, mc.y, mc.z).scale(vScale).multiply(rotX);
+      m4VP.fromArray(arr).multiply(m4Origine);
+      camera.projectionMatrix.copy(m4VP);
+      renderer.resetState();
+      renderer.render(scene, camera);
+      mesurer(m4VP);
+    },
+  };
+
+  // Ecart, en pixels, entre la projection du cube et celle que MapLibre donne
+  // pour le meme point. C'est la mesure qui tranche : elle ne depend d'aucune
+  // interpretation visuelle.
+  function mesurer(vp) {
+    const w = carte.getCanvas().clientWidth, h = carte.getCanvas().clientHeight;
+    let max = 0, pire = null;
+    const v = new THREE.Vector4();
+    for (let i = 0; i < PTS.length; i++) {
+      const p = PTS[i];
+      const q = cubes[i].position;              // position REELLE du cube rendu
+      v.set(q.x, q.y - 6, q.z, 1).applyMatrix4(vp);  // -6 : on vise la base, pas le centre
+      if (v.w <= 0) continue;
+      const x = (v.x / v.w * 0.5 + 0.5) * w;
+      const y = (1 - (v.y / v.w * 0.5 + 0.5)) * h;
+      const ref = carte.project(p);
+      const d = Math.hypot(x - ref.x, y - ref.y);
+      if (d > max) { max = d; pire = p; }
+    }
+    const el = document.getElementById('ecart');
+    el.textContent = max.toFixed(1) + ' px';
+    el.className = max < 2 ? 'ok' : 'ko';
+    document.getElementById('detail').textContent =
+      `zoom ${carte.getZoom().toFixed(1)} · pitch ${Math.round(carte.getPitch())}° · `
+      + (pire ? `pire point ${pire[0].toFixed(4)},${pire[1].toFixed(4)}` : '');
+    document.getElementById('mat').textContent = '→ ' + window.MATRICE;
+  }
+}
+</script>
