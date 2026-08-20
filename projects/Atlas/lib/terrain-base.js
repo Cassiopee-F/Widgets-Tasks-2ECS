@@ -236,3 +236,24 @@ export function altitudeOrigineStable(sondee, precedente) {
   if (Number.isFinite(sondee)) return sondee;
   return Number.isFinite(precedente) ? precedente : 0;
 }
+
+/**
+ * Ecart vertical entre une entite et l'origine de la scene 3D, en metres.
+ *
+ * Les instances three.js sont placees relativement a une origine, elle-meme
+ * translatee par l'altitude de son propre point. Les deux echantillonnages
+ * doivent donc suivre la MEME regle de repli, sans quoi ils divergent.
+ *
+ * C'est ce qui est arrive : l'origine conservait sa derniere altitude connue
+ * (`altitudeOrigineStable`) pendant que les entites retombaient au niveau de la
+ * mer. Sur un relief a 200 m, l'ecart valait -200 m et toute la scene passait
+ * sous le sol — les objets 3D semblaient ne plus charger.
+ *
+ * Sans altitude pour l'entite, l'ecart est donc NUL : elle repose sur le plan de
+ * l'origine, jamais au niveau de la mer.
+ */
+export function ecartAuSol(solEntite, altitudeOrigine) {
+  const origine = Number.isFinite(altitudeOrigine) ? altitudeOrigine : 0;
+  if (!Number.isFinite(solEntite)) return 0;
+  return solEntite - origine;
+}
