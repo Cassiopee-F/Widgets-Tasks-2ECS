@@ -59,9 +59,18 @@ export function resolveAccess({ search = '', mode } = {}) {
   if (wanted === 'view') {
     return { viewMode: true, requiredAccess: 'read table', needsProbe: false, reason: 'mode-view' };
   }
-  // Grist annonce l'écriture : on lui fait confiance, sans sonder.
+  // Grist annonce l'ecriture — mais `access` decrit le niveau accorde AU WIDGET
+  // (le reglage « Niveau d'acces » de la vue), pas les droits de la personne sur
+  // le document. Les ACL s'appliquent par-dessus, cote sandbox. Verifie en
+  // simulant un lecteur (`aclAsUser_=viewer@example.com`) : l'iframe recoit
+  // toujours `access=full&readonly=false`, et Atlas ouvrait donc l'edition a
+  // quelqu'un qui n'a pas le droit d'ecrire.
+  //
+  // On ne peut pas conclure ici : seule la sonde d'ecriture dit vrai. Elle ne
+  // force la lecture que sur une erreur ACL franche, donc un editeur n'est
+  // jamais bloque a tort.
   if (grant.readonly === false && grant.access === 'full') {
-    return { viewMode: false, requiredAccess: 'full', needsProbe: false, reason: 'grist-full' };
+    return { viewMode: false, requiredAccess: 'full', needsProbe: true, reason: 'grist-full-a-sonder' };
   }
   // Rien de transmis : ancien comportement — tenter, puis sonder.
   return { viewMode: false, requiredAccess: 'full', needsProbe: true, reason: 'probe' };
@@ -130,7 +139,14 @@ export function canWrite(viewMode) {
 export function isWriteAclError(err) {
   const msg = String(err?.message || err || '').toLowerCase();
   if (!msg) return false;
-  return /view[\s-]?only|read[\s-]?only|cannot modify|not allowed|permission|denied|forbidden|acl|access (is )?denied|insufficient|no write|écriture|lecture seule/.test(msg);
+  // Le libelle que Grist renvoie REELLEMENT quand une regle d'acces bloque une
+  // ecriture est « Blocked by table update access rules » (403) — mesure sur le
+  // document de test avec `aclAsUser_`. Ni « blocked » ni « access rules »
+  // n'etaient dans le motif : la sonde concluait a l'ecriture et Atlas ouvrait
+  // l'edition a un lecteur. Les variantes couvrent table / row / column et
+  // update / create / remove.
+  // `not authorized` / `unauthorized` manquaient aussi, pour les refus AUTH.
+  return /view[\s-]?only|read[\s-]?only|cannot modify|not allowed|not authori[sz]ed|unauthori[sz]ed|blocked by|access rules|permission|denied|forbidden|acl|access (is )?denied|insufficient|no write|écriture|lecture seule/.test(msg);
 }
 
 const PROBE_ROW_ID = 999999999;

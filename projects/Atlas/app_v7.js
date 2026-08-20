@@ -91,7 +91,7 @@ import {
   shouldEnableLight3d,
   parseNo3dParam,
   probeCanWriteDoc,
-} from './lib/view-mode.js?v=20260730l';
+} from './lib/view-mode.js?v=20260818a';
 import {
   createDefaultViewerControls,
   getViewerControl,
