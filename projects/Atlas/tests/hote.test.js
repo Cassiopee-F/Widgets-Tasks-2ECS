@@ -4,6 +4,7 @@ import {
   ECRANS, CLE_STOCKAGE, ecranInitial, estConfigComplete, normaliserConfig,
   validerConfig, lireConfig, ecrireConfig, oublier, depuis, situer,
   peutChangerDeScene, quitterScene,
+  memoriserScenes, lireScenesMemorisees, oublierScenes, CLE_SCENES, PEREMPTION_MS,
 } from '../lib/hote.js';
 
 const stockageFactice = () => {
@@ -165,4 +166,70 @@ test('apres avoir quitte, l accueil rouvre sur la liste', () => {
 
 test('un stockage defaillant le dit, au lieu de recharger sur la meme scene', () => {
   assert.equal(quitterScene(null, { baseUrl: 'x.fr', jeton: 'K', docId: 'D' }), false);
+});
+
+/* ---------- retrouver ses projets au retour ---------- */
+
+const SCENES = [
+  { id: 'a', nom: 'CRESO', org: 'Cerema', espace: 'Etudes', maj: '2026-08-20T10:00:00Z' },
+  { id: 'b', nom: 'Bees', org: 'Cerema', espace: 'Bac', maj: '2026-08-01T10:00:00Z' },
+];
+
+test('la liste trouvee se retrouve a l ouverture suivante', () => {
+  // Sonder tout un compte prend plusieurs secondes : reafficher une page vide a
+  // chaque lancement punirait ceux qui ont beaucoup de documents.
+  const st = stockageFactice();
+  memoriserScenes(st, SCENES, Date.parse('2026-08-20T12:00:00Z'));
+  const m = lireScenesMemorisees(st, Date.parse('2026-08-20T12:30:00Z'));
+  assert.equal(m.scenes.length, 2);
+  assert.equal(m.scenes[0].nom, 'CRESO');
+  assert.equal(m.perime, false);
+});
+
+test('on ne garde que ce qui sert a afficher et a ouvrir', () => {
+  // Les donnees d une scene n ont rien a faire dans le stockage de l appareil.
+  const st = stockageFactice();
+  memoriserScenes(st, [{ ...SCENES[0], geojson: { enorme: true }, jeton: 'secret' }]);
+  const gardees = Object.keys(lireScenesMemorisees(st).scenes[0]).sort();
+  assert.deepEqual(gardees, ['espace', 'id', 'maj', 'nom', 'org']);
+});
+
+test('une liste trop vieille est signalee comme telle', () => {
+  // C est un souvenir, pas l etat du compte : un projet cree depuis n y est
+  // pas, un projet supprime y est encore.
+  const st = stockageFactice();
+  const t0 = Date.parse('2026-08-01T12:00:00Z');
+  memoriserScenes(st, SCENES, t0);
+  assert.equal(lireScenesMemorisees(st, t0 + PEREMPTION_MS - 1000).perime, false);
+  assert.equal(lireScenesMemorisees(st, t0 + PEREMPTION_MS + 1000).perime, true);
+});
+
+test('une entree sans identifiant est ecartee : elle ne s ouvrirait pas', () => {
+  const st = stockageFactice();
+  memoriserScenes(st, [SCENES[0], { nom: 'orpheline' }]);
+  assert.deepEqual(lireScenesMemorisees(st).scenes.map((s) => s.id), ['a']);
+});
+
+test('rien de memorise, ou memoire illisible : on repart de zero', () => {
+  assert.equal(lireScenesMemorisees(stockageFactice()), null);
+  assert.equal(lireScenesMemorisees({ getItem: () => 'pas du json' }), null);
+  assert.equal(lireScenesMemorisees(null), null);
+  const vide = stockageFactice();
+  memoriserScenes(vide, []);
+  assert.equal(lireScenesMemorisees(vide), null, 'une liste vide ne vaut pas une memoire');
+});
+
+test('un quota plein ne fait pas echouer l application', () => {
+  const plein = { setItem: () => { throw new Error('QuotaExceededError'); } };
+  assert.equal(memoriserScenes(plein, SCENES), false);
+});
+
+test('oublier la liste sans oublier la connexion', () => {
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'K' });
+  memoriserScenes(st, SCENES);
+  oublierScenes(st);
+  assert.equal(lireScenesMemorisees(st), null);
+  assert.equal(lireConfig(st).jeton, 'K', 'la connexion survit a l oubli des scenes');
+  assert.equal(st._m.has(CLE_SCENES), false);
 });

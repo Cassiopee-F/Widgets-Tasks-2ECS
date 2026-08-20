@@ -12,8 +12,12 @@
  * sur formulaire, par exemple — sans etre rouvert.
  */
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 export const CLE_STOCKAGE = 'atlas_connexion';
+export const CLE_SCENES = 'atlas_scenes';
+
+/** Au-dela, la liste memorisee n'est plus presentee comme l'etat du compte. */
+export const PEREMPTION_MS = 7 * 24 * 3600 * 1000;
 
 /** Les ecrans possibles, et rien d'autre. */
 export const ECRANS = Object.freeze({
@@ -165,4 +169,53 @@ export function peutChangerDeScene(caps, config) {
  */
 export function quitterScene(stockage, config) {
   return ecrireConfig(stockage, { ...(config || {}), docId: '' });
+}
+
+/* ------------------------------------------------------------------ */
+/* La liste des scenes, retrouvee au retour                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Memoriser les scenes trouvees, pour les revoir des l'ouverture suivante.
+ *
+ * Sonder tout un compte prend plusieurs secondes : reafficher une page vide a
+ * chaque lancement serait une punition pour ceux qui ont beaucoup de documents.
+ * La liste est donc conservee, affichee tout de suite, puis rafraichie en fond.
+ *
+ * On garde le strict necessaire a l'affichage et a l'ouverture — jamais les
+ * donnees des scenes, qui n'ont rien a faire ici.
+ */
+export function memoriserScenes(stockage, scenes, quand = Date.now()) {
+  if (!stockage || typeof stockage.setItem !== 'function') return false;
+  const propres = (scenes || []).filter((s) => s && s.id).map((s) => ({
+    id: s.id, nom: s.nom || '', org: s.org || '', espace: s.espace || '', maj: s.maj || '',
+  }));
+  try {
+    stockage.setItem(CLE_SCENES, JSON.stringify({ quand, scenes: propres }));
+    return true;
+  } catch (_) { return false; }   // quota plein : l'application marche sans
+}
+
+/**
+ * Ce qu'on avait trouve la derniere fois, et quand.
+ *
+ * `quand` n'est pas decoratif : la liste est un souvenir, pas l'etat du compte.
+ * Un projet cree depuis n'y figure pas, un projet supprime y figure encore —
+ * l'interface doit le dire plutot que de laisser croire au direct.
+ */
+export function lireScenesMemorisees(stockage, maintenant = Date.now()) {
+  try {
+    const brut = stockage?.getItem(CLE_SCENES);
+    if (!brut) return null;
+    const d = JSON.parse(brut);
+    const scenes = Array.isArray(d?.scenes) ? d.scenes.filter((s) => s && s.id) : [];
+    if (!scenes.length) return null;
+    const quand = Number(d.quand) || 0;
+    return { scenes, quand, perime: (maintenant - quand) > PEREMPTION_MS };
+  } catch (_) { return null; }
+}
+
+export function oublierScenes(stockage) {
+  if (!stockage || typeof stockage.removeItem !== 'function') return false;
+  try { stockage.removeItem(CLE_SCENES); return true; } catch (_) { return false; }
 }

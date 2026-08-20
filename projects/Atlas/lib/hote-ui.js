@@ -17,7 +17,8 @@ import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {
   ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, oublier,
   depuis, situer, peutChangerDeScene, quitterScene,
-} from './hote.js?v=20260820c';
+  memoriserScenes, lireScenesMemorisees,
+} from './hote.js?v=20260820d';
 
 export const VERSION = '1.0.0';
 
@@ -54,6 +55,7 @@ const CSS = `
   background: var(--surface, #fff); border: 1px solid var(--hairline, #E2DBC8);
   border-radius: 10px; }
 .hote-scene:hover, .hote-scene:focus-visible { border-color: var(--accent, #C44536); }
+.hote-scene[data-memorisee] { opacity: .72; }
 .hote-scene b { display: block; font-weight: 600; font-size: 1rem; margin-bottom: .15rem; }
 .hote-scene span { font-size: .8rem; color: var(--muted, #7A6F5E); }
 .hote-progres { font-size: .85rem; color: var(--muted, #7A6F5E);
@@ -129,6 +131,7 @@ export async function accueillir({ portee = globalThis, document: doc = document
     });
 
     const versScenes = () => montrerScenes(boite, config, portee, {
+      stockage,
       onChoix: async (scene) => {
         const conf = { ...config, docId: scene.id };
         const pret = await ouvrirScene(conf, portee, boite);
@@ -192,10 +195,10 @@ function montrerConnexion(boite, config, message, onValider) {
   boite.querySelector('#h-cle').onkeydown = (e) => { if (e.key === 'Enter') valider(); };
 }
 
-async function montrerScenes(boite, config, portee, { onChoix, onChanger }) {
+async function montrerScenes(boite, config, portee, { onChoix, onChanger, stockage }) {
   boite.innerHTML = `${MARQUE}
     <h2>Vos scènes</h2>
-    <div class="hote-progres" id="h-progres">Recherche…</div>
+    <div class="hote-progres" id="h-progres"></div>
     <div class="hote-liste" id="h-liste"></div>
     <button class="hote-lien" id="h-changer">Changer d’instance ou de clé</button>`;
 
@@ -203,39 +206,78 @@ async function montrerScenes(boite, config, portee, { onChoix, onChanger }) {
   const progres = boite.querySelector('#h-progres');
   boite.querySelector('#h-changer').onclick = onChanger;
 
-  let n = 0;
-  const ajouter = (scene) => {
-    n++;
+  const carte = (scene, memorisee) => {
     const b = document.createElement('button');
     b.className = 'hote-scene';
+    b.dataset.scene = scene.id;
+    const sous = [situer(scene), depuis(scene.maj)].filter(Boolean).join(' — ');
     b.innerHTML = `<b>${echapper(scene.nom || 'Sans titre')}</b>
-      <span>${echapper([situer(scene), depuis(scene.maj)].filter(Boolean).join(' — '))}</span>`;
+      ${sous ? `<span>${echapper(sous)}</span>` : ''}`;
     b.onclick = () => onChoix(scene);
-    liste.appendChild(b);
+    if (memorisee) b.dataset.memorisee = '1';
+    return b;
   };
 
+  // 1. Ce qu'on avait trouve la derniere fois — affiche TOUT DE SUITE.
+  //    Sonder un compte prend plusieurs secondes ; revoir une page vide a chaque
+  //    ouverture serait une punition pour qui a beaucoup de documents.
+  const memoire = lireScenesMemorisees(stockage);
+  const vues = new Set();
+  if (memoire) {
+    for (const s of memoire.scenes) { vues.add(s.id); liste.appendChild(carte(s, true)); }
+    progres.textContent = memoire.perime
+      ? `Liste mémorisée ${depuis(new Date(memoire.quand).toISOString())} — vérification…`
+      : `${memoire.scenes.length} scène${memoire.scenes.length > 1 ? 's' : ''} — vérification…`;
+  } else {
+    progres.textContent = 'Recherche…';
+  }
+
+  // 2. Puis on verifie aupres du compte, sans faire disparaitre ce qui est la.
+  const trouvees = [];
   try {
     await listerScenesAtlas(config.baseUrl, config.jeton, {
       fetchFn: portee.fetch?.bind(portee),
-      onTrouve: ajouter,
+      onTrouve: (scene) => {
+        trouvees.push(scene);
+        const deja = liste.querySelector(`[data-scene="${CSS.escape(scene.id)}"]`);
+        if (deja) { deja.replaceWith(carte(scene, false)); return; }
+        liste.appendChild(carte(scene, false));
+      },
       // L'avancement se compte en documents sondes : sur un compte fourni, la
       // recherche dure, et une page muette laisserait croire a une panne.
       onProgres: (fait, total) => {
         progres.textContent = fait < total
-          ? `${fait} / ${total} documents examinés — ${n} scène${n > 1 ? 's' : ''}`
-          : (n ? `${n} scène${n > 1 ? 's' : ''}` : '');
+          ? `${fait} / ${total} documents examinés — ${trouvees.length} scène${trouvees.length > 1 ? 's' : ''}`
+          : '';
       },
     });
-    if (!n) {
-      progres.textContent = '';
+
+    // 3. Ce que la memoire annoncait et qui n'existe plus : on le retire, sans
+    //    quoi la liste garderait indefiniment des projets supprimes ou perdus.
+    const vivantes = new Set(trouvees.map((s) => s.id));
+    for (const b of [...liste.querySelectorAll('[data-memorisee]')]) {
+      if (!vivantes.has(b.dataset.scene)) b.remove();
+    }
+
+    memoriserScenes(stockage, trouvees);
+    progres.textContent = trouvees.length
+      ? `${trouvees.length} scène${trouvees.length > 1 ? 's' : ''}`
+      : '';
+    if (!trouvees.length) {
       liste.innerHTML = `<div class="hote-avis">Aucune scène Atlas trouvée sur ce compte.
         Une scène est un document contenant un import qgis2grist, des préférences
         de couches ou un récit.</div>`;
     }
   } catch (e) {
+    // Hors ligne ou instance injoignable : la liste memorisee reste a l'ecran,
+    // annoncee pour ce qu'elle est. La faire disparaitre priverait de tout.
     progres.textContent = '';
-    liste.innerHTML = `<div class="hote-avis">Connexion impossible : ${echapper(e.message)}.
-      Vérifiez l’adresse et la clé.</div>`;
+    const avis = document.createElement('div');
+    avis.className = 'hote-avis';
+    avis.textContent = vues.size
+      ? `Compte injoignable (${e.message}). Liste mémorisée ${depuis(new Date(memoire.quand).toISOString())} — une scène ouverte hors ligne peut être vide.`
+      : `Connexion impossible : ${e.message}. Vérifiez l’adresse et la clé.`;
+    liste.prepend(avis);
   }
 }
 
