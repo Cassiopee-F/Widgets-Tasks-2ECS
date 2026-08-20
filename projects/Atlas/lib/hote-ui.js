@@ -73,6 +73,46 @@ const CSS = `
 .hote-menu button small { display: block; font-size: .78rem; color: var(--muted, #7A6F5E); }
 `;
 
+/**
+ * Pose UN avis, en remplacant le precedent.
+ *
+ * `prepend` a chaque tentative empilait les bandeaux : trois essais donnaient
+ * trois messages identiques, qui repoussaient la marque et la liste hors de
+ * l'ecran. Un seul avis a la fois, toujours au meme endroit.
+ */
+function poserAvis(boite, texte) {
+  boite.querySelectorAll('.hote-avis[data-avis]').forEach((e) => e.remove());
+  const el = document.createElement('div');
+  el.className = 'hote-avis';
+  el.dataset.avis = '1';
+  el.textContent = texte;
+  const apres = boite.querySelector('h2');
+  if (apres) apres.after(el); else boite.prepend(el);
+  return el;
+}
+
+/**
+ * Traduit l'echec d'une requete.
+ *
+ * « Failed to fetch » ne dit rien a personne, et surtout pas la verite : en
+ * navigateur, la requete n'est meme pas partie — l'instance refuse l'en-tete
+ * `Authorization` au controle prealable. Une cle invalide, elle, donnerait un
+ * 401 avec un corps lisible.
+ */
+function expliquer(e, caps) {
+  const msg = String(e?.message || e || '');
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return caps && !caps.decouverte
+      ? "Cette instance n'accepte pas les requêtes signées depuis un navigateur. "
+        + "Installez l'application pour ouvrir vos scènes."
+      : 'Instance injoignable — vérifiez la connexion réseau.';
+  }
+  if (/401|invalid api key/i.test(msg)) return 'Clé refusée par l’instance. Vérifiez-la dans votre profil Grist.';
+  if (/403/.test(msg)) return 'Accès refusé à ce document.';
+  if (/404/.test(msg)) return 'Document introuvable — il a peut-être été supprimé.';
+  return msg;
+}
+
 const echapper = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -272,12 +312,10 @@ async function montrerScenes(boite, config, portee, { onChoix, onChanger, stocka
     // Hors ligne ou instance injoignable : la liste memorisee reste a l'ecran,
     // annoncee pour ce qu'elle est. La faire disparaitre priverait de tout.
     progres.textContent = '';
-    const avis = document.createElement('div');
-    avis.className = 'hote-avis';
-    avis.textContent = vues.size
-      ? `Compte injoignable (${e.message}). Liste mémorisée ${depuis(new Date(memoire.quand).toISOString())} — une scène ouverte hors ligne peut être vide.`
-      : `Connexion impossible : ${e.message}. Vérifiez l’adresse et la clé.`;
-    liste.prepend(avis);
+    const cause = expliquer(e, capacites(portee));
+    poserAvis(boite, vues.size
+      ? `${cause} Liste mémorisée ${depuis(new Date(memoire.quand).toISOString())}.`
+      : cause);
   }
 }
 
@@ -296,12 +334,7 @@ async function ouvrirScene(config, portee, boite) {
     installerAdaptateur(client, {}, portee);
     return true;
   } catch (e) {
-    if (boite) {
-      const avis = document.createElement('div');
-      avis.className = 'hote-avis';
-      avis.textContent = `Scène inaccessible : ${e.message}`;
-      boite.prepend(avis);
-    }
+    if (boite) poserAvis(boite, expliquer(e, capacites(portee)));
     return false;
   }
 }
