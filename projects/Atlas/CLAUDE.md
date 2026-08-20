@@ -70,6 +70,8 @@ Lieu · Couches · Soleil · Vues · Contrôles · Récit · Réglages (+ symbol
 
 ## État actuel — fonctionne
 
+**En ligne : v1.1.3** (`published/atlas/`, GitHub Pages).
+
 - Chargement Scene Manifest / tables qgis2grist (cas Bee Farming validé).
 - Symbolisation (fixe / catégorisé / gradué), contrôles, récit, export JSON `2.2-atlas-binding`.
 - Dock soleil haut-droite (repli style boussole) ; inspecteur fermable.
@@ -94,6 +96,11 @@ Lieu · Couches · Soleil · Vues · Contrôles · Récit · Réglages (+ symbol
 - **Zoom manifest non appliqué** : Atlas ignore `visibility.minZoom`/`maxZoom` —
   seul `defaultVisible` agit. Le LOD zoom du manifest ne vaut que pour les
   lecteurs qui l’implémentent (carte qgis2grist).
+
+- **Zone de travail retirée du panneau Lieu.** `setRadius` stockait la valeur et
+  redessinait le panneau ; `STATE.location.radius` n’était lu nulle part ailleurs.
+  Quatre boutons sans effet. Ne pas la remettre sans lui donner un rôle réel —
+  emprise d’import OSM, cadrage caméra, ou cercle sur la carte.
 
 ## Apparence des couches
 
@@ -131,6 +138,11 @@ Réglages portés par `style.symbolization` (persistés dans `Atlas_LayerPrefs`)
   appliqués tels quels ; l’étalement linéaire min→max n’est qu’un repli. Sur une
   distribution asymétrique (mailles à 1–2 bâtiments, maximum à 134) l’étalement
   verse la quasi-totalité dans la première classe.
+- **`label` est créé s’il manque**, comme `stroke` et `extrusion`.
+  `initSymbolization` se contentait de le compléter : une couche enregistrée
+  avant l’arrivée des étiquettes — ou restaurée depuis une étape de récit
+  ancienne, `applyStoryLayerMeta` remplaçant toute la symbolisation — arrivait
+  sans `label`, et l’onglet Étiquette lisait `undefined.enabled`.
 - `applyLayerPrefsBinding` restaure l’apparence **en plus** du style déclaratif
   (`mergeAppearancePrefs`) : un `declarative` dans les prefs ne doit pas effacer
   opacité, contour ni base d’extrusion.
@@ -161,6 +173,53 @@ sur une surface, une ligne ou un point rendu en cercle 2D.
 - Reste à faire : la règle est encore réécrite à la main en 7 points d'`app_v7.js`
   (943, 1906, 1944, 2770, 2865, 2903, 2944), dont **1906, 1944 et 2944 sans la
   condition ponctuelle**. À remplacer par `isModelLayer`.
+
+## Scène 3D — trois causes distinctes de décalage
+
+Les modèles « bougeaient avec la carte ». Trois défauts indépendants s’y
+mêlaient, et seuls les deux premiers se voient au banc de mesure
+(`tests/manuel/projection-3d.html`, qui compare en pixels la position du cube
+three.js à celle que MapLibre donne pour les mêmes coordonnées).
+
+**1. Le viewport du renderer — la cause principale.** three.js relève la taille
+du canvas **à sa création** et ne la revoit jamais. Ce canvas étant celui de
+MapLibre, l’ouverture d’un panneau rétrécit la carte sans que le renderer le
+sache : les objets sont dessinés à la mauvaise échelle **et** décalés, ce qui en
+navigation se lit comme un glissement latéral. Repère décisif, donné par
+l’utilisateur : *le défaut n’apparaît que lorsqu’un panneau est ouvert*. Le
+viewport est resynchronisé dans `render()` dès que `canvas.width/height` change.
+Un banc sans panneau ne peut pas voir ce défaut, et une mesure portant sur la
+matrice de projection non plus — elle est correcte.
+
+**2. La projection globe.** Le custom layer pose une translation **plane** là où
+MapLibre projette sur une **sphère**. Écart mesuré :
+
+    z3 → 570 px · z6 → 1692 px · z9 → 2248 px · z11 → 2337 px · z12 → 0 px
+
+Rien n’est à sa place sous z12. `MODEL3D_ZOOM_GATE` ne s’appliquait qu’au-delà de
+4 000 objets : une couche de quinze lampadaires s’affichait donc grossièrement
+décalée en vue régionale. Sous `GLOBE_MERCATOR_ZOOM` (12) et en projection globe,
+les modèles ne sont plus rendus — à ces échelles un lampadaire mesure de toute
+façon moins d’un pixel.
+
+**3. Le relief échantillonné trop tôt.** `queryTerrainElevation` dépend de la
+finesse du maillage, donc du zoom : sur un même point, **1029,79 m à z16,8** et
+**1034,14 m à z18,3**. Les tuiles arrivant après coup, les objets sont posés sur
+un relevé grossier puis le sol bouge sous eux — en vue oblique, encore un
+glissement latéral. Atlas écoute donc `data` sur `terrain-dem` et rejoue le
+calage, groupé sur 600 ms, en plus du recalage par palier de zoom
+(`paliersDemDifferents`).
+
+- Le cache d’altitude n’est **plus vidé à chaque `moveend`** : un simple
+  panoramique faisait re-sonder tous les objets, et ceux dont la tuile n’était
+  pas revenue retombaient à zéro.
+- `readOriginElev` conserve la dernière altitude connue de l’origine plutôt que
+  de retomber au niveau de la mer (`altitudeOrigineStable`). **Symétrie
+  obligatoire** : `placement()` doit alors caler une entité sans altitude **sur
+  l’origine**, pas sur zéro — sinon toute la scène s’enfonce de la hauteur de
+  l’origine.
+- `recalerRelief()` est le point d’entrée unique : modèles et surfaces lisent le
+  même cache, les recaler séparément les ferait diverger.
 
 ## Surfaces en volume posées sur le relief (`lib/terrain-base.js`)
 
@@ -308,8 +367,72 @@ leurs centres (rayon fixe à l’écran), au-delà les surfaces reprennent la ma
 
 Repère mesuré : mailles de 200 m → bascule vers **z10,8**.
 
+## Droits — ce que Grist transmet ne dit pas ce qu’on croit
+
+`?access=full&readonly=false` décrit le niveau accordé **au widget** (le réglage
+« Niveau d’accès » de la vue), **pas** les droits de la personne sur le document.
+Les ACL s’appliquent par-dessus, côté sandbox : en simulant un lecteur
+(`aclAsUser_=viewer@example.com`), l’iframe reçoit quand même
+`access=full&readonly=false`. Atlas ouvrait donc l’édition à qui ne peut rien
+écrire.
+
+- Seule la **sonde d’écriture** tranche (`probeCanWriteDoc`) : un `UpdateRecord`
+  sur une ligne inexistante. `resolveAccess` la déclenche désormais aussi quand
+  Grist annonce l’écriture. Le sens inverse reste sans appel : quand Grist
+  déclare la lecture, il ne se trompe pas.
+- La sonde ne force la lecture que sur une **erreur ACL franche**. Le libellé que
+  Grist renvoie réellement est **`Blocked by table update access rules`** (403) —
+  ni « blocked » ni « access rules » n’étaient dans `isWriteAclError`, qui
+  retombait sur son repli « en cas de doute, privilégier l’édition ». Variantes
+  couvertes : table / row / column × update / create / remove, plus
+  `not authorized` / `unauthorized`.
+- « not found » — le cas **normal** pour un éditeur, puisque la ligne sondée
+  n’existe pas — ne doit jamais basculer en lecture. Un éditeur bloqué à tort
+  serait pire que le défaut corrigé.
+
+En lecture : les modules d’auteur sont refusés par `openModule`, l’inspecteur
+d’objet passe en consultation (`geoReadOnly`, pas de bouton Enregistrer), et la
+barre du haut perd Charger / Enregistrer / Exporter — **une virgule de trop**
+dans le CSS les agrégeait à la règle de l’avatar et les laissait visibles. À leur
+place, un bouton **Récit** (`#btn-story.has-story`), sans lequel un récit publié
+n’avait plus aucun point d’entrée une fois le rail retiré.
+
+## Persistance — ce qui s’écrit, et quand
+
+| Objet | Table | Déclenchement |
+|---|---|---|
+| Apparence d’une couche `qgis2grist` | `Atlas_LayerPrefs` | immédiat (`saveLayerPref`) |
+| Autres couches | `Maquette_Layers` | « Enregistrer » explicite |
+| Récit | `Atlas_Story` | à chaque capture, débounce 400 ms |
+| Contrôles exposés en lecture | avec la couche (`_controls`) | idem couche |
+
+- **`Maquette_Layers` est créée à la demande** (`ensureMaquetteLayersTable`).
+  `initGristTables` ne tourne que sur les documents en mode maquette : en mode
+  Scene Manifest, la table n’existait pas et enregistrer une couche non
+  `qgis2grist` échouait sur « [Sandbox] KeyError 'Maquette_Layers' ». La créer à
+  l’écriture, et pas au chargement, garde une empreinte nulle sur les documents
+  qui ne s’en servent pas.
+- **Le récit s’écrit en une seule transaction.** Effacement et réécriture
+  partaient en **deux** `applyUserActions` : le `BulkRemoveRecord` était déjà
+  commis quand le `BulkAddRecord` échouait, et un refus d’ACL au mauvais moment
+  **effaçait le récit** au lieu de le mettre à jour. Grist applique une liste
+  d’actions comme un tout : les deux y sont désormais.
+- **Un échec d’écriture doit se voir.** « Étape capturée » s’affiche dès le clic,
+  avant même que l’enregistrement ne parte ; l’erreur était avalée par un
+  `.catch` interne, `enterViewModeOnWriteFail` n’était jamais appelé, et
+  l’utilisateur croyait son récit conservé. Elle remonte à l’appelant, qui la
+  signale — la chaîne de sauvegardes, elle, reste saine, sinon plus rien ne
+  partirait ensuite.
+
 ## Récit (`Atlas_Story`)
 
+- Chaque étape emporte **sa propre copie** de la symbolisation : deux étapes
+  peuvent montrer la même couche catégorisée ici, graduée là. `captureStoryState`
+  clone (`cloneJson`), `applyStoryState` travaille sur un clone, `applyLayerStyle`
+  repeint. Le piège serait une `symbolization` stockée **par référence** : couche
+  vivante et étape pointeraient sur le même objet, et tout réglage ultérieur
+  réécrirait le passé du récit — toutes les étapes finiraient identiques.
+  `tests/story-symbolization.test.js` verrouille cela, étiquettes comprises.
 - Une étape décrit l’**état complet** de la scène : `applyStoryState` masque les
   couches qu’elle ne cite pas. `captureStoryState` enregistre toujours toutes les
   couches ; seuls les récits écrits à la main sont partiels.
@@ -338,7 +461,12 @@ Repère mesuré : mailles de 200 m → bascule vers **z10,8**.
   `captureStoryState`.
 
 - Ombres = éclairage modèles three.js (pas shadow map MapLibre au sol).
-- Modèles GLB via `published/models/` (GitHub Pages).
+- Modèles GLB via **`published/atlas/models/`** (GitHub Pages) — sous le widget,
+  depuis leur co-localisation. Le défaut de `MODEL_LIBRARY.baseRoot` a longtemps
+  visé `/Widgets-Grist/models/`, qui renvoie 404 : en ligne la sonde `./models/`
+  rattrapait l’erreur (le widget est servi depuis `/atlas/`), mais en
+  développement aucun modèle ne chargeait. Pour essayer la 3D en local, servir la
+  racine du repo — la sonde tente `../../published/atlas/models/` en premier.
 - Tests : `node --test projects/Atlas/tests/*.test.js` (chemins quotés sous PowerShell).
 - Spec lecture/mobile : `docs/superpowers/specs/2026-07-30-atlas-view-mobile-design.md`
 
