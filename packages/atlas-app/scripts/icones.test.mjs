@@ -103,3 +103,28 @@ test('chaque densite est rendue a sa taille, pas mise a l’echelle', () => {
     assert.equal(png.readUInt32BE(16), cote, `${densite} devrait faire ${cote} px`);
   }
 });
+
+test('un ecran de lancement non carre ne deforme pas la marque', () => {
+  // Le theme de lancement etire son fond pour remplir l'ecran, sans egard pour
+  // les proportions : c'est a l'image d'arriver deja aux bonnes dimensions.
+  const img = rendre(360, { hauteur: 640, echelle: 0.28 });
+  assert.equal(img.largeur, 360);
+  assert.equal(img.hauteur, 640);
+  let xMin = 1e9; let xMax = -1; let yMin = 1e9; let yMax = -1;
+  for (let y = 0; y < 640; y++) {
+    for (let x = 0; x < 360; x++) {
+      const i = (y * 360 + x) * 4;
+      const estFond = img.pixels[i] === ENCRE[0] && img.pixels[i + 1] === ENCRE[1];
+      if (estFond) continue;
+      xMin = Math.min(xMin, x); xMax = Math.max(xMax, x);
+      yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
+    }
+  }
+  const l = xMax - xMin + 1;
+  const h = yMax - yMin + 1;
+  // La marque est plus large que haute (24 x 22 dans son repere) : c'est ce
+  // rapport qui doit survivre, pas celui de l'image.
+  assert.ok(Math.abs(l / h - 24 / 22) < 0.05, `rapport ${(l / h).toFixed(3)}, attendu ${(24 / 22).toFixed(3)}`);
+  assert.ok(Math.abs((xMin + xMax) / 2 - 180) < 2, 'centree horizontalement');
+  assert.ok(Math.abs((yMin + yMax) / 2 - 320) < 2, 'centree verticalement');
+});

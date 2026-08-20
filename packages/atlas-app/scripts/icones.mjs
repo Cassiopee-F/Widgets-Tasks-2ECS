@@ -17,7 +17,7 @@
  */
 
 import { deflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 /* La marque, dans son repere d'origine (viewBox 32x32 du widget). */
@@ -47,16 +47,18 @@ function dansPolygone(x, y, points) {
 /**
  * Dessine la marque en RGBA.
  *
- * @param {number} taille cote en pixels
- * @param {{fond: number[]|null, echelle: number}} o `fond` nul = transparent
- *   (l'avant-plan d'une icone adaptative) ; `echelle` est la part du cote
- *   occupee par la marque — Android rogne jusqu'au tiers d'une icone
- *   adaptative, donc son avant-plan doit rester bien en deca du bord.
+ * @param {number} largeur en pixels
+ * @param {{fond: number[]|null, echelle: number, hauteur: number}} o `fond` nul
+ *   = transparent (l'avant-plan d'une icone adaptative) ; `echelle` est la part
+ *   du plus petit cote occupee par la marque — Android rogne jusqu'au tiers
+ *   d'une icone adaptative, donc son avant-plan doit rester en deca du bord.
+ *   `hauteur` permet un format non carre (l'ecran de lancement) : la marque y
+ *   garde ses proportions, seul le fond s'etend.
  */
-export function rendre(taille, { fond = ENCRE, echelle = 0.62 } = {}) {
-  const px = new Uint8Array(taille * taille * 4);
+export function rendre(largeur, { fond = ENCRE, echelle = 0.62, hauteur = largeur } = {}) {
+  const px = new Uint8Array(largeur * hauteur * 4);
   if (fond) {
-    for (let i = 0; i < taille * taille; i++) {
+    for (let i = 0; i < largeur * hauteur; i++) {
       px[i * 4] = fond[0]; px[i * 4 + 1] = fond[1]; px[i * 4 + 2] = fond[2]; px[i * 4 + 3] = 255;
     }
   }
@@ -68,9 +70,9 @@ export function rendre(taille, { fond = ENCRE, echelle = 0.62 } = {}) {
   const x0 = Math.min(...xs); const x1 = Math.max(...xs);
   const y0 = Math.min(...ys); const y1 = Math.max(...ys);
   const etendue = Math.max(x1 - x0, y1 - y0);
-  const k = (taille * echelle) / etendue;
-  const dx = taille / 2 - ((x0 + x1) / 2) * k;
-  const dy = taille / 2 - ((y0 + y1) / 2) * k;
+  const k = (Math.min(largeur, hauteur) * echelle) / etendue;
+  const dx = largeur / 2 - ((x0 + x1) / 2) * k;
+  const dy = hauteur / 2 - ((y0 + y1) / 2) * k;
 
   const corps = MARQUE.corps.map(([x, y]) => [x * k + dx, y * k + dy]);
   const a = MARQUE.arete;
@@ -81,8 +83,8 @@ export function rendre(taille, { fond = ENCRE, echelle = 0.62 } = {}) {
 
   const pas = 1 / SUPER;
   const n = SUPER * SUPER;
-  for (let y = 0; y < taille; y++) {
-    for (let x = 0; x < taille; x++) {
+  for (let y = 0; y < hauteur; y++) {
+    for (let x = 0; x < largeur; x++) {
       let nCorps = 0; let nArete = 0;
       for (let sy = 0; sy < SUPER; sy++) {
         for (let sx = 0; sx < SUPER; sx++) {
@@ -96,10 +98,10 @@ export function rendre(taille, { fond = ENCRE, echelle = 0.62 } = {}) {
       if (!nCorps) continue;
       const partArete = nArete / nCorps;
       const teinte = [0, 1, 2].map((c) => VERMILLON[c] * (1 - partArete) + CREME[c] * partArete);
-      poser(px, taille, x, y, teinte, nCorps / n);
+      poser(px, largeur, x, y, teinte, nCorps / n);
     }
   }
-  return { largeur: taille, hauteur: taille, pixels: px };
+  return { largeur, hauteur, pixels: px };
 }
 
 /** Compose une couleur sur le pixel existant, selon sa couverture. */
@@ -202,9 +204,40 @@ export function poserIcones(res) {
   faits.push(ecrire(join(res, 'mipmap-anydpi-v26', 'ic_launcher.xml'), ADAPTATIVE_XML));
   faits.push(ecrire(join(res, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), ADAPTATIVE_XML));
   faits.push(ecrire(join(res, 'values', 'ic_launcher_background.xml'), COULEURS_XML));
-  // L'ecran de lancement, pour qu'Atlas ne s'ouvre pas sur un blanc qu'on ne
-  // retrouve nulle part ailleurs dans l'application.
-  faits.push(ecrire(join(res, 'drawable', 'splash.png'), encoderPNG(rendre(1024, { echelle: 0.28 }))));
+  faits.push(...poserSplash(res));
+  return faits;
+}
+
+/** Largeur et hauteur declarees par l'entete d'un PNG. */
+function dimensionsPNG(chemin) {
+  const t = readFileSync(chemin).subarray(16, 24);
+  return { largeur: t.readUInt32BE(0), hauteur: t.readUInt32BE(4) };
+}
+
+/**
+ * L'ecran de lancement, pour qu'Atlas ne s'ouvre pas sur un blanc qu'on ne
+ * retrouve nulle part ailleurs dans l'application.
+ *
+ * `cap add` pose un `splash.png` par orientation et par densite. Ecrire le seul
+ * `drawable/splash.png` ne servirait a rien : Android prefere toujours la
+ * variante la plus specifique, et l'ecran resterait celui de Capacitor. On
+ * reprend donc chaque variante presente, a ses dimensions exactes — le theme
+ * de lancement etire son fond sans egard pour les proportions, et un carre
+ * mis a la place aplatirait la pyramide.
+ */
+function poserSplash(res) {
+  const faits = [];
+  const variantes = readdirSync(res)
+    .filter((d) => d.startsWith('drawable'))
+    .map((d) => join(res, d, 'splash.png'))
+    .filter((f) => existsSync(f));
+  for (const fichier of variantes) {
+    const { largeur, hauteur } = dimensionsPNG(fichier);
+    faits.push(ecrire(fichier, encoderPNG(rendre(largeur, { hauteur, echelle: 0.28 }))));
+  }
+  if (!faits.length) {   // avant `cap add` : un carre de reference suffit
+    faits.push(ecrire(join(res, 'drawable', 'splash.png'), encoderPNG(rendre(1024, { echelle: 0.28 }))));
+  }
   return faits;
 }
 
