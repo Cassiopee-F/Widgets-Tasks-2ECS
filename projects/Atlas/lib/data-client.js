@@ -27,13 +27,29 @@ export const VERSION = '1.0.0';
 /**
  * Ou tourne-t-on ?
  *
- * On ne devine pas par l'iframe : la presence de l'API plugin est le seul
- * critere fiable. Un widget charge hors Grist n'a pas `grist.docApi`, et une
- * page ouverte dans un onglet ne l'aura jamais.
+ * La presence de `grist.docApi` NE SUFFIT PAS, contrairement a ce que fait
+ * SURFAC²E : Atlas charge `grist-plugin-api.js` depuis son HTML, et ce script
+ * installe `window.grist` meme hors de tout document. Verifie en ouvrant Atlas
+ * dans un onglet — l'objet est la, et ses appels echouent ensuite en
+ * « RPC_UNKNOWN_FORWARD_DEST ». S'y fier ferait croire a un widget partout.
+ *
+ * Le second critere est l'encadrement : un widget vit TOUJOURS dans une iframe,
+ * une application ouverte seule n'en a jamais. La comparaison ne lit aucune
+ * propriete de la fenetre parente, donc elle ne bute pas sur l'isolation
+ * d'origine ; si elle echouait tout de meme, on se sait encadre.
  */
 export function detecterMode(portee = globalThis) {
   const g = portee?.grist;
-  return (g && g.docApi) ? 'grist' : 'rest';
+  if (!g || !g.docApi) return 'rest';
+  return estEncadre(portee) ? 'grist' : 'rest';
+}
+
+/** Sommes-nous dans une iframe ? En cas de doute, oui. */
+export function estEncadre(portee = globalThis) {
+  try {
+    if (portee.self === undefined || portee.top === undefined) return false;
+    return portee.self !== portee.top;
+  } catch (_) { return true; }
 }
 
 /**

@@ -136,7 +136,7 @@ const TERRAIN_SOURCES = {
 };
 
 const CONFIG = {
-    defaultCenter: [1.4437, 43.6043], // Toulouse (Capitole)
+    defaultCenter: [5.3740, 43.2951], // Marseille (Vieux-Port)
     defaultZoom: 16,
     defaultPitch: 55,
     defaultBearing: -18,
@@ -155,7 +155,7 @@ const CONFIG = {
 
 const STATE = {
     projectName: '',
-    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437 },
+    location: { name: 'Vieux-Port · Marseille', lat: 43.2951, lng: 5.3740 },
     layers: [],
     story: [],
     viewerControls: createDefaultViewerControls(),
@@ -5643,5 +5643,31 @@ async function init() {
     updateSunStrip();
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-else init();
+/**
+ * Demarrage — deux chemins, un seul point d'entree.
+ *
+ * Dans un document Grist, rien ne change : `init()` part comme avant. Ouvert
+ * seul — application installee ou simple onglet — Atlas ne sait ni ou se
+ * connecter ni quelle scene montrer : l'accueil le demande, puis rend la main.
+ *
+ * L'accueil est charge A LA DEMANDE. En widget, ce `import()` n'a jamais lieu :
+ * ni le module d'accueil ni ses dependances ne sont telecharges, et le chemin
+ * eprouve reste rigoureusement inchange.
+ */
+async function demarrer() {
+    try {
+        const { capacites } = await import('./lib/data-client.js?v=20260820b');
+        if (capacites().mode === 'grist') return init();
+        const { accueillir } = await import('./lib/hote-ui.js?v=20260820b');
+        const pret = await accueillir();
+        if (!pret) return;          // l'accueil garde l'ecran : rien a demarrer
+    } catch (e) {
+        // Un accueil defaillant ne doit pas empecher Atlas de s'ouvrir : hors
+        // Grist il n'aura pas de donnees, mais il le dira mieux qu'une page morte.
+        console.error('[Atlas] accueil :', e);
+    }
+    return init();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);
+else demarrer();

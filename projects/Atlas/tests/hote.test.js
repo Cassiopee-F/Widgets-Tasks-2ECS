@@ -35,11 +35,13 @@ test('une scene deja choisie ouvre Atlas directement', () => {
   assert.equal(ecranInitial(caps(), { baseUrl: 'https://x.fr', jeton: 'K', docId: 'D' }), ECRANS.ATLAS);
 });
 
-test('en navigateur, on ne demande pas une cle qui sera refusee', () => {
+test('en navigateur, on explique sans barrer la route', () => {
   // L'instance rejette `Authorization` au controle prealable : demander la cle
-  // ferait echouer l'utilisateur sur une manoeuvre impossible.
+  // ferait echouer l'utilisateur sur une manoeuvre impossible. Mais Atlas hors
+  // Grist reste utile — fichiers, OSM, sauvegarde locale — donc on n'interdit
+  // rien, on oriente.
   const e = ecranInitial(caps({ decouverte: false, ecriture: false, raison: 'CORS' }), null);
-  assert.equal(e, ECRANS.IMPOSSIBLE);
+  assert.equal(e, ECRANS.LOCAL);
 });
 
 /* ---------- ce que l’utilisateur tape ---------- */

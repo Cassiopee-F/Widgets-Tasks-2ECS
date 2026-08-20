@@ -21,7 +21,7 @@ export const ECRANS = Object.freeze({
   CONNEXION: 'connexion',    // instance et cle a renseigner
   SCENES: 'scenes',          // choisir parmi les scenes trouvees
   ATLAS: 'atlas',            // la scene est ouverte
-  IMPOSSIBLE: 'impossible',  // navigateur sans application : rien a proposer
+  LOCAL: 'local',            // navigateur : pas de compte, mais Atlas reste utilisable
 });
 
 /**
@@ -33,7 +33,10 @@ export const ECRANS = Object.freeze({
  */
 export function ecranInitial(caps, config) {
   if (caps.mode === 'grist') return ECRANS.WIDGET;
-  if (!caps.decouverte) return ECRANS.IMPOSSIBLE;
+  // Sans decouverte possible, on n'offre pas une connexion qui echouerait — mais
+  // on ne barre pas la route : Atlas hors Grist sait deja travailler en local,
+  // fichiers et OSM. L'ecran explique, il ne bloque pas.
+  if (!caps.decouverte) return ECRANS.LOCAL;
   if (!estConfigComplete(config)) return ECRANS.CONNEXION;
   return config?.docId ? ECRANS.ATLAS : ECRANS.SCENES;
 }

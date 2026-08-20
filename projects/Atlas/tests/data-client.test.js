@@ -1,16 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  detecterMode, peutSAuthentifier, capacites, recordsVersColonnes, creerClient,
+  detecterMode, peutSAuthentifier, capacites, recordsVersColonnes, creerClient, estEncadre,
 } from '../lib/data-client.js';
+
+/** Une fenetre de widget : encadree, avec l'API plugin. */
+const widget = (extra = {}) => {
+  const top = {};
+  const w = { grist: { docApi: {} }, top, ...extra };
+  w.self = w;
+  return w;
+};
+/** Une fenetre d'application : au premier plan. Le script plugin peut y etre. */
+const appli = (extra = {}) => {
+  const w = { grist: { docApi: {} }, ...extra };
+  w.self = w; w.top = w;
+  return w;
+};
 
 /* ---------- ou tourne-t-on ---------- */
 
-test('la presence de l API plugin decide, pas l iframe', () => {
-  assert.equal(detecterMode({ grist: { docApi: {} } }), 'grist');
+test('sans API plugin, c est une application', () => {
   assert.equal(detecterMode({}), 'rest');
-  // Un `grist` sans `docApi` — script charge, API indisponible — n'est pas un widget.
+  // Un `grist` sans `docApi` n'est pas davantage un widget.
   assert.equal(detecterMode({ grist: {} }), 'rest');
+});
+
+test('l API plugin seule ne prouve rien : Atlas la charge partout', () => {
+  // Constate en ouvrant Atlas dans un onglet : `grist-plugin-api.js` installe
+  // `window.grist` meme hors document, et ses appels echouent ensuite en
+  // « RPC_UNKNOWN_FORWARD_DEST ». S'y fier faisait croire a un widget partout,
+  // et l'accueil ne s'affichait jamais.
+  assert.equal(detecterMode(appli()), 'rest');
+  assert.equal(detecterMode(widget()), 'grist');
+});
+
+test('l encadrement tranche, et le doute penche vers le widget', () => {
+  assert.equal(estEncadre(appli()), false);
+  assert.equal(estEncadre(widget()), true);
+  // Une fenetre parente inaccessible : on se sait encadre.
+  const piege = { grist: { docApi: {} } };
+  Object.defineProperty(piege, 'top', { get() { throw new Error('cross-origin'); } });
+  piege.self = piege;
+  assert.equal(estEncadre(piege), true);
+  assert.equal(detecterMode(piege), 'grist');
 });
 
 /* ---------- ce que l environnement autorise ---------- */
@@ -40,7 +73,7 @@ test('Capacitor en mode web ne suffit pas', () => {
 });
 
 test('dans Grist, l ecriture est permise et la decouverte sans objet', () => {
-  const c = capacites({ grist: { docApi: {} } });
+  const c = capacites(widget());
   assert.equal(c.mode, 'grist');
   assert.equal(c.ecriture, true);
   assert.equal(c.decouverte, false, 'un widget ne voit qu un document, le sien');
@@ -107,11 +140,11 @@ test('une erreur HTTP porte le code et le message', async () => {
 
 test('le mode widget delegue a l API plugin', async () => {
   const appels = [];
-  const portee = { grist: { docApi: {
+  const portee = widget(); portee.grist = { docApi: {
     listTables: async () => { appels.push('listTables'); return ['A']; },
     fetchTable: async (t) => { appels.push('fetch:' + t); return { id: [] }; },
     applyUserActions: async (a) => { appels.push('apply:' + a.length); return {}; },
-  } } };
+  } };
   const c = await creerClient({ portee });
   await c.listTables();
   await c.fetchTable('Atlas_Story');
