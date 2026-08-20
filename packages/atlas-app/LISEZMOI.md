@@ -31,6 +31,21 @@ npm run apk              # -> android/app/build/outputs/apk/debug/app-debug.apk
 
 Requiert JDK 17 et le SDK Android (`platforms;android-34`, `build-tools;34.0.0`).
 
+### Les icones
+
+`npm run apk` appelle `scripts/icones.mjs`, qui redessine la marque Atlas a
+toutes les densites. Sans lui, `cap add` laisse l'icone generique de Capacitor
+et rien ne distingue Atlas dans un tiroir d'applications.
+
+Le script n'a aucune dependance — polygone surechantillonne, PNG passe a
+`zlib` — pour qu'une icone n'exige ni `sharp` ni telechargement. Il produit les
+cinq densites de `ic_launcher`, l'avant-plan adaptatif (dessine dans les 72 dp
+qu'Android ne rogne pas), la couleur de fond et l'ecran de lancement.
+
+`npm test` verifie le cadrage, les densites et l'encodage — dont le debordement
+hors zone sure, un defaut qui ne se voit que sur le telephone de quelqu'un
+d'autre.
+
 ## Ce que l'application sait faire
 
 Se connecter a une instance (adresse + cle API, retenues sur l'appareil),

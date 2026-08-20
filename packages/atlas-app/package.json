@@ -5,8 +5,10 @@
   "description": "Atlas — application de terrain (Android). Enveloppe Capacitor autour du meme code que le widget.",
   "scripts": {
     "vendoriser": "node scripts/vendoriser.mjs",
+    "icones": "node scripts/icones.mjs",
     "sync": "npm run vendoriser && npx cap sync android",
-    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+    "apk": "npm run sync && npm run icones && cd android && ./gradlew assembleDebug",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

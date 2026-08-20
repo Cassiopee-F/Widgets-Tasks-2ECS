@@ -2,3 +2,6 @@
 www/
 android/
 node_modules/
+
+# Icones : regenerees par `npm run icones`.
+assets/
