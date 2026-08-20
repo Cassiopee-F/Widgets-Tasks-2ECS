@@ -1,0 +1,9 @@
+{
+  "appId": "fr.cerema.atlas",
+  "appName": "Atlas",
+  "webDir": "www",
+  "android": { "allowMixedContent": true },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

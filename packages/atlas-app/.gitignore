@@ -1,0 +1,4 @@
+# Artefacts de construction : regeneres par `npm run vendoriser` et `cap add`.
+www/
+android/
+node_modules/

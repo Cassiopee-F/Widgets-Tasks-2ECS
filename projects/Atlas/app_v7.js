@@ -326,6 +326,13 @@ const MODEL_LIBRARY = {
 let MODEL_BASE_EXPLICIT = false;
 (function () {
     try {
+        // Application installee : le catalogue est embarque dans le paquet, et
+        // c'est le seul chemin valable — aucun CDN n'est joignable hors reseau.
+        if (typeof window !== 'undefined' && window.__ATLAS_MODELES__) {
+            MODEL_LIBRARY.baseRoot = String(window.__ATLAS_MODELES__).replace(/\/+$/, '') + '/';
+            MODEL_BASE_EXPLICIT = true;
+            return;
+        }
         const qp = new URLSearchParams(location.search).get('models');
         if (qp) { MODEL_LIBRARY.baseRoot = qp.replace(/\/+$/, '') + '/'; MODEL_BASE_EXPLICIT = true; return; }
         const ls = localStorage.getItem('atlas_model_base');
