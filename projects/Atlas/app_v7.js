@@ -263,10 +263,16 @@ const PALETTE_INFO = {
 // ============================================================
 // BIBLIOTHÈQUE DE MODÈLES 3D
 // ============================================================
-// Catalogue 3D généré dans le repo (scripts/generate-models.js → published/models/)
-// Servi via GitHub Pages. Deux sets de style : 'colored' | 'mono'. Modèles en mètres (scale 1).
+// Catalogue 3D genere dans le repo (scripts/generate-models.js) et publie SOUS
+// LE WIDGET, `published/atlas/models/`, depuis qu'il y a ete co-localise.
+// Servi via GitHub Pages. Deux sets de style : 'colored' | 'mono'. Modeles en metres (scale 1).
+//
+// Le defaut a longtemps pointe vers `/Widgets-Grist/models/`, reste du temps ou
+// le catalogue vivait a la racine — un chemin qui renvoie 404 depuis le
+// deplacement. En ligne, la sonde `./models/` rattrapait l'erreur puisque le
+// widget est servi depuis `/atlas/` ; hors de ce cas, aucun modele ne chargeait.
 const MODEL_LIBRARY = {
-    baseRoot: 'https://nic01asfr.github.io/Widgets-Grist/models/',
+    baseRoot: 'https://nic01asfr.github.io/Widgets-Grist/atlas/models/',
     set: 'colored',
     get baseUrl() { return this.baseRoot + this.set + '/'; },
     categories: {
@@ -337,9 +343,12 @@ async function probeLocalModels() {
     if (MODEL_BASE_EXPLICIT) return;
     const cands = [];
     try {
-        cands.push(new URL('../../published/models/', location.href).href); // racine du repo servie
-        cands.push(new URL('./models/', location.href).href);               // modèles à côté du widget
+        // Depuis `projects/Atlas/`, avec la racine du repo servie : c'est le seul
+        // chemin qui permet d'essayer les modeles 3D en developpement local.
+        cands.push(new URL('../../published/atlas/models/', location.href).href);
+        cands.push(new URL('./models/', location.href).href);   // modeles a cote du widget (cas publie)
         cands.push(new URL('../models/', location.href).href);
+        cands.push(new URL('../../published/models/', location.href).href); // ancien emplacement
     } catch (e) { return; }
     for (const base of cands) {
         try {
@@ -4400,6 +4409,31 @@ async function loadLayersFromGrist() {
         mountLoadedLayers(computeLayersBounds());
     } catch (e) { console.warn('loadLayers:', e.message); }
 }
+/** Vrai une fois `Maquette_Layers` connue presente, pour ne pas relister a chaque enregistrement. */
+let _maquetteTablePrete = false;
+
+/**
+ * Garantit l'existence de `Maquette_Layers` avant d'y ecrire.
+ *
+ * `initGristTables` ne tourne QUE sur les documents en mode maquette : en mode
+ * Scene Manifest, la scene vient du manifeste et la table n'est jamais creee.
+ * Enregistrer une couche qui n'est pas issue de qgis2grist tentait donc un
+ * `AddRecord` sur une table absente, et Grist repondait
+ * « [Sandbox] KeyError 'Maquette_Layers' » — l'enregistrement echouait sans
+ * qu'aucune retouche de l'utilisateur ne soit conservee.
+ *
+ * La table est creee A LA DEMANDE, au moment ou l'on enregistre vraiment : un
+ * document qui n'enregistre aucune couche garde une empreinte nulle.
+ */
+async function ensureMaquetteLayersTable() {
+    if (_maquetteTablePrete) return;
+    const tables = await grist.docApi.listTables();
+    if (!tables.includes('Maquette_Layers')) {
+        await grist.docApi.applyUserActions([['AddTable', 'Maquette_Layers', TABLE_SCHEMAS.Maquette_Layers]]);
+    }
+    _maquetteTablePrete = true;
+}
+
 async function saveLayerToGrist(layer, silent) {
     if (!CONFIG.grist.ready) return;
     if (!assertCanWrite('enregistrer les préférences')) return;
@@ -4416,6 +4450,7 @@ async function saveLayerToGrist(layer, silent) {
         return;
     }
     try {
+        await ensureMaquetteLayersTable();
         const styleOut = { ...(layer.style || {}) };
         if (layer.controls?.length) styleOut._controls = layer.controls;
         if (layer.kind === 'table') {
