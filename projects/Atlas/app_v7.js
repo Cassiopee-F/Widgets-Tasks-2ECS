@@ -4206,6 +4206,24 @@ function updateMobileLayout() {
     }
 }
 
+/** La feuille des modules que la barre du bas ne peut pas porter. */
+function ouvrirFeuilleModules() {
+    const f = $('mobile-plus');
+    if (!f) return;
+    f.hidden = false;
+    const fermer = () => {
+        f.hidden = true;
+        // L'onglet « Plus » ne reste pas actif : il ouvre, il ne selectionne pas.
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
+            b.classList.toggle('active', b.dataset.mobileTab === 'map');
+        });
+    };
+    f.querySelector('.mp-fond').onclick = fermer;
+    f.querySelectorAll('[data-module-plus]').forEach((b) => {
+        b.onclick = () => { fermer(); openModule(b.dataset.modulePlus); };
+    });
+}
+
 function wireMobileNav() {
     document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -4219,6 +4237,12 @@ function wireMobileNav() {
             } else if (tab === 'couches') {
                 if (CONFIG.viewMode) return;
                 openModule('couches');
+            } else if (tab === 'plus') {
+                // Lieu, Soleil, Vue et Reglages n'ont pas d'onglet : le rail qui
+                // les portait est masque sur telephone. Sans cette feuille, ils
+                // sont simplement inatteignables — dont la source du catalogue 3D,
+                // qui n'a aucun autre acces.
+                ouvrirFeuilleModules();
             } else if (tab === 'controles') {
                 // Filtrer sur le terrain est l'usage premier : c'est ce qui
                 // permet de ne garder a l'ecran que les objets qu'on va voir.
