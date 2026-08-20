@@ -350,3 +350,19 @@ test('origine illisible : traitee comme le niveau de la mer', () => {
   assert.equal(ecartAuSol(50, null), 50);
   assert.equal(ecartAuSol(50, NaN), 50);
 });
+
+/* ---------- seuil de projection ---------- */
+
+test('le placement 3D n’est valable qu’une fois MapLibre passe au plan', () => {
+  // Mesure au banc (tests/manuel/projection-3d.html), projection globe, ecart
+  // entre le cube three.js et le point MapLibre aux memes coordonnees :
+  //   z3 → 570 px · z6 → 1692 px · z9 → 2248 px · z11 → 2337 px · z12 → 0 px
+  // Le custom layer pose une translation plane la ou MapLibre projette sur une
+  // sphere : sous ce seuil, rien de ce qu'il dessine n'est a sa place.
+  const SEUIL = 12;
+  const ecarts = { 3: 570, 6: 1692, 9: 2248, 11: 2337, 12: 0, 16: 0, 20: 0 };
+  for (const [zoom, ecart] of Object.entries(ecarts)) {
+    if (Number(zoom) < SEUIL) assert.ok(ecart > 100, `z${zoom} devrait etre faux`);
+    else assert.equal(ecart, 0, `z${zoom} devrait etre exact`);
+  }
+});

@@ -690,6 +690,8 @@ async function flatDemTile() {
 // ============================================================
 const MAX_3D_INSTANCES = 20000;       // plafond élevé grâce à l'instancing
 const MODEL3D_ZOOM_GATE = 11;          // sous ce zoom on cache la 3D si beaucoup d'objets
+/** Zoom auquel MapLibre a fini de passer du globe au plan (mesure : 0 px d'ecart des z12). */
+const GLOBE_MERCATOR_ZOOM = 12;
 const MODEL3D_GATE_COUNT = 4000;
 const SHADOW_FEATURE_CAP = 1500;       // ombres portées réelles seulement sous ce nombre d'objets visibles
 
@@ -699,6 +701,8 @@ const DERIVE_ORIGINE_M = 0.5;
 /** Palier de zoom du dernier echantillonnage du relief, et son minuteur. */
 let _palierDemCale = null;
 let _recalageTimer = null;
+/** Regroupe l'arrivee des tuiles MNT : elles tombent par dizaines, un seul recalage suffit. */
+let _tuilesDemTimer = null;
 
 const Models3D = {
     layerId: 'three-models-3d',
@@ -911,6 +915,15 @@ const Models3D = {
         const all = this.collect();
         const z = map.getZoom();
         this._shadowFeasible = all.length > 0 && all.length <= SHADOW_FEATURE_CAP; // ombres réelles seulement sous ce plafond
+        // Sous le seuil de bascule vers Mercator, le custom layer three.js est
+        // faux par construction : il pose une translation plane alors que
+        // MapLibre projette sur une sphere. Mesure au banc, projection globe :
+        // 570 px d'ecart a z3, 2337 px a z11, exactement 0 des z12. Le garde
+        // historique (`MODEL3D_ZOOM_GATE`, et seulement au-dela de 4000 objets)
+        // laissait donc une petite couche s'afficher grossierement decalee en
+        // vue regionale. A ces echelles un lampadaire mesure de toute facon
+        // moins d'un pixel : mieux vaut ne rien montrer qu'un placement faux.
+        if (z < GLOBE_MERCATOR_ZOOM && (STATE.settings.projection || 'globe') === 'globe') { map.triggerRepaint(); return; }
         if ((z < MODEL3D_ZOOM_GATE && all.length > MODEL3D_GATE_COUNT) || all.length === 0) { map.triggerRepaint(); return; }
         if (!this.origin) this.setOrigin(all[0].lng, all[0].lat);
         this.originElev = this.readOriginElev();
@@ -1069,6 +1082,20 @@ function initMap() {
     // n'etait pas revenue retombaient a zero et la scene sautait. Les altitudes
     // ne sont rejouees qu'au changement de palier de zoom (`recalerSiPalierDem`),
     // seul moment ou la resolution du MNT change vraiment.
+    // Les tuiles du MNT arrivent apres coup, et a une resolution qui depend du
+    // zoom : sur un meme point, `queryTerrainElevation` a rendu 1029,79 m a
+    // z16,8 et 1034,14 m a z18,3 — 4,35 m d'ecart pour la seule finesse du
+    // maillage. Les objets poses sur le releve precedent se retrouvent alors
+    // au-dessus ou sous le sol, ce qui, en vue oblique, se lit comme un
+    // glissement lateral. On rejoue donc le calage quand le relief lui-meme
+    // change, pas seulement quand le zoom franchit un palier.
+    map.on('data', (e) => {
+        if (!STATE.settings.terrain3D) return;
+        if (e.sourceId !== 'terrain-dem' || e.sourceDataType !== 'content') return;
+        clearTimeout(_tuilesDemTimer);
+        _tuilesDemTimer = setTimeout(() => recalerRelief(0), 600);
+    });
+
     map.on('moveend', () => {
         recalerSiPalierDem();
         Models3D.cull();
