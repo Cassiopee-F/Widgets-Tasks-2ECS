@@ -139,6 +139,8 @@ function coucheCubes() {
       camera.projectionMatrix.copy(m4VP);
       renderer.resetState();
       renderer.render(scene, camera);
+      window._vp = m4VP; window._cubes = cubes; window._THREE = THREE;
+      window._echelleScene = s;
       mesurer(m4VP);
     },
   };

@@ -27,7 +27,6 @@ import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
   paliersDemDifferents, altitudeOrigineStable, ecartAuSol,
 } from './lib/terrain-base.js?v=20260818b';
-import { voileNocturne, intensiteLumiere, couleurLumiere } from './lib/night-readability.js?v=20260818a';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -173,12 +172,6 @@ const STATE = {
         terrainExaggeration: 1.2,
         labels: true,
         sky: true,
-        // Lisibilite des donnees quand la carte passe a la nuit : 0 = ambiance
-        // pleine (voile a 62 %, volumes a 0,16), 1 = donnees toujours lisibles.
-        // Par defaut a mi-chemin : Atlas sert d'abord a lire de la donnee, et
-        // rien ne permettait jusqu'ici de recuperer une couche graduee apres le
-        // coucher du soleil.
-        nightReadability: 0.5,
         timeOfDay: 870,          // minutes (14:30)
         date: new Date(2026, 5, 15, 14, 30, 0),
         shadows: true,
@@ -577,10 +570,14 @@ function initSymbolization(layer) {
         sym.stroke = { enabled: true, mode: 'follow', color: null, width: 1.5 };
     }
     if (!sym.extrusion) sym.extrusion = { base: 0 };
-    if (sym.label) {
-        if (sym.label.size == null) sym.label.size = 12;
-        if (!sym.label.color) sym.label.color = '#2D2820';
-    }
+    // Comme `stroke` et `extrusion` : cree s'il manque, pas seulement complete.
+    // Une couche enregistree avant l'arrivee des etiquettes — ou restauree
+    // depuis une etape de recit anterieure, `applyStoryLayerMeta` remplacant
+    // toute la symbolisation — arrivait sans `label`, et l'onglet Etiquette
+    // lisait alors `undefined.enabled`.
+    if (!sym.label) sym.label = { enabled: false, field: null };
+    if (sym.label.size == null) sym.label.size = 12;
+    if (!sym.label.color) sym.label.color = '#2D2820';
     return sym;
 }
 
@@ -1310,25 +1307,14 @@ function updateLighting() {
     const moon = computeMoon(date, c.lat, c.lng);
     const amb = computeAmbient(altitude, moon);
     const polar = clamp(90 - altitude, 5, 88);
-    // `setLight` ne touche que les `fill-extrusion` — couches en volume et bati
-    // du fond. Le ciel et les modeles three.js gardent leur propre eclairage :
-    // c'est ce qui permet de relever la donnee sans effacer la nuit.
-    const lisibilite = STATE.settings.nightReadability ?? 0;
-    try {
-        map.setLight({
-            anchor: 'map', position: [1.2, azimuth, polar],
-            color: couleurLumiere(amb.mapColor, lisibilite),
-            intensity: intensiteLumiere(amb.mapIntensity, lisibilite),
-        });
-    } catch (e) {}
+    try { map.setLight({ anchor: 'map', position: [1.2, azimuth, polar], color: amb.mapColor, intensity: amb.mapIntensity }); } catch (e) {}
     if (STATE.settings.sky && typeof map.setSky === 'function') {
         // atmosphere-blend : halo atmosphérique du globe en vue large, estompé en zoom
         try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7, 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 6, 1, 9, 0] }); } catch (e) {}
     }
     Models3D.setSun(azimuth, altitude, moon);
     // Teinte nocturne de la scène (le fond vecteur ne s'assombrit pas seul) — atténuée par la lune
-    const tintBrut = clamp((6 - altitude) / 26, 0, 0.62) * (moon && moon.isUp ? (1 - moon.moonIntensity * 0.35) : 1);
-    const tint = voileNocturne(tintBrut, lisibilite);
+    const tint = clamp((6 - altitude) / 26, 0, 0.62) * (moon && moon.isUp ? (1 - moon.moonIntensity * 0.35) : 1);
     const nt = $('night-tint');
     if (nt) nt.style.background = tint <= 0.015 ? 'transparent' : `rgba(16,24,58,${tint.toFixed(3)})`;
     updateSunStrip();
@@ -2987,11 +2973,6 @@ function renderSoleil() {
         </div>
         <div class="section">
             <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
-        </div>
-        <div class="section">
-            <div class="slider-head"><span class="lbl">Lisibilité de nuit</span><span class="val" id="v-nightread">${Math.round((STATE.settings.nightReadability ?? 0) * 100)}%</span></div>
-            <input type="range" class="rng" min="0" max="1" step="0.05" value="${STATE.settings.nightReadability ?? 0}" oninput="A.setNightReadability(this.value)">
-            <div class="range-info">0 % : ambiance nocturne pleine · 100 % : couches lisibles quelle que soit l'heure</div>
         </div>
         <div class="section">
             <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')" role="switch" tabindex="0" aria-checked="${!!STATE.settings.shadows}" aria-label="Ombres portées"></div></div>
@@ -5206,12 +5187,6 @@ const A = {
     },
     setPitch(v) { map.setPitch(+v); $('v-pitch').textContent = Math.round(v) + '°'; },
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
-    setNightReadability(v) {
-        STATE.settings.nightReadability = clamp(+v, 0, 1);
-        const el = $('v-nightread');
-        if (el) el.textContent = Math.round(STATE.settings.nightReadability * 100) + '%';
-        updateLighting();
-    },
     setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); recalerRelief(200); } },
     setBasemap(k) {
         if (CONFIG.viewMode) {

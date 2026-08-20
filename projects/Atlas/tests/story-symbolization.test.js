@@ -74,3 +74,31 @@ test('le rendu surfacique est capture a part, et seulement s il est defini', () 
   s.layers[0].style.polygonMode = 'flat';
   assert.equal(captureStoryState(carteFactice, s).layers[0].polygonMode, 'flat');
 });
+
+/* ---------- etiquettes ---------- */
+
+test('les etiquettes font partie de l etape', () => {
+  // `label` vit dans `symbolization` : une etape peut donc montrer une couche
+  // etiquetee, puis la meme sans etiquettes.
+  const s = scene({
+    color: { mode: 'single' },
+    label: { enabled: true, field: 'nom', size: 14, color: '#2D2820' },
+  });
+  const avec = captureStoryState(carteFactice, s);
+
+  s.layers[0].style.symbolization.label.enabled = false;
+  const sans = captureStoryState(carteFactice, s);
+
+  assert.equal(avec.layers[0].symbolization.label.enabled, true);
+  assert.equal(avec.layers[0].symbolization.label.field, 'nom');
+  assert.equal(avec.layers[0].symbolization.label.size, 14);
+  assert.equal(sans.layers[0].symbolization.label.enabled, false,
+    'l etape sans etiquettes a suivi celle qui en a');
+});
+
+test('changer le champ d etiquette n affecte pas l etape precedente', () => {
+  const s = scene({ color: { mode: 'single' }, label: { enabled: true, field: 'nom' } });
+  const etape = captureStoryState(carteFactice, s);
+  s.layers[0].style.symbolization.label.field = 'code';
+  assert.equal(etape.layers[0].symbolization.label.field, 'nom');
+});
