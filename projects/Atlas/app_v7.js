@@ -25,8 +25,8 @@ import { edgeScrollStep } from './lib/edge-scroll.js?v=20260806a';
 import { basemapLayerIds } from './lib/basemap-layers.js?v=20260807a';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
-  paliersDemDifferents, altitudeOrigineStable,
-} from './lib/terrain-base.js?v=20260818a';
+  paliersDemDifferents, altitudeOrigineStable, ecartAuSol,
+} from './lib/terrain-base.js?v=20260818b';
 import { voileNocturne, intensiteLumiere, couleurLumiere } from './lib/night-readability.js?v=20260818a';
 import {
   loadLayerPrefs,
@@ -844,18 +844,17 @@ const Models3D = {
         if (this.elevCache.size > 8000) this.elevCache.clear();
         this.elevCache.set(k, v); return v;
     },
-    /** Contrat historique : un nombre, zero a defaut. Utilise par le placement. */
-    elevAt(lng, lat) {
-        const v = this.elevRaw(lng, lat);
-        return Number.isFinite(v) ? v : 0;
-    },
-
     // matrice de placement (espace local mètres, Y up) pour une feature
     placement(layer, feature) {
         const p = resolveFeatureProps(feature, layer);
         const [lng, lat] = feature.geometry.coordinates;
         const lm = this.localMeters(lng, lat);
-        const eOff = this.elevAt(lng, lat) - this.originElev;
+        // Altitude relative a l'origine de la scene. Quand la tuile MNT manque,
+        // l'entite se cale SUR l'origine (ecart nul) et non au niveau de la mer :
+        // `readOriginElev` conservant la derniere altitude connue de l'origine,
+        // un repli a zero ici enfoncait tous les objets de cette altitude — sur
+        // un relief a 200 m, la scene entiere disparaissait sous le sol.
+        const eOff = ecartAuSol(this.elevRaw(lng, lat), this.originElev);
         const o = this._obj;
         o.position.set(lm.x + (p.offsetX || 0), eOff + (p.offsetZ || 0), -lm.y - (p.offsetY || 0));
         const sc = p.scale || 1; o.scale.set(sc, sc, sc);

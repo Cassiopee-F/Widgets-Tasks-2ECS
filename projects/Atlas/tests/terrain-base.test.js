@@ -13,6 +13,7 @@ import {
   margeRelief,
   paliersDemDifferents,
   altitudeOrigineStable,
+  ecartAuSol,
 } from '../lib/terrain-base.js';
 
 const centre = (f) => (f?.geometry?.coordinates ? [f.geometry.coordinates] : []);
@@ -317,4 +318,35 @@ test('altitude negative acceptee (bathymetrie, depression)', () => {
 test('aucune valeur connue : niveau de la mer, faute de mieux', () => {
   assert.equal(altitudeOrigineStable(null, null), 0);
   assert.equal(altitudeOrigineStable(null, undefined), 0);
+});
+
+/* ---------- ecart au sol : les deux echantillonnages doivent s'accorder ---------- */
+
+test('tuile absente : l’entite repose sur le plan de l’origine, pas au niveau de la mer', () => {
+  // REGRESSION VECUE : l'origine conservait son altitude (200 m) pendant que les
+  // entites retombaient a zero. L'ecart valait -200 m et toute la scene 3D
+  // passait sous le sol — les objets semblaient ne plus charger du tout.
+  assert.equal(ecartAuSol(null, 200), 0);
+  assert.equal(ecartAuSol(undefined, 200), 0);
+  assert.equal(ecartAuSol(NaN, 200), 0);
+});
+
+test('altitude connue : ecart reel a l’origine', () => {
+  assert.equal(ecartAuSol(212, 200), 12);
+  assert.equal(ecartAuSol(188, 200), -12);
+});
+
+test('zero est une altitude, pas une absence', () => {
+  // Bord de mer avec une origine en hauteur : l'entite DOIT descendre.
+  assert.equal(ecartAuSol(0, 200), -200);
+});
+
+test('relief coupe : origine a zero, ecart nul', () => {
+  assert.equal(ecartAuSol(0, 0), 0);
+  assert.equal(ecartAuSol(null, 0), 0);
+});
+
+test('origine illisible : traitee comme le niveau de la mer', () => {
+  assert.equal(ecartAuSol(50, null), 50);
+  assert.equal(ecartAuSol(50, NaN), 50);
 });
