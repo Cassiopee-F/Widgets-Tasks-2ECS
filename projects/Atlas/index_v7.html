@@ -735,6 +735,14 @@
             margin-left: 8px;
         }
         .view-mode-badge[hidden] { display: none !important; }
+        /* La marque « Atlas » ouvre le menu principal — dans l'application
+           seulement. Dans le widget, il n'y a rien au-dessus de la scene :
+           la classe n'y est jamais posee, et le bloc reste inerte. */
+        .brand.brand-menu { cursor: pointer; border-radius: 8px; padding: 2px 6px; margin-left: -6px; }
+        .brand.brand-menu:hover, .brand.brand-menu:focus-visible { background: var(--surface-muted); }
+        .brand.brand-menu:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+        .brand.brand-menu .brand-chevron { color: var(--muted); font-size: 11px; margin-left: 1px; }
+        .brand:not(.brand-menu) .brand-chevron { display: none; }
         /* Une virgule de trop apres #btn-export agregeait ces trois boutons a la
            regle de l'avatar : ils heritaient d'un fond gris au lieu d'etre
            masques, et « Charger », « Enregistrer » et « Exporter » restaient
@@ -897,6 +905,9 @@
             body.mobile-layout .rail { display: none; }
             body.mobile-layout #mobile-nav { display: flex; }
             body.mobile-layout .app-header .cmdk { display: none; }
+            /* La recherche masquee, plus rien ne pousse les actions a droite :
+               elles se collaient au nom du projet. */
+            body.mobile-layout .header-actions { margin-left: auto; }
             /* La barre de selection debordait de l'ecran : « 0 objet
                selectionne », la navigation, « Tout », « Deselectionner » et la
                croix ne tiennent pas dans 390 px — la croix, qui ferme le mode,
@@ -989,6 +1000,7 @@
                     <path d="M16 6v22" stroke="#F4EFE3" stroke-width="1.2" />
                 </svg>
                 <span class="brand-name">Atlas</span>
+                <span class="brand-chevron" aria-hidden="true">▾</span>
                 <span class="brand-sep">/</span>
                 <span class="brand-project" id="project-name">Nouveau projet</span>
                 <span class="view-mode-badge" id="view-mode-badge" hidden>Lecture</span>
@@ -1191,6 +1203,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260820e"></script>
+    <script type="module" src="./app_v7.js?v=20260820g"></script>
 </body>
 </html>

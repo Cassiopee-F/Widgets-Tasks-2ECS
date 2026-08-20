@@ -16,8 +16,8 @@ import { installerAdaptateur } from './grist-adapter.js?v=20260820a';
 import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {
   ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, oublier,
-  depuis, situer,
-} from './hote.js?v=20260820b';
+  depuis, situer, peutChangerDeScene, quitterScene,
+} from './hote.js?v=20260820c';
 
 export const VERSION = '1.0.0';
 
@@ -58,6 +58,17 @@ const CSS = `
 .hote-scene span { font-size: .8rem; color: var(--muted, #7A6F5E); }
 .hote-progres { font-size: .85rem; color: var(--muted, #7A6F5E);
   font-family: var(--mono, monospace); }
+.hote-courante { padding: .9rem 1rem; border-radius: 10px;
+  background: var(--surface, #fff); border: 1px solid var(--hairline, #E2DBC8); }
+.hote-courante b { display: block; font-size: 1.05rem; color: var(--ink, #1F1B14); }
+.hote-courante span { font-size: .8rem; color: var(--muted, #7A6F5E); }
+.hote-menu { display: flex; flex-direction: column; gap: .4rem; }
+.hote-menu button { display: flex; align-items: center; gap: .75rem;
+  width: 100%; padding: .9rem .8rem; font: inherit; font-size: 1rem;
+  color: var(--ink, #1F1B14); background: none; border: 0; border-radius: 10px;
+  text-align: left; cursor: pointer; }
+.hote-menu button:active { background: var(--surface-muted, #FAF6EB); }
+.hote-menu button small { display: block; font-size: .78rem; color: var(--muted, #7A6F5E); }
 `;
 
 const echapper = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -251,4 +262,82 @@ async function ouvrirScene(config, portee, boite) {
     }
     return false;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Le menu principal — l'accueil de l'application                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Ouvert depuis la marque « Atlas », en haut a gauche.
+ *
+ * C'est l'hote qui reprend la main : la scene courante, le moyen d'en changer,
+ * la connexion. Les modules a venir — la saisie sur formulaire, par exemple —
+ * s'accrochent ici, sans toucher a la carte.
+ *
+ * Changer de scene RECHARGE la page. Atlas porte trop d'etat — couches, recit,
+ * cache d'altitude, scene three.js, sources MapLibre — pour qu'un nettoyage a
+ * chaud soit sur : il resterait des traces de l'ancienne scene dans la nouvelle.
+ * Le rechargement ne peut pas se tromper, et la configuration etant deja sur
+ * l'appareil, l'accueil rouvre directement sur la liste.
+ */
+export function ouvrirMenuPrincipal({
+  portee = globalThis, document: doc = document, scene = null, modifie = false,
+} = {}) {
+  const caps = capacites(portee);
+  const stockage = (() => { try { return portee.localStorage; } catch (_) { return null; } })();
+  const config = lireConfig(stockage);
+
+  const style = doc.createElement('style');
+  style.textContent = CSS;
+  doc.head.appendChild(style);
+  const voile = doc.createElement('div');
+  voile.className = 'hote';
+  voile.innerHTML = '<div class="hote-boite"></div>';
+  doc.body.appendChild(voile);
+  const boite = voile.querySelector('.hote-boite');
+  const fermer = () => { voile.remove(); style.remove(); };
+
+  const changeable = peutChangerDeScene(caps, config);
+  const situation = scene ? [situer(scene), depuis(scene.maj)].filter(Boolean).join(' — ') : '';
+
+  boite.innerHTML = `${MARQUE}
+    ${scene ? `<div class="hote-courante">
+      <b>${echapper(scene.nom || 'Scène en cours')}</b>
+      ${situation ? `<span>${echapper(situation)}</span>` : ''}
+    </div>` : ''}
+    <div class="hote-menu">
+      ${changeable ? `<button id="m-scenes">🗺️<span>Changer de scène<small>${
+        modifie ? 'Des modifications ne sont pas enregistrées' : 'Revenir à la liste de vos projets'
+      }</small></span></button>` : ''}
+      ${changeable ? `<button id="m-connexion">🔑<span>Instance et clé<small>${
+        echapper(config?.baseUrl || '')}</small></span></button>` : ''}
+      <button id="m-fermer">↩<span>Revenir à la carte</span></button>
+    </div>`;
+
+  boite.querySelector('#m-fermer').onclick = fermer;
+
+  const scenes = boite.querySelector('#m-scenes');
+  if (scenes) scenes.onclick = () => {
+    // Prevenir AVANT de partir : changer de projet ne doit pas devenir un moyen
+    // silencieux de perdre son travail.
+    if (modifie && !portee.confirm('Des modifications ne sont pas enregistrées. Changer de scène malgré tout ?')) return;
+    if (!quitterScene(stockage, config)) {
+      const avis = doc.createElement('div');
+      avis.className = 'hote-avis';
+      avis.textContent = 'Impossible d’oublier la scène : le stockage de l’appareil est indisponible.';
+      boite.prepend(avis);
+      return;
+    }
+    portee.location.reload();
+  };
+
+  const cx = boite.querySelector('#m-connexion');
+  if (cx) cx.onclick = () => {
+    if (modifie && !portee.confirm('Des modifications ne sont pas enregistrées. Continuer ?')) return;
+    oublier(stockage);
+    portee.location.reload();
+  };
+
+  return fermer;
 }

@@ -22,6 +22,7 @@ export const ECRANS = Object.freeze({
   SCENES: 'scenes',          // choisir parmi les scenes trouvees
   ATLAS: 'atlas',            // la scene est ouverte
   LOCAL: 'local',            // navigateur : pas de compte, mais Atlas reste utilisable
+  MENU: 'menu',              // l'accueil de l'application, ouvert depuis la marque
 });
 
 /**
@@ -139,4 +140,29 @@ export function depuis(iso, maintenant = Date.now()) {
 /** Ou vit la scene : « Cerema · Etudes ». Les deux peuvent manquer. */
 export function situer(scene) {
   return [scene?.org, scene?.espace].filter(Boolean).join(' · ');
+}
+
+/* ------------------------------------------------------------------ */
+/* Changer de scene                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Le nom du projet est-il un chemin de retour ?
+ *
+ * Seulement dans l'application : le widget n'a rien au-dessus de la scene
+ * courante, et le navigateur sans compte n'a aucune liste ou revenir.
+ */
+export function peutChangerDeScene(caps, config) {
+  return !!(caps && caps.mode !== 'grist' && caps.decouverte && estConfigComplete(config));
+}
+
+/**
+ * Quitter la scene courante en gardant l'instance et la cle.
+ *
+ * On efface le seul `docId` : au rechargement, `ecranInitial` retombe sur la
+ * liste sans redemander la connexion. Rendre `false` si rien n'a pu etre ecrit
+ * — sinon on rechargerait sur la meme scene, sans que rien ne l'explique.
+ */
+export function quitterScene(stockage, config) {
+  return ecrireConfig(stockage, { ...(config || {}), docId: '' });
 }

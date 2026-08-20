@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ECRANS, CLE_STOCKAGE, ecranInitial, estConfigComplete, normaliserConfig,
   validerConfig, lireConfig, ecrireConfig, oublier, depuis, situer,
+  peutChangerDeScene, quitterScene,
 } from '../lib/hote.js';
 
 const stockageFactice = () => {
@@ -125,4 +126,43 @@ test('la situation tolere ce qui manque', () => {
   assert.equal(situer({ org: 'Cerema', espace: 'Etudes' }), 'Cerema · Etudes');
   assert.equal(situer({ org: 'Cerema' }), 'Cerema');
   assert.equal(situer({}), '');
+});
+
+/* ---------- changer de scene ---------- */
+
+test('le nom du projet ne ramene nulle part dans le widget', () => {
+  // Un widget n'a rien au-dessus de sa scene : le fil d'Ariane y reste inerte.
+  assert.equal(peutChangerDeScene(caps({ mode: 'grist' }), { baseUrl: 'https://x.fr', jeton: 'K' }), false);
+});
+
+test('ni dans un navigateur sans compte', () => {
+  // Sans decouverte, il n'existe aucune liste ou revenir.
+  assert.equal(peutChangerDeScene(caps({ decouverte: false }), { baseUrl: 'https://x.fr', jeton: 'K' }), false);
+});
+
+test('mais oui dans l application connectee', () => {
+  assert.equal(peutChangerDeScene(caps(), { baseUrl: 'https://x.fr', jeton: 'K', docId: 'D' }), true);
+});
+
+test('quitter une scene garde l instance et la cle', () => {
+  // Redemander la connexion a chaque changement de projet serait absurde :
+  // seule la scene change.
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'K', docId: 'D1' });
+  quitterScene(st, lireConfig(st));
+  const apres = lireConfig(st);
+  assert.equal(apres.baseUrl, 'https://x.fr');
+  assert.equal(apres.jeton, 'K');
+  assert.equal(apres.docId, '');
+});
+
+test('apres avoir quitte, l accueil rouvre sur la liste', () => {
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'K', docId: 'D1' });
+  quitterScene(st, lireConfig(st));
+  assert.equal(ecranInitial(caps(), lireConfig(st)), ECRANS.SCENES);
+});
+
+test('un stockage defaillant le dit, au lieu de recharger sur la meme scene', () => {
+  assert.equal(quitterScene(null, { baseUrl: 'x.fr', jeton: 'K', docId: 'D' }), false);
 });

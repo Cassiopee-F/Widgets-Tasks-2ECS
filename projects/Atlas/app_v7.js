@@ -4206,6 +4206,42 @@ function updateMobileLayout() {
     }
 }
 
+/**
+ * La marque « Atlas » ouvre le menu principal — dans l'application seulement.
+ *
+ * Le widget n'a rien au-dessus de sa scene : la marque y reste inerte, et le
+ * chevron ne s'affiche pas. C'est aussi le point ou viendront s'accrocher les
+ * modules a venir, sans toucher a la carte.
+ */
+async function cablerMenuPrincipal() {
+    const marque = document.querySelector('.brand');
+    if (!marque) return;
+    let hote;
+    try { hote = await import('./lib/hote-ui.js?v=20260820c'); } catch (_) { return; }
+    let caps;
+    try {
+        const dc = await import('./lib/data-client.js?v=20260820b');
+        caps = dc.capacites();
+    } catch (_) { return; }
+    // Widget : rien au-dessus de la scene. Navigateur sans compte : le menu
+    // n'aurait rien a offrir — ni liste de scenes, ni connexion possible. Une
+    // marque actionnable qui ouvre un menu vide vaut moins que pas de bouton.
+    if (caps.mode === 'grist' || !caps.decouverte) return;
+
+    marque.classList.add('brand-menu');
+    marque.setAttribute('role', 'button');
+    marque.setAttribute('tabindex', '0');
+    marque.setAttribute('aria-label', 'Menu principal');
+    const ouvrir = () => hote.ouvrirMenuPrincipal({
+        scene: { nom: STATE.projectName || 'Scène en cours' },
+        modifie: dirty,
+    });
+    marque.addEventListener('click', ouvrir);
+    marque.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
+    });
+}
+
 /** La feuille des modules que la barre du bas ne peut pas porter. */
 function ouvrirFeuilleModules() {
     const f = $('mobile-plus');
@@ -5606,6 +5642,7 @@ function wireEvents() {
     $('btn-load').addEventListener('click', loadProject);
     $('btn-export').addEventListener('click', exportProject);
     $('btn-story').addEventListener('click', () => A.storyPlay(0));
+    cablerMenuPrincipal();
     $('cmdk-trigger').addEventListener('click', openCmd);
     $('compass').addEventListener('click', () => map.easeTo({ bearing: 0, duration: 600 }));
 
@@ -5699,7 +5736,7 @@ async function demarrer() {
     try {
         const { capacites } = await import('./lib/data-client.js?v=20260820b');
         if (capacites().mode === 'grist') return init();
-        const { accueillir } = await import('./lib/hote-ui.js?v=20260820b');
+        const { accueillir } = await import('./lib/hote-ui.js?v=20260820c');
         const pret = await accueillir();
         if (!pret) return;          // l'accueil garde l'ecran : rien a demarrer
     } catch (e) {
