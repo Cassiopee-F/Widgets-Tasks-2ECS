@@ -108,7 +108,11 @@ function depuis(iso, maintenant = Date.now()) {
  */
 function majProjet(projet) {
   try {
-    const d = execFileSync('git', ['log', '-1', '--format=%cI', '--', `published/${projet.id}`],
+    // La fiche de presentation est exclue : elle vit dans le dossier du widget,
+    // et l'y avoir ajoutee datait tous les projets du jour ou la vitrine est
+    // nee — « mis a jour aujourd'hui » partout, donc nulle part.
+    const d = execFileSync('git', ['log', '-1', '--format=%cI', '--',
+      `published/${projet.id}`, `:(exclude)published/${projet.id}/vitrine.json`],
       { cwd: RACINE, encoding: 'utf8' }).trim();
     if (d) return d;
   } catch (_) { /* pas d'historique ici : on retombe sur le manifeste */ }

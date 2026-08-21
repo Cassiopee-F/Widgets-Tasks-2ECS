@@ -1,0 +1,2446 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  /* ---- Tokens & thème (identité partagée de la suite) ------------------ */
+  :root{
+    --paper:#f6f7f9; --ink:#171a21; --muted:#6b7280; --line:#e6e9ef;
+    --indigo:#3d5afe; --green:#0f8a5f; --red:#d14343; --warn:#b9742a;
+    --card:#fff; --soft:#eef0f4; --shadow:0 1px 2px rgba(20,22,28,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --paper:#14161b; --ink:#e8eaee; --muted:#9aa1ad; --line:#2a2e37;
+      --card:#1b1e25; --soft:#22262f; --shadow:0 1px 2px rgba(0,0,0,.4); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
+  /* segments / boutons */
+  .seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:none;border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:.12s}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  /* cartes / hero / barres */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px}
+  /* hero : panneau volontairement TOUJOURS sombre (ne pas utiliser var(--ink) qui
+     bascule en clair en thème sombre et rendrait le texte blanc illisible). */
+  .hero{background:#161a23;border-radius:16px;padding:20px 22px;color:#fff;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end}
+  .hero .rav{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1.05;margin-top:4px}
+  .hero .lab{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa1ad}
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:2px}
+  .fill{position:absolute;left:0;top:0;height:100%;border-radius:5px;transition:width .35s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:12px}
+  /* champs / puces / notes */
+  .inp{border:1px solid var(--indigo);border-radius:8px;padding:6px 9px;font-size:13px;outline:none;background:var(--card);color:var(--ink)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;border-radius:20px;padding:3px 9px}
+  .note{font-size:11px;color:var(--muted)}
+  .msg{max-width:620px;margin:60px auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:14px;line-height:1.6}
+  /* barre de navigation (mode single-page) */
+  .topnav{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:20}
+  .topnav .brand{font-weight:800;letter-spacing:-.01em;margin-right:6px}
+  .topnav .tab{border:none;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}
+  .topnav .tab.on{background:var(--soft);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<!-- ===================================================================== -->
+<!-- CŒUR PARTAGÉ : en dev via <script src>, inliné par build-budget.js.    -->
+<script>
+/* budget-core.js — cœur partagé de la suite Budget perso (Grist).
+   SOURCE UNIQUE de la taxonomie FR, des helpers communs et de l'index d'agrégation.
+   Inliné dans chaque module entre les marqueurs // <budget-core> / // <end-budget-core>
+   par scripts/build-budget.js (mode --check en CI). Expose l'objet global BP. */
+(function (root) {
+  // <budget-core>
+
+  /* ---- Taxonomie FR : motif (regex, toujours /i) -> famille [, exclu] -----
+     Source canonique. Toute évolution se fait ICI puis est ré-inlinée par build. */
+  const TAXO = [
+    [/SALAIRE|REMUNERATION|\bPAYE\b|BULLETIN|TRAITEMENT/i, 'Revenus'],
+    [/POLE EMPLOI|FRANCE TRAVAIL|\bCAF\b|ALLOCATION|CPAM|ASSURANCE MALADIE|RETRAITE|PENSION/i, 'Revenus'],
+    [/CARREFOUR|LECLERC|\bAUCHAN\b|INTERMARCHE|\bLIDL\b|\bALDI\b|MONOPRIX|FRANPRIX|\bCASINO\b|SUPER ?U|MAGASIN U|\bU EXPRESS|PICARD|GRAND FRAIS|NATURALIA|\bBIO\b|PRIMEUR|BOUCHERIE|BOULANGERIE|MARCHE|EPICERIE/i, 'Alimentation'],
+    [/MC ?DO|MCDONALD|BURGER|\bKFC\b|\bRESTO|RESTAURANT|PIZZ|SUSHI|BRASSERIE|\bCAFE\b|\bBAR\b|TABAC|UBER ?EATS|DELIVEROO|JUST EAT|FOODORA/i, 'Restaurants & sorties'],
+    [/\bSNCF\b|\bTER\b|\bTGV\b|\bRATP\b|\bRTM\b|TRANSILIEN|NAVIGO|BLABLA|\bUBER\b|\bBOLT\b|\bFREE ?NOW|TAXI|VELIB/i, 'Transports'],
+    [/TOTAL|\bESSO\b|\bSHELL\b|\bBP\b|AVIA|\bENI\b|STATION|CARBURANT|ESSENCE|PEAGE|VINCI|AUTOROUTE|ESCOTA|\bASF\b|SANEF|APRR|PARKING|STATIONNEMENT/i, 'Transports'],
+    [/\bLOYER\b|SYNDIC|COPRO|FONCIA|NEXITY|SERGIC|SOGIMA|BAILLEUR|\bHLM\b/i, 'Logement'],
+    [/\bEDF\b|ENGIE|TOTALENERGIES|\bGAZ\b|ELECTRICITE|\bEAU\b|VEOLIA|\bSUEZ\b|ENERGIE/i, 'Logement'],
+    [/\bFREE\b|ORANGE|\bSFR\b|BOUYGUES|\bSOSH\b|RED BY|\bB&YOU|INTERNET|TELEPHONIE|MOBILE/i, 'Logement'],
+    [/ASSURANCE HABITAT|\bMAIF\b|\bMACIF\b|MATMUT|GMF|AXA|ALLIANZ|\bMMA\b|GENERALI|LUKO|LEMONADE/i, 'Assurances'],
+    [/PHARMACIE|\bDOCTEUR\b|MEDECIN|MEDICAL|HOPITAL|CLINIQUE|LABORATOIRE|DENTAIRE|DENTISTE|OPTIC|MUTUELLE|KINE|OSTEO|DOCTOLIB/i, 'Santé'],
+    [/AMAZON|\bFNAC\b|DARTY|BOULANGER|\bZARA\b|\bH&M\b|UNIQLO|DECATHLON|\bIKEA\b|LEROY MERLIN|CASTORAMA|WELDOM|BRICO|ZALANDO|VINTED|ASOS|SHEIN|CDISCOUNT|\bACTION\b/i, 'Shopping'],
+    [/COIFF|BARBIER|INSTITUT|BEAUTE|ESTHETIC|\bSPA\b/i, 'Soins'],
+    [/NETFLIX|SPOTIFY|DEEZER|DISNEY|CANAL|\bOCS\b|PRIME VIDEO|CINEMA|\bUGC\b|PATHE|GAUMONT|STEAM|PLAYSTATION|XBOX|NINTENDO|CULTURA|\bFNAC SPECT|BILLETT|CONCERT|MUSEE|THEATRE/i, 'Loisirs'],
+    [/GOOGLE|\bAPPLE\b|MICROSOFT|\bOVH\b|HOSTINGER|GANDI|ADOBE|OPENAI|ANTHROPIC|MISTRAL|GITHUB|NOTION|FIGMA|DROPBOX|ICLOUD|\bAWS\b/i, 'Abonnements & numérique'],
+    [/DGFIP|FINANCES PUBLIQUES|TRESOR PUBLIC|\bIMPOT|TAXE FONCIERE|TAXE HABITATION|\bURSSAF\b|PRELEVEMENT A LA SOURCE/i, 'Impôts & taxes'],
+    [/FRAIS BANCAIRE|COTISATION|COMMISSION|\bAGIOS\b|FRAIS DE TENUE|FRAIS ACHAT ETRANGER|FRAIS RETR/i, 'Frais bancaires'],
+    [/RETRAIT|\bDAB\b|DISTRIBUTEUR|\bATM\b|RET ?DAB/i, "Retrait d'espèces"],
+    [/LIVRET|\bLDDS\b|\bLEP\b|\bPEL\b|\bCEL\b|EPARGNE|ASSURANCE VIE|\bPEA\b|\bPER\b|TRADE REPUBLIC|BOURSORAMA VIE|PARTS SOCIALES/i, 'Épargne', true],
+    [/VIREMENT INTERNE|VIR INTERNE|VERS COMPTE|VERS LIVRET|VERS EPARGNE|VIREMENT DE COMPTE/i, 'Virement interne', true],
+    [/REMBOURSEMENT|\bREMB\b|\bRBT\b/i, 'Remboursement', true]
+  ];
+
+  /* ---- Catégories de départ : [nom, type, couleur] ----------------------- */
+  const CAT_SEED = [
+    ['Revenus', 'revenu', '#0f8a5f'], ['Alimentation', 'depense', '#3d5afe'], ['Restaurants & sorties', 'depense', '#7c4dff'],
+    ['Transports', 'depense', '#00a8a8'], ['Logement', 'depense', '#d14343'], ['Assurances', 'depense', '#b9742a'],
+    ['Santé', 'depense', '#e85d75'], ['Shopping', 'depense', '#5b6470'], ['Soins', 'depense', '#c77b9a'],
+    ['Loisirs', 'depense', '#f0883e'], ['Abonnements & numérique', 'depense', '#6b7280'], ['Impôts & taxes', 'depense', '#8a5a00'],
+    ['Frais bancaires', 'depense', '#a0524d'], ["Retrait d'espèces", 'depense', '#9b8a5f'], ['Épargne', 'epargne', '#2f8f5b'],
+    ['Virement interne', 'exclu', '#8a8f99'], ['Remboursement', 'exclu', '#8a8f99'], ['Famille', 'depense', '#c0508a'],
+    ['Loyer (vie commune)', 'depense', '#d14343'], ['À catégoriser', 'depense', '#b9742a']
+  ];
+
+  /* ---- Sous-catégories de départ : famille -> [sous-catégories] ----------- */
+  const SOUS_SEED = {
+    'Alimentation': ['Supermarché', 'Boulangerie', 'Primeur / marché', 'Boucherie', 'Épicerie', 'Bio'],
+    'Restaurants & sorties': ['Restaurant', 'Fast-food', 'Bar', 'Café', 'Livraison'],
+    'Transports': ['Carburant', 'Train', 'Transports en commun', 'Péage / parking', 'VTC / taxi', 'Vélo', 'Avion'],
+    'Logement': ['Loyer', 'Crédit immobilier', 'Électricité / gaz', 'Eau', 'Internet / téléphone', 'Charges / copropriété', 'Assurance habitation', 'Entretien'],
+    'Santé': ['Pharmacie', 'Médecin', 'Mutuelle', 'Dentiste', 'Optique', 'Hôpital'],
+    'Shopping': ['Vêtements', 'High-tech', 'Maison / déco', 'Bricolage', 'Sport', 'Beauté', 'Divers'],
+    'Soins': ['Coiffeur', 'Institut', 'Spa'],
+    'Loisirs': ['Streaming', 'Cinéma / spectacle', 'Jeux vidéo', 'Sport / loisir', 'Voyage', 'Livres'],
+    'Abonnements & numérique': ['Logiciels / SaaS', 'Cloud / hébergement', 'IA', 'Téléphonie'],
+    'Impôts & taxes': ['Impôt sur le revenu', 'Taxe foncière', "Taxe d'habitation", 'Prélèvement à la source', 'URSSAF'],
+    'Revenus': ['Salaire', 'Prime', 'Aides / allocations', 'Intérêts', 'Remboursement', 'Autre'],
+    'Assurances': ['Habitation', 'Auto / moto', 'Santé', 'Prévoyance'],
+    'Frais bancaires': ['Cotisation', 'Commission', 'Agios', 'Frais étranger'],
+    "Retrait d'espèces": ['Retrait DAB'],
+    'Épargne': ['Livret', 'Assurance-vie', 'PEA / bourse', 'Autre'],
+    'Famille': ['Don', 'Aide', 'Cadeau', 'Prêt', 'Remboursement'],
+    'Loyer (vie commune)': ['Loyer mensuel'],
+    'Virement interne': ['Vers épargne', 'Entre comptes']
+  };
+
+  /* ---- Helpers texte / format ------------------------------------------- */
+  // norm : normalisation "métier" (MAJUSCULES sans accents) — matching taxonomie/marchands.
+  const norm = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  // normHeader : normalisation des EN-TÊTES CSV (minuscules) — usage import uniquement.
+  // Nommée distinctement pour ne PAS entrer en collision avec `norm` (contrat opposé).
+  const normHeader = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const eur = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €';
+  const eur0 = v => eur(v, 0);
+
+  /* ---- Dates / périodes ------------------------------------------------- */
+  const gristToDate = ts => ts ? new Date(ts * 1000) : null;
+  const dateToGrist = d => d ? Math.floor(d.getTime() / 1000) : null;
+  // clé année-mois 'YYYY-MM' (heure locale, cohérente entre tous les modules).
+  const ym = d => { const x = (d instanceof Date) ? d : new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+  const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  // libellé lisible d'un bucket 'YYYY-MM' -> "juin 2026".
+  const moisLabel = key => { const [y, m] = String(key).split('-').map(Number); return (MOIS[m - 1] || '?').replace('.', '') + ' ' + y; };
+
+  /* ---- Parsing relevés (import) ----------------------------------------- */
+  function parseDate(v) {
+    v = (v || '').trim(); if (!v) return null;
+    let m = v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]) / 1000;
+    m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) { let y = +m[3]; if (y < 100) y += 2000; return Date.UTC(y, +m[2] - 1, +m[1]) / 1000; }
+    const t = Date.parse(v); return isNaN(t) ? null : Math.floor(t / 1000);
+  }
+  // Montant SIGNÉ (négatif = débit). Gère décimale FR, signe en suffixe ("12,50-")
+  // et parenthèses comptables ("(12,50)") = débit.
+  function parseAmount(v) {
+    if (v == null) return null; v = v.toString().trim(); if (!v) return null;
+    let s = v.replace(/\s| |€|EUR/gi, '');
+    let neg = false;
+    if (/-$/.test(s)) { neg = true; s = s.slice(0, -1); }
+    else if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+    if (s.indexOf(',') > -1 && s.indexOf('.') > -1) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    s = s.replace(/[^0-9.\-+]/g, ''); const n = parseFloat(s); if (isNaN(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  /* ---- Clé marchand (regroupement du classement) ------------------------ */
+  function merchantKey(lib) {
+    let s = norm(lib);
+    s = s.replace(/\bPRLV SEPA\b|\bVIR INST\b|\bVIR\b|\bPRLV\b|\bPAIEMENT\b|\bACHAT\b|\bFACTURE\b|\bSEPA\b|\bCB\b|\bCARTE\b/g, ' ');
+    s = s.replace(/\*+\d+/g, ' ').replace(/\b\d{2}\/\d{2}(\/\d{2,4})?\b/g, ' ').replace(/\b\d{6,}\b/g, ' ');
+    s = s.replace(/\d+[.,]\d{2}\s?EUR/g, ' ').replace(/\bEUR\b/g, ' ');
+    s = s.replace(/\b\d{2,5}[A-Z][A-Z]{2,}\b/g, ' ');
+    s = s.replace(/[^A-Z0-9& ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const toks = s.split(' ').filter(t => t.length > 1);
+    return toks.slice(0, 2).join(' ') || s || norm(lib).slice(0, 12);
+  }
+
+  /* ---- Typage : le contrat partagé -------------------------------------- */
+  // cats : map { [categorie]: { type } }. Fallback 'depense'.
+  const makeTypeOf = cats => cat => (cats[cat] && cats[cat].type) || 'depense';
+
+  /* ---- Lentille perso : exclure le sous-ensemble Locatif -----------------
+     Convention : catégories préfixées "Locatif -" = lentille immo/LMNP, ignorées
+     par le budget perso (RAV, enveloppes) SANS toucher à leur Type. */
+  const isLocatif = cat => /^locatif\b/i.test((cat || '').toString().trim().normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+  /* ---- Catégorisation par taxonomie ------------------------------------- */
+  // Renvoie la 1re famille dont le motif matche le libellé, sinon null.
+  function guessCategory(lib) {
+    const L = norm(lib);
+    for (const [re, cat] of TAXO) if (re.test(L)) return cat;
+    return null;
+  }
+
+  /* ---- Statistiques ----------------------------------------------------- */
+  function median(a) { const s = [...a].sort((x, y) => x - y); const n = s.length; if (!n) return 0; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; }
+  const med10 = a => Math.round(median(a) / 10) * 10;
+
+  /* ---- Index d'agrégation (LE remplaçant des re-scans spentCat/surplus) --
+     Une seule passe O(n) sur les opérations -> somme SIGNÉE par catégorie et par
+     bucket, plus la liste ordonnée des buckets. Tout le reste en dérive en O(1).
+
+     rows     : [{ cat, montant, exclu, ... }] déjà normalisées (montant signé).
+     bucketOf : (row) -> clé de bucket (ex. r.ym, ou cycle de paie). Injectée par
+                le module car le découpage (calendaire vs cycle) lui appartient.
+
+     Renvoie { net(cat,bk), spent(cat,bk), buckets, cats, forEachCatBucket } :
+       net   = Σ montant signé (revenu>0, dépense<0) — non plafonné.
+       spent = Math.max(0, -net) = dépense nette plafonnée PAR CATÉGORIE
+               (refunds déduits, jamais négatif). C'est l'invariant du contrat :
+               on plafonne toujours par catégorie, jamais une somme globale. */
+  function buildIndex(rows, bucketOf) {
+    const idx = Object.create(null);   // cat -> (bucket -> somme signée)
+    const bset = new Set();
+    for (const r of rows) {
+      if (r.exclu) continue;
+      const bk = bucketOf(r); if (bk == null) continue;
+      bset.add(bk);
+      const m = idx[r.cat] || (idx[r.cat] = Object.create(null));
+      m[bk] = (m[bk] || 0) + r.montant;
+    }
+    const buckets = [...bset].sort();
+    const net = (cat, bk) => (idx[cat] && idx[cat][bk]) || 0;
+    const spent = (cat, bk) => Math.max(0, -net(cat, bk));
+    return { idx, buckets, cats: Object.keys(idx), net, spent };
+  }
+
+  /* ---- Nature d'une catégorie (fixe / courante / ponctuelle) ------------
+     Classée depuis les stats de dépense calculées sur le PRÉVU (hors imprévu) :
+       partFixe   = somme des charges récurrentes détectées (detectRecurrents)
+       medMensuel = médiane des dépenses mensuelles (>0)
+       present    = nb de mois avec dépense sur la fenêtre
+       window     = taille de la fenêtre (mois)
+       cv         = coefficient de variation (écart-type / moyenne) des mois
+     - 'fixe'       : dominée par une charge récurrente (loyer, abo, assurance) —
+                      couverture >= 0.7 et présente presque tous les mois.
+     - 'ponctuelle' : irrégulière ou à gros pics (vacances, santé) — présente < moitié
+                      des mois, ou forte variabilité.
+     - 'courante'   : récurrente mais montant qui bouge (alimentation, transport). */
+  function natureFrom(stats) {
+    const { partFixe = 0, medMensuel = 0, present = 0, window = 12, cv = 0 } = stats || {};
+    const couverture = partFixe / Math.max(medMensuel, 1);
+    if (couverture >= 0.7 && present >= 0.7 * window) return 'fixe';
+    if (present < 0.5 * window || cv > 0.6) return 'ponctuelle';
+    return 'courante';
+  }
+  // Mode d'enveloppe par défaut déduit de la nature (surchargé par Budget_mode si défini).
+  const modeForNature = n => n === 'fixe' ? 'fixe' : n === 'ponctuelle' ? 'flottant' : 'auto';
+  // Libellé lisible de la nature auto (3 classes détectées depuis la donnée).
+  const NATURE_LABEL = { fixe: 'Engagement fixe', courante: 'Dépense courante', ponctuelle: 'Ponctuelle / provisionnée' };
+
+  /* ---- Familles de budget (modèle utilisateur, 4 classes) ---------------
+     Portées par Categories.Nature (piloté par l'utilisateur). L'auto (3 classes)
+     ne sert que de suggestion quand Nature est vide. 'arbitrable' n'est jamais
+     déduit automatiquement (c'est un jugement de valeur : subi vs choisi). */
+  const FAMILLE_LABEL = { fixe: 'Fixe obligatoire', variable: 'Obligatoire variable', arbitrable: 'Arbitrable', ponctuel: 'Ponctuel' };
+  const FAMILLE_ORDER = ['fixe', 'variable', 'arbitrable', 'ponctuel'];
+  // Couleurs de famille (barre d'allocation, pastilles de section/carte).
+  const FAMILLE_COLOR = { fixe: '#3d5afe', variable: '#0f8a5f', arbitrable: '#b9742a', ponctuel: '#7c4dff' };
+  // Famille effective : Nature explicite sinon repli sur l'auto (fixe→fixe, courante→variable, ponctuelle→ponctuel).
+  function familleOf(nature, autoNature) {
+    if (nature && FAMILLE_LABEL[nature]) return nature;
+    return autoNature === 'courante' ? 'variable' : autoNature === 'ponctuelle' ? 'ponctuel' : 'fixe';
+  }
+
+  /* ---- Période d'activité d'une catégorie (engagements datés) -----------
+     Un engagement fixe (crédit conso, moto…) n'est actif que dans sa fenêtre
+     Actif_debut..Actif_fin (bornes 'YYYY-MM' incluses, comparaison lexicale ;
+     bornes vides = pas de limite). Un crédit soldé disparaît des mois suivants. */
+  function estActif(debut, fin, bk) {
+    if (!bk) return true;
+    if (debut && bk < debut) return false;
+    if (fin && bk > fin) return false;
+    return true;
+  }
+  // Seuil au-delà duquel une ligne est un imprévu (choc) dans sa catégorie :
+  // le plus grand entre la dépense mensuelle médiane et 3x la ligne médiane.
+  function outlierThreshold(lineAmounts, medMensuel) {
+    const med = median((lineAmounts || []).map(Math.abs));
+    return Math.max(medMensuel || 0, 3 * med);
+  }
+
+  /* ---- Détection des récurrents (part fixe auto du mode Flottant) ------- */
+  function detectRecurrents(txns) {
+    const byKey = {};
+    for (const t of txns) { (byKey[t.key] = byKey[t.key] || []).push(t); }
+    const recur = [];
+    for (const k in byKey) {
+      const g = byKey[k];
+      const months = new Set(g.map(t => t.ym));
+      if (months.size < 3) continue;
+      const amts = g.map(t => Math.abs(t.amount));
+      const mean = amts.reduce((a, b) => a + b, 0) / amts.length;
+      if (mean <= 0) continue;
+      const sd = Math.sqrt(amts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / amts.length);
+      if (sd / mean > 0.35) continue;
+      recur.push({ key: k, label: g[0].label || k, amount: median(amts), months: months.size });
+    }
+    recur.sort((a, b) => b.amount - a.amount);
+    return { items: recur, sum: recur.reduce((a, r) => a + r.amount, 0) };
+  }
+
+  /* ---- Réserve dérivée (mode Flottant) — jamais stockée ----------------- */
+  function deriveReserve(spendsByMonth, partFixe, provision, windowYM) {
+    let r = 0;
+    for (const m of windowYM) {
+      const spent = spendsByMonth[m] || 0;
+      const variable = Math.max(0, spent - partFixe);
+      r = Math.max(0, r + provision - variable);
+    }
+    return r;
+  }
+
+  // <end-budget-core>
+  root.BP = {
+    TAXO, CAT_SEED, SOUS_SEED,
+    norm, normHeader, eur, eur0,
+    gristToDate, dateToGrist, ym, MOIS, moisLabel,
+    parseDate, parseAmount, merchantKey,
+    makeTypeOf, isLocatif, guessCategory,
+    median, med10, buildIndex, detectRecurrents, deriveReserve,
+    natureFrom, modeForNature, NATURE_LABEL, outlierThreshold,
+    FAMILLE_LABEL, FAMILLE_ORDER, FAMILLE_COLOR, familleOf, estActif
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<script>
+/* =======================================================================
+   SHELL — contrat de module, couche données (Store), routeur + nav.
+   Un module s'enregistre via BUDGET.register(id, def) où :
+     def = {
+       title:  string,                       // libellé nav
+       access: 'full' | 'read table' | 'none' (défaut 'full'),
+       mount(root, ctx)                       // rend le module dans `root`
+     }
+   ctx = {
+     BP,               // cœur (window.BP)
+     grist,            // API Grist (null en démo)
+     demo,             // bool
+     store,            // couche données partagée (cf. Store)
+     el(html),         // template -> Element
+     navigate(id),     // bascule de module (single-page)
+   }
+   Store (données partagées, chargées une fois) :
+     store.rows       [{ rowId, date, ym, day, lib, montant, cat, sous, exclu }]
+     store.catRows    [{ rowId, cat, type, color, budget, mode, lisser, prov }]
+     store.catMap     { [cat]: catRow }
+     store.typeOf(c)  -> 'revenu'|'depense'|'epargne'|'exclu'
+     store.regles     [{ rowId, motif, cat, sous, prio }]
+     store.sousMap    { [famille]: [sous...] }
+     store.months     ['YYYY-MM', ...] triés
+     store.hasProvision  bool (colonne Categories.Provision présente)
+     await store.load()             (re)charge tout
+     await store.apply(actions)     applyUserActions puis reload + notify
+     store.onChange(cb)             s'abonne aux rechargements
+   ======================================================================= */
+window.BUDGET = window.BUDGET || { modules: {} };
+BUDGET.register = (id, def) => { BUDGET.modules[id] = def; };
+
+(function () {
+  const HAS_GRIST = typeof grist !== 'undefined';
+  const BP = window.BP;
+  const el = html => { const t = document.createElement('template'); t.innerHTML = (html || '').trim(); return t.content.firstElementChild; };
+
+  /* ---- Store : couche données partagée -------------------------------- */
+  const col = (t, n) => (t && t[n]) || [];
+  const Store = {
+    rows: [], catRows: [], catMap: {}, regles: [], sousMap: {}, months: [], hasProvision: false,
+    _subs: [],
+    typeOf(c) { return (this.catMap[c] && this.catMap[c].type) || 'depense'; },
+    onChange(cb) { this._subs.push(cb); },
+    _notify() { this._subs.forEach(cb => { try { cb(); } catch (e) { console.error(e); } }); },
+    async load() {
+      if (!HAS_GRIST) return;
+      const want = ['Transactions', 'Categories', 'Regles', 'Sous_categories'];
+      const got = {};
+      await Promise.all(want.map(async n => { try { got[n] = await grist.docApi.fetchTable(n); } catch (e) { got[n] = null; } }));
+      const cats = got.Categories || {};
+      this.catRows = (cats.id || []).map((rowId, i) => ({
+        rowId, cat: col(cats, 'Categorie')[i],
+        type: (col(cats, 'Type')[i] || 'depense'), color: col(cats, 'Couleur')[i] || '#5b6470',
+        budget: +(col(cats, 'Budget_mensuel')[i] || 0), mode: col(cats, 'Budget_mode')[i] || '',
+        lisser: !!col(cats, 'Lisser')[i], prov: +(col(cats, 'Provision')[i] || 0),
+        nature: col(cats, 'Nature')[i] || '',
+        actifDebut: col(cats, 'Actif_debut')[i] || '', actifFin: col(cats, 'Actif_fin')[i] || ''
+      })).filter(c => c.cat);
+      this.catMap = {}; this.catRows.forEach(c => this.catMap[c.cat] = c);
+      this.hasProvision = Object.prototype.hasOwnProperty.call(cats, 'Provision');
+
+      const tx = got.Transactions || {};
+      this.rows = (tx.id || []).map((rowId, i) => {
+        const date = col(tx, 'Date')[i]; const d = BP.gristToDate(date);
+        return {
+          rowId, date, ym: d ? BP.ym(d) : null, day: d ? d.getDate() : null,
+          lib: col(tx, 'Libelle')[i] || '', montant: +(col(tx, 'Montant')[i] || 0),
+          cat: col(tx, 'Categorie')[i] || 'À catégoriser', sous: col(tx, 'Sous_categorie')[i] || '',
+          exclu: !!col(tx, 'Exclu')[i]
+        };
+      }).filter(r => r.date != null && isFinite(r.montant));
+      this.months = [...new Set(this.rows.map(r => r.ym).filter(Boolean))].sort();
+
+      const reg = got.Regles || {};
+      this.regles = (reg.id || []).map((rowId, i) => ({
+        rowId, motif: col(reg, 'Motif')[i] || '', cat: col(reg, 'Categorie')[i] || '',
+        sous: col(reg, 'Sous_categorie')[i] || '', prio: +(col(reg, 'Priorite')[i] || 0)
+      })).filter(r => r.motif).sort((a, b) => b.prio - a.prio);
+
+      const sc = got.Sous_categories || {}; this.sousMap = {};
+      (sc.id || []).forEach((_, i) => {
+        const f = col(sc, 'Categorie')[i], s = col(sc, 'Sous_categorie')[i];
+        if (f && s) (this.sousMap[f] = this.sousMap[f] || []).push(s);
+      });
+    },
+    async apply(actions) {
+      if (!HAS_GRIST || !actions || !actions.length) return;
+      try { await grist.docApi.applyUserActions(actions); }
+      catch (e) { alert('Écriture refusée : ' + (e && e.message || e)); }
+      await this.load(); this._notify();
+    }
+  };
+
+  /* ---- Routeur + nav --------------------------------------------------- */
+  // Ordre canonique de la nav (tableau de bord d'abord). Les ids hors liste suivent.
+  const ORDER = ['suivi', 'classement', 'import'];
+  const orderedIds = () => Object.keys(BUDGET.modules).slice()
+    .sort((a, b) => (ORDER.indexOf(a) < 0 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(b) < 0 ? 99 : ORDER.indexOf(b)));
+  // Vue pinnée par le build (per-module) OU ?view= OU 1re vue de l'ordre.
+  const PIN = window.__BUDGET_VIEW__ || null;
+  function currentView() {
+    if (PIN) return PIN;
+    const q = new URLSearchParams(location.search).get('view');
+    if (q && BUDGET.modules[q]) return q;
+    return orderedIds()[0];
+  }
+  let VIEW = null;
+  const ctxBase = { BP, grist: HAS_GRIST ? grist : null, demo: !HAS_GRIST, store: Store, el, navigate };
+
+  function renderNav() {
+    const nav = document.getElementById('nav');
+    const ids = orderedIds();
+    if (PIN || ids.length < 2) { nav.innerHTML = ''; return; }   // pas de nav si pinné ou module unique
+    nav.innerHTML = '';
+    const bar = el('<div class="topnav"><span class="brand">Budget</span></div>');
+    ids.forEach(id => {
+      const b = el('<button class="tab">' + (BUDGET.modules[id].title || id) + '</button>');
+      if (id === VIEW) b.classList.add('on');
+      b.onclick = () => navigate(id);
+      bar.appendChild(b);
+    });
+    nav.appendChild(bar);
+  }
+
+  function mountView() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    const def = BUDGET.modules[VIEW];
+    if (!def) { root.innerHTML = '<div class="msg">Module introuvable : ' + VIEW + '</div>'; return; }
+    if (HAS_GRIST) { try { grist.ready({ requiredAccess: def.access || 'full' }); } catch (e) {} }
+    def.mount(root, Object.assign({}, ctxBase, { view: VIEW }));
+  }
+
+  function navigate(id) {
+    if (!BUDGET.modules[id]) return;
+    VIEW = id;
+    if (!PIN) { const u = new URL(location.href); u.searchParams.set('view', id); history.replaceState(null, '', u); }
+    renderNav(); mountView();
+  }
+
+  /* ---- Boot ------------------------------------------------------------ */
+  async function boot() {
+    if (!Object.keys(BUDGET.modules).length) {
+      document.getElementById('root').innerHTML = '<div class="msg">Aucun module chargé.</div>'; return;
+    }
+    VIEW = currentView();
+    if (HAS_GRIST) { try { await Store.load(); } catch (e) {} }
+    renderNav(); mountView();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+
+<!-- ===================================================================== -->
+<!-- MODULES : en dev via <script src>, inlinés/filtrés par build-budget.js. -->
+<script>
+/* modules/classement.js — Classement des operations non categorisees.
+   Regroupe les operations « A categoriser » par marchand (BP.merchantKey) et, pour
+   chaque groupe, propose UNE combobox intelligente « tape un terme » qui filtre en
+   direct les paires Famille > Sous-categorie existantes, classees par pertinence
+   (historique du marchand > taxonomie > correspondance du terme). Selectionner une
+   entree applique famille + sous-categorie d'un coup (BulkUpdateRecord). La combobox
+   sait aussi CREER une sous-categorie ou une famille a la volee (dedup insensible
+   casse/accents) et le module apprend une Regle quand c'est pertinent.
+
+   Contrat shell : BUDGET.register(id, { title, access, mount(root, ctx) }).
+   Donnees deja chargees dans ctx.store ; ecritures via ctx.store.apply(actions). */
+(function () {
+  'use strict';
+  if (!window.BUDGET || typeof window.BUDGET.register !== 'function') return;
+
+  // Etat au niveau module (le shell rappelle mount() a chaque navigation).
+  let _ctx = null, _root = null, _bound = false;
+  let _closeOpen = null;                 // ferme le menu combobox actuellement ouvert
+
+  const CSS_ID = 'cls-module-css';
+  const TYPES = [['depense', 'Depense'], ['revenu', 'Revenu'], ['epargne', 'Epargne'], ['exclu', 'Exclu']];
+  const SRC_META = {
+    'appris': 'var(--green)', 'regle': 'var(--indigo)',
+    'connu': 'var(--warn)', 'a confirmer': 'var(--muted)'
+  };
+  const SRC_LABEL = { 'appris': 'appris', 'regle': 'regle', 'connu': 'connu', 'a confirmer': 'a confirmer' };
+
+  /* ---- Styles propres au module (tokens du shell, clair/sombre herites) ---- */
+  function injectCss() {
+    if (document.getElementById(CSS_ID)) return;
+    const s = document.createElement('style');
+    s.id = CSS_ID;
+    s.textContent = [
+      '.cls-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}',
+      '.cls-grp{margin-bottom:10px}',
+      '.cls-gh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}',
+      '.cls-dot{width:10px;height:10px;border-radius:3px;flex:none}',
+      '.cls-name{font-size:14px;font-weight:700}',
+      '.cls-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+      '.cls-cb{position:relative;flex:1;min-width:240px}',
+      '.cls-cb .inp{width:100%}',
+      '.cls-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;background:var(--card);',
+      '  border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-height:300px;overflow:auto;padding:4px}',
+      '.cls-menu[hidden]{display:none}',
+      '.cls-opt{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13px}',
+      '.cls-opt.hi{background:var(--soft)}',
+      '.cls-opt .odot{width:9px;height:9px;border-radius:3px;flex:none}',
+      '.cls-opt .osub{color:var(--muted)}',
+      '.cls-opt .osep{color:var(--muted)}',
+      '.cls-opt.create{color:var(--indigo);font-weight:600}',
+      '.cls-opt .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.cls-opt .seg{margin-left:auto}',
+      '.cls-empty{padding:10px;color:var(--muted);font-size:12.5px}',
+      '.cls-sug{border:none;background:var(--soft);color:var(--ink);border-radius:8px;padding:6px 11px;',
+      '  font-size:12.5px;font-weight:600;cursor:pointer}',
+      '.cls-more{border:none;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:4px 2px}',
+      '.cls-detail{margin-top:8px}',
+      '.cls-line{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px}'
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+
+  /* ---- Une operation est « non classee » si vide ou « A categoriser » ------ */
+  function isUncat(cat, norm) {
+    if (!cat) return true;
+    const n = norm(cat);
+    return n === '' || n === 'A CATEGORISER';
+  }
+
+  const mk = (tag, cls, txt) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    return e;
+  };
+
+  /* ===================================================================== */
+  /* Rendu complet (rejoue a chaque store.onChange, apres chaque ecriture). */
+  /* ===================================================================== */
+  function render() {
+    if (!_ctx || !_root) return;
+    const ctx = _ctx, root = _root, store = ctx.store, BP = ctx.BP;
+    const norm = BP.norm;
+    _closeOpen = null;                   // les anciens menus viennent d'etre detruits
+
+    /* --- Precalcul : cle marchand par ligne (une seule fois) -------------- */
+    const keyOf = new Map();
+    const histCount = new Map();         // cle -> Map(label -> {cat,sous,n})
+    for (const r of store.rows) {
+      const k = BP.merchantKey(r.lib);
+      keyOf.set(r.rowId, k);
+      if (isUncat(r.cat, norm)) continue;
+      let hm = histCount.get(k);
+      if (!hm) { hm = new Map(); histCount.set(k, hm); }
+      const lbl = r.cat + '||' + (r.sous || '');
+      const cur = hm.get(lbl) || { cat: r.cat, sous: r.sous || '', n: 0 };
+      cur.n++; hm.set(lbl, cur);
+    }
+    // Marchand -> classement le plus frequent dans l'historique.
+    const histByMerchant = new Map();
+    histCount.forEach((hm, k) => {
+      let best = null;
+      hm.forEach(v => { if (!best || v.n > best.n) best = v; });
+      if (best) histByMerchant.set(k, { cat: best.cat, sous: best.sous });
+    });
+
+    /* --- Precalcul : paires Famille > Sous existantes (hors revenu/epargne) - */
+    const pairs = [];
+    store.catRows.forEach(c => {
+      if (isUncat(c.cat, norm)) return;
+      const t = store.typeOf(c.cat);
+      if (t === 'revenu' || t === 'epargne') return;
+      const color = c.color || '#c2c7d0';
+      pairs.push({ cat: c.cat, sous: '', normFam: norm(c.cat), normSous: '', normLabel: norm(c.cat), color });
+      (store.sousMap[c.cat] || []).forEach(s => {
+        pairs.push({ cat: c.cat, sous: s, normFam: norm(c.cat), normSous: norm(s), normLabel: norm(c.cat + ' ' + s), color });
+      });
+    });
+
+    /* --- Groupes de marchands non classes (indexes par cle) --------------- */
+    const gmap = new Map();
+    for (const r of store.rows) {
+      if (!isUncat(r.cat, norm)) continue;
+      const k = keyOf.get(r.rowId);
+      let g = gmap.get(k);
+      if (!g) { g = { key: k, items: [], libs: [] }; gmap.set(k, g); }
+      g.items.push(r); g.libs.push(r.lib);
+    }
+    const groups = [...gmap.values()].sort((a, b) => b.items.length - a.items.length);
+
+    /* --- Suggestion de pre-remplissage : Appris > Regle > Connu > confirmer  */
+    function suggestFor(g) {
+      const h = histByMerchant.get(g.key);
+      if (h && h.cat) return { cat: h.cat, sous: h.sous || '', src: 'appris' };
+      for (const rg of store.regles) {
+        const m = norm(rg.motif);
+        if (!m) continue;
+        if (norm(g.key).includes(m) || g.libs.some(l => norm(l).includes(m)))
+          return { cat: rg.cat, sous: rg.sous || '', src: 'regle' };
+      }
+      const guess = BP.guessCategory(g.libs[0] || g.key);
+      if (guess) return { cat: guess, sous: '', src: 'connu' };
+      return { cat: '', sous: '', src: 'a confirmer' };
+    }
+
+    /* --- Ecritures ------------------------------------------------------- */
+    // N'apprend une regle que si le marchand est specifique (pas 1 token trop court)
+    // et qu'aucune regle existante ne le couvre deja.
+    function maybeRuleAction(g, famille, sous) {
+      const key = g.key;
+      if (!key) return null;
+      const toks = key.split(' ').filter(Boolean);
+      const compact = key.replace(/\s+/g, '');
+      if (toks.length < 2 && compact.length < 4) return null;   // trop generique -> sur-matching
+      const covered = store.regles.some(rg => {
+        const m = norm(rg.motif);
+        if (!m) return false;
+        return norm(key).includes(m) || g.libs.some(l => norm(l).includes(m));
+      });
+      if (covered) return null;
+      return ['AddRecord', 'Regles', null, { Motif: key, Categorie: famille, Sous_categorie: sous || '', Priorite: 10 }];
+    }
+
+    // Applique famille + sous a tout le groupe, + apprentissage regle, en un seul lot atomique.
+    async function classify(g, famille, sous, extra) {
+      if (!famille) return;
+      const ids = g.items.map(i => i.rowId);
+      const acts = (extra || []).slice();
+      acts.push(['BulkUpdateRecord', 'Transactions', ids, {
+        Categorie: ids.map(() => famille),
+        Sous_categorie: ids.map(() => sous || '')
+      }]);
+      const rule = maybeRuleAction(g, famille, sous);
+      if (rule) acts.push(rule);
+      await store.apply(acts);           // recharge + notifie -> render()
+    }
+
+    // Dedup insensible casse/accents : reutilise l'existant sinon prepare l'AddRecord.
+    function ensureSous(famille, term) {
+      const nt = norm(term);
+      const existing = (store.sousMap[famille] || []).find(s => norm(s) === nt);
+      if (existing) return { sous: existing, acts: [] };
+      return { sous: term, acts: [['AddRecord', 'Sous_categories', null, { Categorie: famille, Sous_categorie: term }]] };
+    }
+    function ensureFamille(term, type) {
+      const nt = norm(term);
+      const existing = store.catRows.find(c => norm(c.cat) === nt);
+      if (existing) return { fam: existing.cat, acts: [] };
+      return { fam: term, acts: [['AddRecord', 'Categories', null, { Categorie: term, Type: type || 'depense', Couleur: '#5b6470' }]] };
+    }
+
+    /* --- Etat vide / rien a classer -------------------------------------- */
+    root.innerHTML = '';
+    const wrap = mk('div', 'wrap');
+    root.appendChild(wrap);
+
+    if (!store.rows.length) {
+      wrap.appendChild(el(ctx,
+        '<div class="msg"><b>Aucune operation.</b><br><span class="note">Importe d\'abord un releve : le classement lit la table Transactions.</span></div>'));
+      return;
+    }
+    if (!groups.length) {
+      wrap.appendChild(el(ctx,
+        '<div class="msg"><b>Tout est categorise.</b><br><span class="note">' + store.rows.length +
+        ' operations, aucune en attente. Le classement reprendra au prochain import.</span></div>'));
+      return;
+    }
+
+    /* --- En-tete --------------------------------------------------------- */
+    const nOps = groups.reduce((a, g) => a + g.items.length, 0);
+    const head = mk('div', 'cls-head');
+    const hTitle = mk('div', null);
+    hTitle.appendChild(mk('div', null, 'Classement'));
+    hTitle.querySelector('div').style.cssText = 'font-size:19px;font-weight:700';
+    const hNote = mk('div', 'note',
+      nOps + ' operation' + (nOps > 1 ? 's' : '') + ' a categoriser · ' +
+      groups.length + ' marchand' + (groups.length > 1 ? 's' : ''));
+    head.appendChild(hTitle);
+    head.appendChild(hNote);
+    wrap.appendChild(head);
+
+    /* --- Une carte par marchand ------------------------------------------ */
+    groups.forEach(g => wrap.appendChild(buildGroupCard(g)));
+
+    /* ---- Construction d'une carte de groupe ----------------------------- */
+    function buildGroupCard(g) {
+      const sug = suggestFor(g);
+      const guessFam = (BP.guessCategory(g.libs[0] || g.key)) || '';
+      const total = g.items.reduce((a, i) => a + i.montant, 0);
+
+      const card = mk('div', 'card cls-grp');
+
+      // Ligne de titre marchand + chip source + montant.
+      const gh = mk('div', 'cls-gh');
+      const dot = mk('span', 'cls-dot');
+      dot.style.background = (store.catMap[sug.cat] && store.catMap[sug.cat].color) || '#c2c7d0';
+      gh.appendChild(dot);
+      gh.appendChild(mk('span', 'cls-name', g.key || '(marchand inconnu)'));
+      gh.appendChild(mk('span', 'note',
+        g.items.length + ' op. · ' + BP.eur0(total)));
+      const chip = mk('span', 'chip', SRC_LABEL[sug.src] || sug.src);
+      chip.style.cssText = 'margin-left:auto;background:var(--soft);color:' + (SRC_META[sug.src] || 'var(--muted)');
+      gh.appendChild(chip);
+      card.appendChild(gh);
+
+      // Ligne d'action : combobox + suggestion rapide + detail.
+      const rowEl = mk('div', 'cls-row');
+      rowEl.appendChild(buildCombobox(g, sug, guessFam));
+
+      if (sug.cat && sug.src !== 'a confirmer') {
+        const sugBtn = mk('button', 'cls-sug',
+          'Classer « ' + sug.cat + (sug.sous ? ' › ' + sug.sous : '') + ' »');
+        sugBtn.onclick = () => classify(g, sug.cat, sug.sous, []);
+        rowEl.appendChild(sugBtn);
+      }
+
+      const moreBtn = mk('button', 'cls-more', '▸ detail');
+      const detail = mk('div', 'cls-detail');
+      detail.hidden = true;
+      moreBtn.onclick = () => {
+        detail.hidden = !detail.hidden;
+        moreBtn.textContent = detail.hidden ? '▸ detail' : '▾ replier';
+        if (!detail.childElementCount) fillDetail(detail, g);
+      };
+      rowEl.appendChild(moreBtn);
+      card.appendChild(rowEl);
+      card.appendChild(detail);
+      return card;
+    }
+
+    function fillDetail(box, g) {
+      g.items.forEach(r => {
+        const line = mk('div', 'cls-line');
+        const d = BP.gristToDate(r.date);
+        const dEl = mk('span', 'note', d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '');
+        dEl.style.width = '52px';
+        const lib = mk('span', 'grow', r.lib);
+        lib.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        const amt = mk('span', 'mono', BP.eur(r.montant));
+        amt.style.color = r.montant < 0 ? 'var(--red)' : 'var(--green)';
+        line.appendChild(dEl); line.appendChild(lib); line.appendChild(amt);
+        box.appendChild(line);
+      });
+    }
+
+    /* ---- Combobox intelligente ------------------------------------------ */
+    function buildCombobox(g, sug, guessFam) {
+      const cb = mk('div', 'cls-cb');
+      const input = mk('input', 'inp');
+      input.type = 'text';
+      input.placeholder = 'tape un terme (ex. courses, restaurant, EDF…)';
+      const menu = mk('div', 'cls-menu');
+      menu.hidden = true;
+      cb.appendChild(input);
+      cb.appendChild(menu);
+
+      let entries = [];                  // entrees courantes du menu
+      let hi = 0;                        // index surligne
+
+      const close = () => { menu.hidden = true; };
+      const open = () => {
+        if (_closeOpen && _closeOpen !== close) _closeOpen();
+        _closeOpen = close;
+        menu.hidden = false;
+      };
+
+      // Pertinence d'une paire : historique/taxo d'abord, puis qualite du terme.
+      function score(p, nt) {
+        let s = 0;
+        if (sug.cat && p.cat === sug.cat) s += (p.sous === sug.sous) ? 1000 : 600;
+        if (guessFam && p.cat === guessFam) s += 300;
+        if (nt) {
+          const fp = p.normFam.indexOf(nt), sp = p.normSous.indexOf(nt);
+          if (fp === 0 || sp === 0) s += 200;
+          else if (fp >= 0 || sp >= 0) s += 100;
+        }
+        return s;
+      }
+
+      function build(term) {
+        const t = (term || '').trim();
+        const nt = norm(t);
+        let list = pairs;
+        if (nt) list = pairs.filter(p => p.normLabel.includes(nt));
+        const scored = list.map(p => ({ p, s: score(p, nt) }))
+          .sort((a, b) => b.s - a.s
+            || a.p.cat.localeCompare(b.p.cat, 'fr')
+            || a.p.normSous.localeCompare(b.p.normSous, 'fr'));
+
+        const exact = nt && pairs.some(p => p.normFam === nt || p.normSous === nt);
+        entries = [];
+        menu.innerHTML = '';
+
+        // Options de creation en tete quand le terme ne matche pas exactement.
+        if (nt && !exact) {
+          const ctxFam = (scored[0] && scored[0].p.cat) || sug.cat || guessFam || '';
+          if (ctxFam) entries.push({ type: 'csous', term: t, fam: ctxFam });
+          entries.push({ type: 'cfam', term: t });
+        }
+        scored.slice(0, 50).forEach(x => entries.push({ type: 'pair', pair: x.p }));
+
+        if (!entries.length) {
+          menu.appendChild(mk('div', 'cls-empty', 'Aucune categorie — tape un nom pour la creer.'));
+        } else {
+          hi = 0;
+          entries.forEach((en, i) => menu.appendChild(renderEntry(en, i)));
+          paintHi();
+        }
+      }
+
+      function renderEntry(en, i) {
+        const opt = mk('div', 'cls-opt');
+        opt.dataset.i = i;
+        if (en.type === 'pair') {
+          const d = mk('span', 'odot'); d.style.background = en.pair.color;
+          opt.appendChild(d);
+          opt.appendChild(mk('span', 'grow', en.pair.cat));
+          if (en.pair.sous) {
+            opt.appendChild(mk('span', 'osep', '›'));
+            opt.appendChild(mk('span', 'osub', en.pair.sous));
+          }
+        } else if (en.type === 'csous') {
+          opt.classList.add('create');
+          opt.appendChild(mk('span', 'grow',
+            '+ Creer sous-categorie « ' + en.term + ' » dans ' + en.fam));
+        } else {
+          opt.classList.add('create');
+          opt.appendChild(mk('span', 'grow', '+ Nouvelle famille « ' + en.term + ' »'));
+          // Choix du Type (defaut : depense).
+          const seg = mk('div', 'seg');
+          TYPES.forEach(([val, lbl]) => {
+            const b = mk('button', val === 'depense' ? 'on' : null, lbl);
+            b.onmousedown = ev => { ev.preventDefault(); ev.stopPropagation(); doCreateFam(en.term, val); };
+            seg.appendChild(b);
+          });
+          opt.appendChild(seg);
+        }
+        opt.onmouseenter = () => { hi = i; paintHi(); };
+        opt.onmousedown = ev => { ev.preventDefault(); activate(en); };
+        return opt;
+      }
+
+      function paintHi() {
+        const opts = menu.querySelectorAll('.cls-opt');
+        opts.forEach((o, i) => o.classList.toggle('hi', i === hi));
+        const cur = opts[hi];
+        if (cur) cur.scrollIntoView({ block: 'nearest' });
+      }
+
+      function activate(en) {
+        if (en.type === 'pair') classify(g, en.pair.cat, en.pair.sous, []);
+        else if (en.type === 'csous') doCreateSous(en.fam, en.term);
+        else doCreateFam(en.term, 'depense');
+      }
+      function doCreateSous(fam, term) {
+        const r = ensureSous(fam, term);
+        classify(g, fam, r.sous, r.acts);
+      }
+      function doCreateFam(term, type) {
+        const r = ensureFamille(term, type);
+        classify(g, r.fam, '', r.acts);
+      }
+
+      input.addEventListener('focus', () => { build(input.value); open(); });
+      input.addEventListener('input', () => { build(input.value); open(); });
+      input.addEventListener('keydown', ev => {
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); if (menu.hidden) { build(input.value); open(); } else if (entries.length) { hi = (hi + 1) % entries.length; paintHi(); } }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (entries.length) { hi = (hi - 1 + entries.length) % entries.length; paintHi(); } }
+        else if (ev.key === 'Enter') { ev.preventDefault(); if (menu.hidden) { build(input.value); open(); } else if (entries[hi]) activate(entries[hi]); }
+        else if (ev.key === 'Escape') { close(); }
+      });
+
+      return cb;
+    }
+  }
+
+  // Template -> Element (reprend ctx.el du shell si dispo, sinon fallback local).
+  function el(ctx, html) {
+    if (ctx && typeof ctx.el === 'function') return ctx.el(html);
+    const t = document.createElement('template');
+    t.innerHTML = (html || '').trim();
+    return t.content.firstElementChild;
+  }
+
+  /* ===================================================================== */
+  BUDGET.register('classement', {
+    title: 'Classement',
+    access: 'full',
+    mount(root, ctx) {
+      _ctx = ctx; _root = root;
+      if (ctx.demo) {
+        root.innerHTML = '<div class="wrap"><div class="msg"><b>Classement — apercu.</b><br>' +
+          'Ouvre ce widget dans un document Grist (acces complet) : il regroupe les operations ' +
+          'non categorisees par marchand et propose une recherche intelligente Famille › Sous-categorie ' +
+          'avec creation a la volee.</div></div>';
+        return;
+      }
+      injectCss();
+      if (!_bound) {
+        ctx.store.onChange(render);
+        _bound = true;
+        if (!window.__clsDocBound) {
+          window.__clsDocBound = true;
+          document.addEventListener('mousedown', e => {
+            const inside = e.target && e.target.closest && e.target.closest('.cls-cb');
+            if (_closeOpen && !inside) _closeOpen();
+          });
+        }
+      }
+      render();
+    }
+  });
+})();
+</script>
+<script>
+/* modules/import.js — Import de relevés CSV multi-banques vers Transactions.
+   Module de la suite Budget (contrat BUDGET.register du shell app.html).
+   Le parsing, la taxonomie et les helpers viennent du coeur partage (window.BP) :
+   on NE reimplemente NI parseDate/parseAmount, NI la categorisation, NI la taxonomie.
+   - En-tetes CSV : BP.normHeader (minuscules).
+   - Logique metier (marchand, categorisation, dedup) : BP.norm (MAJUSCULES).
+   Le fichier est inline dans un <script> par build-budget.js. */
+(function () {
+  'use strict';
+
+  /* ---- Schema bootstrappe (widget maitre d'un document neuf) ------------ */
+  const SCHEMA = {
+    Transactions: [
+      { id: 'Date', type: 'Date' }, { id: 'Libelle', type: 'Text' }, { id: 'Montant', type: 'Numeric' },
+      { id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' }, { id: 'Compte', type: 'Text' },
+      { id: 'Banque', type: 'Text' }, { id: 'Reference', type: 'Text' }, { id: 'Exclu', type: 'Bool' }, { id: 'Notes', type: 'Text' }
+    ],
+    Regles: [
+      { id: 'Motif', type: 'Text' }, { id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' },
+      { id: 'Exclu', type: 'Bool' }, { id: 'Priorite', type: 'Int' }
+    ],
+    Categories: [{ id: 'Categorie', type: 'Text' }, { id: 'Type', type: 'Text' }, { id: 'Couleur', type: 'Text' }],
+    Sous_categories: [{ id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' }]
+  };
+
+  /* ---- Presets de formats FR : signature d'en-tetes -> roles de colonnes -- */
+  const PRESETS = [
+    {
+      bank: 'LCL / CIC / Credit Mutuel', sep: ';',
+      sig: ['date de comptabilisation', 'libelle simplifie', 'debit', 'credit'],
+      map: { date: 'Date de comptabilisation', label: 'Libelle simplifie', label2: 'Informations complementaires', debit: 'Debit', credit: 'Credit', ref: 'Reference' }
+    },
+    {
+      bank: 'Boursorama', sep: ';',
+      sig: ['dateop', 'label', 'amount'],
+      map: { date: 'dateOp', label: 'label', amount: 'amount', cat: 'category' }
+    },
+    {
+      bank: 'Credit Agricole', sep: ';',
+      sig: ['date', 'libelle', 'debit euros', 'credit euros'],
+      map: { date: 'Date', label: 'Libelle', debit: 'Debit euros', credit: 'Credit euros' }
+    },
+    {
+      bank: 'Societe Generale', sep: ';',
+      sig: ['date de l', 'libelle', 'montant'],
+      map: { date: "Date de l'operation", label: 'Libelle', amount: 'Montant de l’operation' }
+    },
+    {
+      bank: 'BNP Paribas', sep: ';',
+      sig: ['date operation', 'libelle', 'montant'],
+      map: { date: 'Date operation', label: 'Libelle operation', amount: 'Montant' }
+    },
+    {
+      bank: 'Caisse d’Epargne / Banque Populaire', sep: ';',
+      sig: ['date', 'libelle', 'debit', 'credit'],
+      map: { date: 'Date', label: 'Libelle', debit: 'Debit', credit: 'Credit' }
+    },
+    {
+      bank: 'Revolut', sep: ',',
+      sig: ['type', 'started date', 'description', 'amount'],
+      map: { date: 'Started Date', label: 'Description', amount: 'Amount' }
+    },
+    {
+      bank: 'N26', sep: ',',
+      sig: ['date', 'payee', 'amount'],
+      map: { date: 'Date', label: 'Payee', amount: 'Amount (EUR)' }
+    }
+  ];
+
+  /* ---- CSS specifique au module (tokens du shell, clair/sombre herites) --- */
+  function injectCss() {
+    if (document.getElementById('imp-css')) return;
+    const st = document.createElement('style');
+    st.id = 'imp-css';
+    st.textContent = [
+      '.imp-lede{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:640px}',
+      '.imp-step{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:13px}',
+      '.imp-step .n{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:11px;font-weight:700}',
+      '.imp-drop{border:1.5px dashed var(--line);border-radius:10px;padding:24px;text-align:center;transition:.15s;cursor:pointer;background:var(--soft)}',
+      '.imp-drop:hover,.imp-drop.over{border-color:var(--indigo)}',
+      '.imp-drop strong{color:var(--indigo)}',
+      '.imp-drop p{margin:6px 0 0;color:var(--muted);font-size:12.5px}',
+      '.imp-or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;margin:14px 0;text-transform:uppercase;letter-spacing:.08em}',
+      '.imp-or::before,.imp-or::after{content:"";flex:1;height:1px;background:var(--line)}',
+      '.imp-ta{width:100%;min-height:82px;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--line);border-radius:9px;padding:10px;resize:vertical;color:var(--ink);background:var(--card)}',
+      '.imp-ta:focus{outline:none;border-color:var(--indigo)}',
+      '.imp-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:20px;font-size:12.5px;font-weight:600;background:var(--soft);color:var(--indigo)}',
+      '.imp-chip.guess{color:var(--warn)}',
+      '.imp-chip .dot{width:7px;height:7px;border-radius:50%;background:currentColor}',
+      '.imp-map{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;margin-bottom:9px}',
+      '.imp-map label{font-size:12.5px;color:var(--muted)}',
+      '.imp-sel{width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}',
+      '.imp-sel:focus{outline:none;border-color:var(--indigo)}',
+      '.imp-stats{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:14px}',
+      '.imp-stat .v{font-family:ui-monospace,Menlo,monospace;font-size:21px;font-weight:600;letter-spacing:-.02em}',
+      '.imp-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}',
+      '.imp-stat.dup .v{color:var(--warn)}',
+      '.imp-scroll{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:9px}',
+      '.imp-ledger{width:100%;border-collapse:collapse;font-size:12.5px}',
+      '.imp-ledger th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}',
+      '.imp-ledger td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}',
+      '.imp-ledger tr.dup{opacity:.45}',
+      '.imp-ledger .date{font-family:ui-monospace,Menlo,monospace;color:var(--muted);white-space:nowrap}',
+      '.imp-ledger .lib{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.imp-ledger .amt{font-family:ui-monospace,Menlo,monospace;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}',
+      '.imp-ledger .amt.pos{color:var(--green)} .imp-ledger .amt.neg{color:var(--red)}',
+      '.imp-ledger .imp-sel.cat{font-size:11.5px;padding:3px 6px;max-width:180px}',
+      '.imp-badge{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:5px;background:var(--soft);color:var(--muted)}',
+      '.imp-badge.new{color:var(--green)}',
+      '.imp-badge.exq{color:var(--red)}',
+      '.imp-actions{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}',
+      '.imp-btn{font-family:inherit;font-size:13.5px;font-weight:600;border:none;border-radius:9px;padding:10px 18px;cursor:pointer;transition:.12s}',
+      '.imp-btn.primary{background:var(--indigo);color:#fff}',
+      '.imp-btn.primary:hover{filter:brightness(1.07)}',
+      '.imp-btn.primary:disabled{background:var(--line);color:var(--muted);cursor:default;filter:none}',
+      '.imp-btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}',
+      '.imp-btn.ghost:hover{border-color:var(--ink);color:var(--ink)}',
+      '.imp-setup{background:var(--soft);border:1px solid var(--warn);border-radius:9px;padding:13px 15px;font-size:12.5px;color:var(--ink);margin-bottom:16px}',
+      '.imp-setup .imp-btn{margin-top:9px;background:var(--warn);color:#fff;padding:7px 14px;font-size:12.5px}',
+      '.imp-hidden{display:none}',
+      '.imp-msg{font-size:12.5px;margin-top:2px}',
+      '.imp-msg.ok{color:var(--green)} .imp-msg.err{color:var(--red)}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
+  /* ---- Robustesse CSV : separateur detecte, guillemets, BOM ------------- */
+  function detectSep(line) {
+    const cand = [[';', 0], ['\t', 0], [',', 0]];
+    cand.forEach(c => { c[1] = line.split(c[0]).length; });
+    cand.sort((a, b) => b[1] - a[1]);
+    return cand[0][1] > 1 ? cand[0][0] : ';';
+  }
+
+  function parseCSV(text) {
+    text = (text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+    const lines = text.split('\n').filter(l => l.trim().length);
+    if (!lines.length) return { head: [], rows: [], sep: ';' };
+    const sep = detectSep(lines[0]);
+    const split = line => {
+      const out = []; let cur = '', q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (q) {
+          if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+          else cur += ch;
+        } else {
+          if (ch === '"') q = true;
+          else if (ch === sep) { out.push(cur); cur = ''; }
+          else cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(c => c.trim());
+    };
+    const head = split(lines[0]);
+    const rows = lines.slice(1).map(split).filter(r => r.length >= Math.max(2, head.length - 2));
+    return { head, rows, sep };
+  }
+
+  /* ---- Detection format : preset par signature, sinon mapping devine ---- */
+  function detect(head, sampleRows) {
+    const H = head.map(h => BP.normHeader(h));
+    for (const p of PRESETS) {
+      if (p.sig.every(s => H.some(h => h.includes(s)))) {
+        const map = {};
+        for (const role in p.map) {
+          const want = BP.normHeader(p.map[role]);
+          const idx = H.findIndex(h => h === want || h.includes(want) || want.includes(h));
+          if (idx > -1) map[role] = idx;
+        }
+        return { bank: p.bank, map, guess: false };
+      }
+    }
+    // heuristique generique
+    const map = {};
+    const score = re => head.findIndex(h => re.test(BP.normHeader(h)));
+    let i;
+    if ((i = score(/date.*compta|date.*op|^date$|dateop|date.*valeur/)) > -1) map.date = i;
+    else if ((i = score(/date/)) > -1) map.date = i;
+    if ((i = score(/debit/)) > -1) map.debit = i;
+    if ((i = score(/credit/)) > -1) map.credit = i;
+    if (map.debit == null && map.credit == null) { if ((i = score(/montant|amount/)) > -1) map.amount = i; }
+    if ((i = score(/libell|label|description|payee|nature|motif|detail/)) > -1) map.label = i;
+    if ((i = score(/reference|^ref/)) > -1) map.ref = i;
+    if ((i = score(/categor/)) > -1) map.cat = i;
+    const sample = sampleRows.slice(0, 8);
+    const enough = Math.min(3, sample.length);
+    if (map.date == null) {
+      for (let c = 0; c < head.length; c++) {
+        if (sample.filter(r => BP.parseDate(r[c])).length >= enough) { map.date = c; break; }
+      }
+    }
+    if (map.amount == null && map.debit == null) {
+      for (let c = 0; c < head.length; c++) {
+        if (c === map.date) continue;
+        const ok = sample.filter(r => BP.parseAmount(r[c]) != null && /[.,]\d|^-?\d+$/.test((r[c] || '').replace(/\s/g, ''))).length;
+        if (ok >= enough) { map.amount = c; break; }
+      }
+    }
+    if (map.label == null) {
+      let best = -1, bl = 0;
+      for (let c = 0; c < head.length; c++) {
+        if (c === map.date) continue;
+        const avg = sample.reduce((a, r) => a + (r[c] || '').length, 0) / Math.max(1, sample.length);
+        if (avg > bl) { bl = avg; best = c; }
+      }
+      if (best > -1) map.label = best;
+    }
+    return { bank: 'Format inconnu', map, guess: true };
+  }
+
+  /* ---- Enregistrement du module ----------------------------------------- */
+  BUDGET.register('import', {
+    title: 'Import',
+    access: 'full',
+    mount(root, ctx) {
+      const BP = ctx.BP, store = ctx.store, el = ctx.el;
+
+      // Mode demo : le module ne fonctionne qu'attache a un document Grist.
+      if (ctx.demo) {
+        root.appendChild(el(
+          '<div class="msg">' +
+          '<strong>Import de releves bancaires.</strong><br>' +
+          'Ce module s’execute a l’interieur d’un document Grist : ajoute-le comme widget ' +
+          'personnalise (acces <em>Full</em>), puis colle ou depose le CSV de ta banque. ' +
+          'Il detecte le format, categorise les operations et les ecrit dans la table ' +
+          '<code>Transactions</code> (qu’il cree au besoin).' +
+          '</div>'
+        ));
+        return;
+      }
+
+      injectCss();
+
+      /* --- etat local (reconstruit a chaque montage) --- */
+      let HEAD = [], ROWS = [], MAP = {}, BANK = '', PARSED = [];
+
+      /* --- squelette DOM --- */
+      const wrap = el('<div class="wrap"></div>');
+      wrap.innerHTML =
+        '<h1 style="font-size:19px;font-weight:680;letter-spacing:-.01em;margin:0 0 3px">Importateur de releves</h1>' +
+        '<p class="imp-lede">Depose le releve CSV de ta banque. Le format est detecte, les colonnes mappees, ' +
+        'les operations categorisees — tu valides, et tout part dans ta table <code>Transactions</code>.</p>' +
+
+        '<div id="imp-setup" class="imp-setup imp-hidden">' +
+        'Ce document n’a pas encore la structure du template. Je peux creer les tables ' +
+        '<strong>Transactions</strong>, <strong>Regles</strong>, <strong>Categories</strong> et ' +
+        '<strong>Sous_categories</strong> (avec la taxonomie francaise de depart) en un clic.' +
+        '<div><button id="imp-boot" class="imp-btn">Creer la structure du template</button></div>' +
+        '</div>' +
+
+        '<div class="card" style="margin-bottom:16px">' +
+        '<div class="imp-step"><span class="n">1</span> Charger le releve</div>' +
+        '<div id="imp-drop" class="imp-drop"><strong>Choisir un fichier CSV</strong> ou glisse-le ici' +
+        '<p>LCL · CIC · Credit Mutuel · Boursorama · BNP · Credit Agricole · Societe Generale · Caisse d’Epargne · Revolut · N26 — ou n’importe quel CSV</p>' +
+        '<input id="imp-file" type="file" accept=".csv,.txt" class="imp-hidden"></div>' +
+        '<div class="imp-or">ou coller le contenu</div>' +
+        '<textarea id="imp-paste" class="imp-ta" placeholder="Date;Libelle;Debit;Credit&#10;…colle ici les lignes de ton export…"></textarea>' +
+        '<div class="imp-actions"><button id="imp-parse" class="imp-btn ghost">Analyser</button></div>' +
+        '</div>' +
+
+        '<div id="imp-mapcard" class="card imp-hidden" style="margin-bottom:16px">' +
+        '<div class="imp-step"><span class="n">2</span> Format detecte</div>' +
+        '<div id="imp-detect" style="margin-bottom:14px"></div>' +
+        '<div id="imp-mapgrid"></div>' +
+        '<div class="note" style="margin-top:6px">Corrige un role si la detection s’est trompee — le tableau se met a jour en direct.</div>' +
+        '</div>' +
+
+        '<div id="imp-prevcard" class="card imp-hidden">' +
+        '<div class="imp-step"><span class="n">3</span> Verifier et importer</div>' +
+        '<div class="imp-stats" id="imp-statsbox"></div>' +
+        '<div class="imp-scroll"><table class="imp-ledger"><thead><tr>' +
+        '<th>Date</th><th>Libelle</th><th class="amt">Montant</th><th>Categorie</th><th></th>' +
+        '</tr></thead><tbody id="imp-rows"></tbody></table></div>' +
+        '<div class="imp-actions">' +
+        '<button id="imp-commit" class="imp-btn primary">Importer</button>' +
+        '<button id="imp-reset" class="imp-btn ghost">Recommencer</button>' +
+        '<span id="imp-msg" class="imp-msg"></span>' +
+        '</div>' +
+        '</div>';
+      root.appendChild(wrap);
+
+      const $ = id => wrap.querySelector('#' + id);
+
+      /* --- helpers d'affichage --- */
+      const esc = s => (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const fdate = ts => { const d = new Date(ts * 1000); return String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0') + '/' + d.getUTCFullYear(); };
+      const catList = () => {
+        const fromStore = (store.catRows || []).map(c => c.cat).filter(Boolean);
+        const base = fromStore.length ? fromStore : BP.CAT_SEED.map(c => c[0]);
+        return [...new Set([...base, 'A categoriser'])];
+      };
+
+      /* --- categorisation : Regles utilisateur puis taxonomie (core) ------
+         L'attribut Exclu derive du Type de la categorie (contrat partage),
+         jamais devine d'un nom de categorie en dur. */
+      function categorize(lib) {
+        const L = BP.norm(lib);
+        for (const r of store.regles) {
+          if (r.motif && L.includes(BP.norm(r.motif))) {
+            const cat = r.cat || 'A categoriser';
+            return { cat, sous: r.sous || '', exclu: store.typeOf(cat) === 'exclu' };
+          }
+        }
+        const g = BP.guessCategory(lib);
+        if (g) return { cat: g, sous: '', exclu: store.typeOf(g) === 'exclu' };
+        return { cat: 'A categoriser', sous: '', exclu: false };
+      }
+
+      /* --- construction des operations depuis le mapping courant --------- */
+      function build() {
+        PARSED = [];
+        const m = MAP;
+        for (const r of ROWS) {
+          const date = BP.parseDate(r[m.date]);
+          let montant = null;
+          if (m.amount != null) montant = BP.parseAmount(r[m.amount]);
+          else {
+            const d = BP.parseAmount(r[m.debit]);
+            const c = BP.parseAmount(r[m.credit]);
+            if (d != null && d !== 0) montant = -Math.abs(d);
+            else if (c != null && c !== 0) montant = Math.abs(c);
+            else montant = 0;
+          }
+          let lib = (r[m.label] || '').trim();
+          if (m.label2 != null && r[m.label2]) lib += (lib ? ' — ' : '') + r[m.label2].trim();
+          if (date == null || montant == null || !lib) continue;
+          if (montant === 0) continue;                 // lignes de solde / montant nul : pas des operations
+          montant = Math.round(montant * 100) / 100;
+          const cat = categorize(lib);
+          PARSED.push({
+            Date: date, Libelle: lib, Montant: montant,
+            Categorie: cat.cat, Sous_categorie: cat.sous, Exclu: cat.exclu,
+            Banque: (BANK && BANK !== 'Format inconnu') ? BANK : '',
+            Reference: (m.ref != null ? r[m.ref] : '') || '',
+            dup: false
+          });
+        }
+      }
+
+      /* --- dedoublonnage : contre la table (store.rows) ET intra-fichier -- */
+      const compositeKey = (date, montant, lib) => 'K:' + date + '|' + Math.round((montant || 0) * 100) + '|' + BP.norm(lib).slice(0, 18);
+      function flagDuplicates() {
+        const existing = new Set();
+        for (const row of store.rows) existing.add(compositeKey(row.date, row.montant, row.lib));
+        const seen = new Set();                         // dedup intra-fichier
+        for (const p of PARSED) {
+          const ck = compositeKey(p.Date, p.Montant, p.Libelle);
+          const fk = p.Reference ? ('R:' + p.Reference) : ck;
+          const tableDup = existing.has(ck);
+          const fileDup = seen.has(fk);
+          p.dup = tableDup || fileDup;
+          seen.add(fk);
+        }
+      }
+
+      /* --- rendu du mapping (roles corrigeables a la main) --------------- */
+      function renderMapping(det) {
+        BANK = det.bank; MAP = det.map;
+        $('imp-detect').innerHTML = '<span class="imp-chip ' + (det.guess ? 'guess' : '') + '"><span class="dot"></span>' +
+          (det.guess ? 'Format non reconnu — mapping devine' : 'Detecte : ' + esc(det.bank)) + '</span>';
+        const roles = [['date', 'Date'], ['label', 'Libelle'], ['amount', 'Montant (signe)'], ['debit', 'Debit'], ['credit', 'Credit'], ['ref', 'Reference'], ['cat', 'Categorie source']];
+        const opts = role => ['<option value="">— aucune —</option>']
+          .concat(HEAD.map((h, j) => '<option value="' + j + '"' + (MAP[role] === j ? ' selected' : '') + '>' + esc(h || ('Colonne ' + (j + 1))) + '</option>')).join('');
+        $('imp-mapgrid').innerHTML = roles.map(([k, lab]) =>
+          '<div class="imp-map"><label>' + lab + '</label><select class="imp-sel" data-role="' + k + '">' + opts(k) + '</select></div>').join('');
+        $('imp-mapgrid').querySelectorAll('select').forEach(sel => {
+          sel.onchange = () => {
+            const v = sel.value;
+            if (v === '') delete MAP[sel.dataset.role]; else MAP[sel.dataset.role] = +v;
+            refresh();
+          };
+        });
+        $('imp-mapcard').classList.remove('imp-hidden');
+      }
+
+      /* --- recalcul + rendu de l'apercu ---------------------------------- */
+      function refresh() {
+        build();
+        flagDuplicates();
+        const nNew = PARSED.filter(p => !p.dup).length;
+        const nDup = PARSED.filter(p => p.dup).length;
+        const sum = PARSED.filter(p => !p.dup).reduce((a, p) => a + p.Montant, 0);
+        $('imp-statsbox').innerHTML =
+          '<div class="imp-stat"><div class="v">' + nNew + '</div><div class="k">a importer</div></div>' +
+          (nDup ? '<div class="imp-stat dup"><div class="v">' + nDup + '</div><div class="k">doublons ignores</div></div>' : '') +
+          '<div class="imp-stat"><div class="v" style="color:' + (sum < 0 ? 'var(--red)' : 'var(--green)') + '">' + BP.eur(sum) + '</div><div class="k">solde net</div></div>';
+
+        const cats = catList();
+        const catOpts = cur => cats.map(c => '<option' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+        $('imp-rows').innerHTML = PARSED.map((p, i) =>
+          '<tr class="' + (p.dup ? 'dup' : '') + '">' +
+          '<td class="date">' + fdate(p.Date) + '</td>' +
+          '<td class="lib" title="' + esc(p.Libelle) + '">' + esc(p.Libelle) + '</td>' +
+          '<td class="amt ' + (p.Montant < 0 ? 'neg' : 'pos') + '">' + BP.eur(p.Montant) + '</td>' +
+          '<td>' + (p.dup ? '<span class="imp-badge">doublon</span>' : '<select class="imp-sel cat" data-i="' + i + '">' + catOpts(p.Categorie) + '</select>') + '</td>' +
+          '<td>' + (p.dup ? '' : (p.Exclu ? '<span class="imp-badge exq">exclu</span>' : '<span class="imp-badge new">nouveau</span>')) + '</td>' +
+          '</tr>').join('');
+        $('imp-rows').querySelectorAll('select.cat').forEach(s => {
+          s.onchange = () => {
+            const p = PARSED[+s.dataset.i];
+            p.Categorie = s.value;
+            p.Exclu = store.typeOf(s.value) === 'exclu';
+            refresh();
+          };
+        });
+
+        const commit = $('imp-commit');
+        commit.disabled = nNew === 0;
+        commit.textContent = nNew ? ('Importer ' + nNew + ' operation' + (nNew > 1 ? 's' : '')) : 'Rien a importer';
+        $('imp-prevcard').classList.remove('imp-hidden');
+        $('imp-prevcard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      /* --- ecriture des operations (batch) via le Store ------------------ */
+      async function commit() {
+        const todo = PARSED.filter(p => !p.dup);
+        if (!todo.length) return;
+        const commitBtn = $('imp-commit'), msg = $('imp-msg');
+        commitBtn.disabled = true; msg.className = 'imp-msg'; msg.textContent = 'Import en cours…';
+        const cols = { Date: [], Libelle: [], Montant: [], Categorie: [], Sous_categorie: [], Compte: [], Banque: [], Reference: [], Exclu: [], Notes: [] };
+        todo.forEach(p => {
+          cols.Date.push(p.Date); cols.Libelle.push(p.Libelle); cols.Montant.push(p.Montant);
+          cols.Categorie.push(p.Categorie); cols.Sous_categorie.push(p.Sous_categorie); cols.Compte.push('');
+          cols.Banque.push(p.Banque); cols.Reference.push(p.Reference); cols.Exclu.push(p.Exclu); cols.Notes.push('');
+        });
+        try {
+          await store.apply([['BulkAddRecord', 'Transactions', todo.map(() => null), cols]]);
+          // store.apply a recharge Transactions : refresh re-marque les operations comme doublons.
+          refresh();
+          msg.className = 'imp-msg ok';
+          msg.textContent = todo.length + ' operation' + (todo.length > 1 ? 's' : '') + ' importee' + (todo.length > 1 ? 's' : '') + ' dans Transactions.';
+        } catch (e) {
+          console.error('[import] echec de l’ecriture des transactions', e);
+          msg.className = 'imp-msg err';
+          msg.textContent = 'Echec : ' + (e && e.message || e);
+          commitBtn.disabled = false;
+        }
+      }
+
+      /* --- bootstrap du schema (tables + taxonomie de depart) ------------ */
+      async function ensureSchema() {
+        const need = [];
+        for (const t in SCHEMA) {
+          try { await ctx.grist.docApi.fetchTable(t); }
+          catch (e) { need.push(t); }                   // fetchTable jette si la table est absente : signal attendu
+        }
+        $('imp-setup').classList.toggle('imp-hidden', need.length === 0);
+      }
+
+      async function bootstrap() {
+        const btn = $('imp-boot');
+        btn.disabled = true; btn.textContent = 'Creation…';
+        try {
+          for (const t in SCHEMA) {
+            let exists = true;
+            try { await ctx.grist.docApi.fetchTable(t); }
+            catch (e) { exists = false; }
+            if (!exists) await ctx.grist.docApi.applyUserActions([['AddTable', t, SCHEMA[t]]]);
+          }
+          // Semences (uniquement si la table est vide).
+          const cats = await ctx.grist.docApi.fetchTable('Categories');
+          if (!(cats.id && cats.id.length)) {
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Categories', BP.CAT_SEED.map(() => null),
+              { Categorie: BP.CAT_SEED.map(x => x[0]), Type: BP.CAT_SEED.map(x => x[1]), Couleur: BP.CAT_SEED.map(x => x[2]) }]]);
+          }
+          const reg = await ctx.grist.docApi.fetchTable('Regles');
+          if (!(reg.id && reg.id.length)) {
+            const seed = [
+              ['CARREFOUR', 'Alimentation', '', false, 5], ['NETFLIX', 'Loisirs', '', false, 5],
+              ['EDF', 'Logement', '', false, 5], ['LOYER', 'Logement', 'Loyer', false, 9]
+            ];
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Regles', seed.map(() => null),
+              { Motif: seed.map(s => s[0]), Categorie: seed.map(s => s[1]), Sous_categorie: seed.map(s => s[2]), Exclu: seed.map(s => s[3]), Priorite: seed.map(s => s[4]) }]]);
+          }
+          const sc = await ctx.grist.docApi.fetchTable('Sous_categories');
+          if (!(sc.id && sc.id.length)) {
+            const pairs = [];
+            for (const cat in BP.SOUS_SEED) for (const s of BP.SOUS_SEED[cat]) pairs.push([cat, s]);
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Sous_categories', pairs.map(() => null),
+              { Categorie: pairs.map(p => p[0]), Sous_categorie: pairs.map(p => p[1]) }]]);
+          }
+          await store.load();                            // recharge le Store partage (Regles/Categories/...)
+          $('imp-setup').classList.add('imp-hidden');
+          if (PARSED.length) refresh();                  // re-categorise l'apercu avec les nouvelles regles
+        } catch (e) {
+          console.error('[import] echec du bootstrap du schema', e);
+          btn.disabled = false; btn.textContent = 'Reessayer';
+          alert('Erreur lors de la creation du template : ' + (e && e.message || e));
+        }
+      }
+
+      /* --- ingestion d'un CSV (fichier, glisser-deposer, coller) --------- */
+      function ingest(text) {
+        const p = parseCSV(text);
+        if (!p.head.length) { alert('CSV illisible.'); return; }
+        HEAD = p.head; ROWS = p.rows;
+        renderMapping(detect(p.head, ROWS));
+        refresh();
+      }
+
+      /* --- cablage des controles ---------------------------------------- */
+      const drop = $('imp-drop'), file = $('imp-file');
+      drop.onclick = () => file.click();
+      file.onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => ingest(r.result);
+        r.onerror = () => { console.error('[import] lecture de fichier impossible', r.error); alert('Lecture du fichier impossible.'); };
+        r.readAsText(f, 'utf-8');
+      };
+      ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+      ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+      drop.addEventListener('drop', e => {
+        const f = e.dataTransfer.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => ingest(r.result);
+        r.onerror = () => { console.error('[import] lecture de fichier impossible', r.error); alert('Lecture du fichier impossible.'); };
+        r.readAsText(f, 'utf-8');
+      });
+      $('imp-parse').onclick = () => {
+        const t = $('imp-paste').value.trim();
+        if (t) ingest(t); else alert('Colle d’abord le contenu du releve.');
+      };
+      $('imp-commit').onclick = commit;
+      $('imp-reset').onclick = () => {
+        HEAD = []; ROWS = []; PARSED = []; MAP = {}; BANK = '';
+        $('imp-paste').value = ''; file.value = '';
+        $('imp-mapcard').classList.add('imp-hidden');
+        $('imp-prevcard').classList.add('imp-hidden');
+        $('imp-msg').textContent = '';
+      };
+      $('imp-boot').onclick = bootstrap;
+
+      // Verifie la presence du schema au montage (affiche l'aide au besoin).
+      ensureSchema().catch(e => console.error('[import] verification du schema impossible', e));
+    }
+  });
+})();
+</script>
+<script>
+/* =======================================================================
+   Module « Suivi » — COCKPIT mensuel unique « d'un coup d'oeil ». Page qui
+   defile, sans segment de vues :
+     1. COCKPIT (panneau .hero) — cascade calculee du mois selectionne :
+        Revenus recurrents − Fixes − A mettre de cote = DISPONIBLE variable,
+        puis − Prevu variable = MARGE previsionnelle, enfin la ligne « reel »
+        (depense a ce jour / reste reel). Remplace l'ancien hero reste-a-vivre.
+     2. ENVELOPPES (ex suivi.html) — modes fixe/auto/flottant + reserve,
+        tendance 6 periodes ; mode calendaire vs cycle de paie.
+     3. TRAJECTOIRE & OBJECTIF (ex previsionnel.html), REPLIABLE en bas —
+        objectif editable, KPIs, courbe SVG cumul reel/objectif/projection,
+        grille mois x categories prevu/reel + figement des mois clotures.
+   Periode ‹ ›, bascule calendaire/cycle et largeur restent en en-tete.
+
+   Contrat : s'enregistre via BUDGET.register('suivi', { title, access, mount }).
+   Donnees partagees (Transactions + Categories) : lues dans ctx.store (deja
+   chargees par le shell). Tables propres au module (Parametres, Previsionnel) :
+   chargees/creees ici puis re-fetch apres ecriture.
+
+   Invariant d'agregation : TOUTE somme passe par BP.buildIndex(rows, bucketOf)
+   qui plafonne la depense PAR CATEGORIE (spent = max(0, -net)). Le total
+   depenses / l'epargne reelle = Somme_cat max(0, spent(cat,bk)), JAMAIS un
+   max(0, somme globale). Aucun re-scan manuel de store.rows par cat x mois.
+   ======================================================================= */
+(function () {
+  'use strict';
+
+  /* ---- CSS specifique du module (injecte une seule fois) ---------------- */
+  function injectCss() {
+    if (document.getElementById('suivi-mod-css')) return;
+    const s = document.createElement('style');
+    s.id = 'suivi-mod-css';
+    s.textContent = [
+      '.sv-topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}',
+      '.sv-title{font-size:19px;font-weight:680;letter-spacing:-.01em}',
+      '.sv-navwrap{display:flex;align-items:center;gap:3px;background:var(--soft);border-radius:9px;padding:3px}',
+      '.sv-navwrap .lbl{min-width:118px;text-align:center;font-size:13px;font-weight:600}',
+      '.sv-navbtn{border:none;border-radius:7px;width:30px;height:28px;font-size:16px;line-height:1;cursor:pointer;color:var(--ink);background:var(--card);box-shadow:var(--shadow)}',
+      '.sv-navbtn:disabled{color:var(--muted);background:transparent;box-shadow:none;cursor:default}',
+      '.sv-modeseg{display:flex;background:var(--soft);border-radius:8px;padding:2px;gap:1px;margin:10px 0}',
+      '.sv-modeseg button{flex:1;border:none;border-radius:6px;padding:5px 4px;font-size:11.5px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted)}',
+      '.sv-modeseg button.on{background:var(--ink);color:#fff}',
+      '.sv-editbtn{margin-left:auto;width:26px;height:26px;border-radius:7px;border:1px solid var(--line);background:var(--soft);color:var(--muted);cursor:pointer;font-size:14px;line-height:1}',
+      '.sv-editbtn.on{border-color:var(--indigo);color:var(--indigo)}',
+      '.sv-num{width:96px}',
+      '.sv-obj{width:132px;font-size:18px;border-color:var(--warn)}',
+      '.sv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-top:12px}',
+      '.sv-tbl{width:100%;border-collapse:collapse;font-size:13px}',
+      '.sv-tbl th,.sv-tbl td{text-align:right;padding:7px 8px;border-top:1px solid var(--line)}',
+      '.sv-tbl th:first-child,.sv-tbl td:first-child{text-align:left}',
+      '.sv-tbl th{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-top:none}',
+      '.sv-line-real{stroke:var(--indigo)}',
+      '.sv-line-obj{stroke:var(--warn)}',
+      '.sv-line-proj{stroke:var(--muted)}',
+      '.sv-btn-go{background:var(--warn);color:#fff;border:none;border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer}',
+      /* cockpit (dans le panneau .hero, fond sombre + texte clair) */
+      '.ck{display:flex;flex-direction:column}',
+      /* contraste renforce + cascade compacte (interligne reduit) */
+      '.ck-row{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:3px 0}',
+      '.ck-row .ck-l{font-size:12.5px;font-weight:500;color:#dfe3ea}',
+      '.ck-row .ck-v{font-size:15px;font-weight:600;text-align:right;white-space:nowrap;color:#f2f4f8}',
+      '.ck-row.ck-mid{padding:7px 0}',
+      '.ck-row.ck-mid .ck-l{font-size:12.5px;font-weight:700;color:#fff}',
+      '.ck-row.ck-mid .ck-v{font-size:19px;font-weight:600}',
+      '.ck-row.ck-big{padding:9px 0}',
+      '.ck-row.ck-big .ck-l{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#fff}',
+      '.ck-row.ck-big .ck-v{font-size:30px;font-weight:600;letter-spacing:-.02em}',
+      '.ck-sep{border-top:1px solid rgba(255,255,255,.16);margin:5px 0}',
+      '.ck-sep.strong{border-top-width:2px;border-top-color:rgba(255,255,255,.32);margin:9px 0}',
+      '.ck-obj{width:104px;background:transparent;border:1px solid var(--warn);color:#fff;border-radius:7px;padding:4px 8px;font-size:14px;text-align:right;outline:none}',
+      /* micro-titres de zone PLAN / REEL */
+      '.ck-zone{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#b7bdc9;margin:2px 0 7px}',
+      /* barre d\'allocation : segmentation du revenu (synthese coup d\'oeil) */
+      '.ck-alloc{position:relative;display:flex;width:100%;height:22px;border-radius:7px;overflow:hidden;background:rgba(255,255,255,.08);margin:2px 0 10px}',
+      '.ck-alloc .sg{height:100%}',
+      '.ck-alloc-over{position:absolute;top:0;height:100%;background:repeating-linear-gradient(45deg,#ff7a7a,#ff7a7a 5px,rgba(255,122,122,.4) 5px,rgba(255,122,122,.4) 10px)}',
+      '.ck-alloc-mark{position:absolute;top:-3px;height:28px;width:2px;background:#fff;opacity:.85}',
+      '.ck-leg{display:flex;flex-wrap:wrap;gap:7px 16px;margin-bottom:12px}',
+      '.ck-leg .it{display:flex;align-items:center;gap:6px;font-size:11px;color:#dfe3ea}',
+      '.ck-leg .pt{width:9px;height:9px;border-radius:3px;flex:none}',
+      '.ck-leg .amt{font-weight:600;color:#fff}',
+      /* verdict REEL vs budget */
+      '.ck-verdict{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding:8px 11px;border-radius:9px;background:rgba(255,255,255,.06)}',
+      '.ck-verdict .lb{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#b7bdc9}',
+      '.ck-verdict .vd{font-size:13px;font-weight:600}',
+      /* panneau d\'edition d\'enveloppe (deplie via le bouton reglages) */
+      '.env-edit{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}',
+      /* puce d'alerte imprevu (point rouge + texte, sans emoji) */
+      '.chip.sv-imp{background:rgba(209,67,67,.14);color:var(--red)}',
+      '.sv-dot{width:7px;height:7px;border-radius:50%;background:var(--red);flex:none}',
+      /* en-tetes de groupe d\'enveloppes (par nature) */
+      '.sv-grouphead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px}',
+      '.sv-gname{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink)}',
+      '.sv-gtot b{color:var(--ink)}',
+      /* section trajectoire repliable */
+      '.sv-trajhead{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:12px 15px;font-size:14px;font-weight:680;cursor:pointer}',
+      '.sv-caret{color:var(--muted);font-size:12px;width:12px;display:inline-block}'
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+
+  const WIDTHS = { narrow: 380, medium: 820, wide: 1080 };
+
+  BUDGET.register('suivi', {
+    title: 'Suivi',
+    access: 'full',
+    mount(root, ctx) {
+      const { BP, store, grist, demo, el } = ctx;
+
+      /* -- mode demo : aucune donnee, message d'accueil ------------------- */
+      if (demo || !grist) {
+        root.innerHTML = '<div class="msg"><b>Widget Grist — Suivi.</b><br>'
+          + 'Ouvre-moi comme widget custom dans un document Grist (acces complet). '
+          + 'Je lis les tables <span class="mono">Transactions</span> et '
+          + '<span class="mono">Categories</span>, et je gere les enveloppes, '
+          + 'l\'objectif d\'epargne et la trajectoire.</div>';
+        return;
+      }
+
+      injectCss();
+
+      /* -- etat local du module ------------------------------------------ */
+      const ST = {
+        period: null,       // bucket courant (cle 'YYYY-MM' du decoupage actif)
+        mode: 'cal',        // 'cal' (mois calendaire) | 'cycle' (cycle de paie)
+        width: 'medium',
+        editing: null,      // categorie dont l'editeur de seuil est ouvert
+        trajOpen: false,    // section « Trajectoire & objectif » depliee ?
+        salaryDay: null,    // jour de paie detecte (null = cycle indisponible)
+        _index: null,       // cache BP.buildIndex
+        _idxMode: null      // mode ayant servi a construire _index
+      };
+
+      // Caches remis a zero a chaque rendu (memoisation intra-rendu) :
+      //  _recurCache : detectRecurrents par categorie (cockpit + enveloppes)
+      //  _analysis   : nature/imprevu par categorie (analyse ligne + mensuelle)
+      let _recurCache = {};
+      let _analysis = null;
+
+      // Tables propres au module (le store ne les charge pas).
+      let PARAMS = {}, PARAM_ROW = {}, OBJECTIF = 0, PREV_MAP = {};
+      // Colonne Transactions.Imprevu (override manuel) si elle existe.
+      // IMPREVU_MANUAL[rowId] === true => imprevu force. On ne cree PAS la colonne.
+      let IMPREVU_HAS = false, IMPREVU_MANUAL = {};
+
+      // Conteneur propre : recree a chaque mount, il porte la delegation
+      // d'evenements (pas de fuite entre navigations de modules).
+      const host = el('<div></div>');
+      root.appendChild(host);
+
+      /* ================================================================= */
+      /* DONNEES PROPRES : Parametres (objectif) + Previsionnel (snapshots) */
+      /* ================================================================= */
+      async function ensureOwnTables() {
+        try { await grist.docApi.fetchTable('Parametres'); }
+        catch (e) {
+          try { await grist.docApi.applyUserActions([['AddTable', 'Parametres',
+            [{ id: 'Cle', type: 'Text' }, { id: 'Valeur', type: 'Text' }]]]); } catch (_) {}
+        }
+        try { await grist.docApi.fetchTable('Previsionnel'); }
+        catch (e) {
+          try { await grist.docApi.applyUserActions([['AddTable', 'Previsionnel',
+            [{ id: 'Mois', type: 'Text' }, { id: 'Categorie', type: 'Text' },
+             { id: 'Prevu', type: 'Numeric' }, { id: 'Fige', type: 'Bool' }]]]); } catch (_) {}
+        }
+      }
+
+      async function loadOwn() {
+        const col = (t, n) => (t && t[n]) || [];
+        let par = {}, prev = {};
+        try { par = await grist.docApi.fetchTable('Parametres'); } catch (e) {}
+        try { prev = await grist.docApi.fetchTable('Previsionnel'); } catch (e) {}
+        PARAMS = {}; PARAM_ROW = {};
+        (par.id || []).forEach((rowId, i) => {
+          const k = col(par, 'Cle')[i];
+          if (k) { PARAMS[k] = col(par, 'Valeur')[i]; PARAM_ROW[k] = rowId; }
+        });
+        OBJECTIF = parseFloat(String(PARAMS['objectif_epargne'] || '').replace(',', '.')) || 0;
+        // Override manuel de l'imprevu : lu uniquement si la colonne existe.
+        IMPREVU_HAS = false; IMPREVU_MANUAL = {};
+        try {
+          const tx = await grist.docApi.fetchTable('Transactions');
+          if (tx && Object.prototype.hasOwnProperty.call(tx, 'Imprevu')) {
+            IMPREVU_HAS = true;
+            (tx.id || []).forEach((rowId, i) => { IMPREVU_MANUAL[rowId] = tx.Imprevu[i] === true; });
+          }
+        } catch (e) {}
+        PREV_MAP = {};
+        (prev.id || []).forEach((rowId, i) => {
+          const m = col(prev, 'Mois')[i], c = col(prev, 'Categorie')[i];
+          if (m && c) PREV_MAP[m + '||' + c] = {
+            rowId, prevu: +(col(prev, 'Prevu')[i] || 0), fige: !!col(prev, 'Fige')[i]
+          };
+        });
+      }
+
+      // Ecriture sur les tables propres du module (puis re-fetch + rendu).
+      async function applyOwn(acts) {
+        if (!acts || !acts.length) return;
+        try { await grist.docApi.applyUserActions(acts); }
+        catch (e) { alert('Ecriture refusee : ' + (e && e.message || e)); }
+        await loadOwn(); render();
+      }
+
+      /* ================================================================= */
+      /* DECOUPAGE : bucketOf (calendaire vs cycle de paie) + index        */
+      /* ================================================================= */
+
+      // Jour de paie = jour modal du plus gros revenu recurrent non locatif.
+      function detectSalaryDay() {
+        const salTx = store.rows
+          .filter(r => store.typeOf(r.cat) === 'revenu' && !BP.isLocatif(r.cat) && r.montant > 0 && r.day != null)
+          .map(r => ({ key: BP.merchantKey(r.lib), amount: r.montant, ym: r.ym, day: r.day }));
+        const rec = BP.detectRecurrents(salTx.map(t => ({ key: t.key, label: t.key, amount: t.amount, ym: t.ym })));
+        if (!rec.items.length) return null;
+        const topKey = rec.items[0].key;
+        const days = salTx.filter(t => t.key === topKey).map(t => t.day);
+        if (!days.length) return null;
+        const f = {}; days.forEach(d => f[d] = (f[d] || 0) + 1);
+        return +Object.keys(f).sort((a, b) => f[b] - f[a])[0];
+      }
+
+      // Cle de bucket d'une operation selon le decoupage actif.
+      function bucketOf(r) {
+        if (ST.mode === 'cal' || !ST.salaryDay) return r.ym;
+        const d = BP.gristToDate(r.date); if (!d) return r.ym;
+        let y = d.getFullYear(), m = d.getMonth();
+        // avant le jour de paie -> l'operation appartient au cycle ouvert le mois precedent.
+        if (d.getDate() < ST.salaryDay) { m -= 1; if (m < 0) { m = 11; y -= 1; } }
+        return y + '-' + String(m + 1).padStart(2, '0');
+      }
+
+      // Index d'agregation (reconstruit uniquement quand le decoupage change).
+      function idx() {
+        if (ST._index && ST._idxMode === ST.mode) return ST._index;
+        ST._index = BP.buildIndex(store.rows, bucketOf);
+        ST._idxMode = ST.mode;
+        return ST._index;
+      }
+
+      /* ---- helpers buckets (sur la liste ordonnee de l'index) ---------- */
+      const buckets = () => idx().buckets;
+      function prevBk(key, n) { const b = buckets(), i = b.indexOf(key); return i < 0 ? [] : b.slice(Math.max(0, i - n), i); }
+      function winBk(key, n) { const b = buckets(), i = b.indexOf(key); return i < 0 ? [key] : b.slice(Math.max(0, i - n + 1), i + 1); }
+
+      // Depense nette d'une categorie sur un bucket : deja plafonnee (>=0).
+      const spentCat = (cat, bk) => idx().spent(cat, bk);
+
+      function bucketLabel(key) {
+        const parts = String(key).split('-').map(Number);
+        const y = parts[0], m = parts[1];
+        if (ST.mode === 'cal' || !ST.salaryDay) return BP.MOIS[m - 1].replace('.', '') + ' ' + y;
+        const start = new Date(y, m - 1, ST.salaryDay), end = new Date(y, m, ST.salaryDay - 1);
+        const f = d => d.getDate() + ' ' + BP.MOIS[d.getMonth()].replace('.', '');
+        return f(start) + ' → ' + f(end);
+      }
+      function bucketSub() {
+        return ST.mode === 'cal' ? 'Mois calendaire' : ('Cycle de paie · ouvre le ' + ST.salaryDay + ' du mois');
+      }
+
+      /* ================================================================= */
+      /* AGREGATIONS (toutes derivees de l'index, O(1) par acces)          */
+      /* ================================================================= */
+
+      // Reste-a-vivre / epargne reelle d'un bucket. depenses = Somme_cat spent
+      // (plafonnee par categorie), JAMAIS max(0, somme globale).
+      function ravOf(bk) {
+        const I = idx();
+        let rev = 0, dep = 0, epa = 0;
+        for (const cat of I.cats) {
+          if (BP.isLocatif(cat)) continue;
+          const t = store.typeOf(cat);
+          if (t === 'revenu') rev += I.net(cat, bk);            // revenu = net signe (>0)
+          else if (t === 'depense') dep += I.spent(cat, bk);    // spent = max(0, -net) par cat
+          else if (t === 'epargne') epa += Math.abs(I.net(cat, bk));
+        }
+        return { rev, dep, epa, rav: rev - dep };
+      }
+
+      // Categories de depense pertinentes (non locatif) pour le mois affiche :
+      //  - filtrees par leur FENETRE D'ACTIVITE (engagements dates, BP.estActif) ;
+      //  - retenues si depense sur 6 buckets, OU mode configure, OU engagement
+      //    FIXE actif a montant defini (visible des son demarrage, sans operation).
+      function activeCats() {
+        const win = winBk(ST.period, 6);
+        const A = analysisAll();
+        return store.catRows
+          .filter(c => c.type === 'depense' && !BP.isLocatif(c.cat))
+          .filter(c => BP.estActif(c.actifDebut, c.actifFin, ST.period))   // hors fenetre => exclu
+          .map(c => {
+            let recent = 0; win.forEach(b => recent += spentCat(c.cat, b));
+            const fam = A[c.cat] && A[c.cat].famille;
+            const isFixe = fam === 'fixe' || c.mode === 'fixe';
+            // Engagement fixe a montant defini : se montre meme sans operation ce mois.
+            const fixeVisible = isFixe && (c.budget > 0 || envelope(c).seuil > 0);
+            return { c, recent, fixeVisible };
+          })
+          .filter(x => x.recent > 0 || x.c.mode || x.fixeVisible)
+          .sort((a, b) => spentCat(b.c.cat, ST.period) - spentCat(a.c.cat, ST.period))
+          .map(x => x.c);
+      }
+
+      // Recurrents d'une categorie sur 12 buckets (part fixe auto du flottant).
+      // Memoise par rendu : _recurCache est vide au debut de render().
+      function recurrentsCat(cat) {
+        if (_recurCache[cat]) return _recurCache[cat];
+        const win = winBk(ST.period, 12);
+        const txns = store.rows
+          .filter(r => r.cat === cat && !r.exclu && r.montant < 0 && win.includes(bucketOf(r)))
+          .map(r => ({ key: BP.merchantKey(r.lib), label: BP.merchantKey(r.lib), amount: r.montant, ym: bucketOf(r) }));
+        return (_recurCache[cat] = BP.detectRecurrents(txns));
+      }
+      // Part fixe recurrente d'une categorie de depense (loyer, credit, abos…).
+      function partFixeCat(cat) { return recurrentsCat(cat).sum; }
+      // Revenu reel d'un bucket = Somme des cats type revenu non-locatif (net >0).
+      function revenusMois(bk) {
+        const I = idx();
+        let s = 0;
+        for (const cat of I.cats) {
+          if (!BP.isLocatif(cat) && store.typeOf(cat) === 'revenu') s += I.net(cat, bk);
+        }
+        return s;
+      }
+
+      /* ---- Analyse par categorie (imprevu ligne + nature), fenetre 12 mois.
+         Une SEULE passe sur store.rows collecte les lignes de depense par
+         categorie ; tout le reste derive de l'index (spent plafonne par cat).
+         Memoise par rendu (_analysis). Renvoie map cat -> {
+           nature, lines, imprevuRows(Set), imprevuByMonth, medMensuel,
+           present, cv, partFixe, seuilOutlier }. */
+      function analysisAll() {
+        if (_analysis) return _analysis;
+        const win = winBk(ST.period, 12), winSet = new Set(win);
+        // Passe unique : lignes de depense (montant<0) par categorie, dans la fenetre.
+        const linesByCat = Object.create(null);
+        for (const r of store.rows) {
+          if (r.exclu || r.montant >= 0 || BP.isLocatif(r.cat)) continue;
+          if (store.typeOf(r.cat) !== 'depense') continue;
+          const bk = bucketOf(r); if (!winSet.has(bk)) continue;
+          (linesByCat[r.cat] || (linesByCat[r.cat] = [])).push({ rowId: r.rowId, bk, abs: Math.abs(r.montant) });
+        }
+        const res = Object.create(null);
+        for (const c of store.catRows) {
+          if (c.type !== 'depense' || BP.isLocatif(c.cat)) continue;
+          const cat = c.cat, lines = linesByCat[cat] || [];
+          // Total mensuel (plafonne par cat, via index) pour chaque bucket.
+          const monthAll = {}; win.forEach(b => monthAll[b] = spentCat(cat, b));
+          const medMensuelAll = BP.median(win.map(b => monthAll[b]).filter(v => v > 0));
+          // Seuil d'imprevu au niveau ligne, via le helper du core.
+          const seuilOutlier = BP.outlierThreshold(lines.map(l => l.abs), medMensuelAll);
+          const imprevuRows = new Set(), imprevuByMonth = {};
+          for (const l of lines) {
+            // Override manuel prioritaire ; sinon detection auto (ligne > seuil).
+            const forced = IMPREVU_HAS && IMPREVU_MANUAL[l.rowId] === true;
+            if (forced || l.abs > seuilOutlier) {
+              imprevuRows.add(l.rowId);
+              imprevuByMonth[l.bk] = (imprevuByMonth[l.bk] || 0) + l.abs;
+            }
+          }
+          // Serie mensuelle du PREVU = total mensuel - imprevu du mois.
+          const prevuVals = win.map(b => Math.max(0, (monthAll[b] || 0) - (imprevuByMonth[b] || 0)));
+          const pos = prevuVals.filter(v => v > 0);
+          const medMensuel = BP.median(pos), present = pos.length;
+          const mean = pos.length ? pos.reduce((a, b) => a + b, 0) / pos.length : 0;
+          const sd = pos.length ? Math.sqrt(pos.reduce((a, b) => a + (b - mean) * (b - mean), 0) / pos.length) : 0;
+          const cv = mean > 0 ? sd / mean : 0;
+          const partFixe = partFixeCat(cat);
+          // Auto-nature (3 classes) = simple REPLI quand Categories.Nature est vide.
+          const natureAuto = BP.natureFrom({ partFixe, medMensuel, present, window: 12, cv });
+          // Famille effective (4 classes) : le tag utilisateur (c.nature) prime.
+          const famille = BP.familleOf(c.nature, natureAuto);
+          res[cat] = { cat, lines, imprevuRows, imprevuByMonth, medMensuel, present, cv,
+                       partFixe, natureAuto, famille, seuilOutlier };
+        }
+        return (_analysis = res);
+      }
+
+      // Modele d'affichage d'une enveloppe. Le MODE effectif = override manuel
+      // (Categories.Budget_mode) sinon deduit de la NATURE (BP.modeForNature).
+      function envelope(c) {
+        const cat = c.cat;
+        const A = analysisAll()[cat] || { natureAuto: 'courante', famille: 'variable', imprevuByMonth: {} };
+        const natureAuto = A.natureAuto;              // 3 classes auto (repli mode)
+        const famille = A.famille;                    // 4 familles (regroupement/cockpit)
+        const autoMode = BP.modeForNature(natureAuto);// fixe / auto / flottant
+        const hasOverride = !!c.mode;                 // Budget_mode renseigne ?
+        const mode = hasOverride ? c.mode : autoMode; // override manuel prioritaire
+        const spent = spentCat(cat, ST.period);
+        const hist = prevBk(ST.period, 6).map(b => spentCat(cat, b));
+        const median6 = BP.med10(hist.length ? hist : [spent]);
+        let seuil, statusColor, fillColor, note, statusLabel;
+        let cushion = null, reserve = 0, partFixe = 0, provision = 0, recur = { items: [], sum: 0 };
+        let fillPct = 0, markPct = 0;
+
+        if (mode === 'flottant') {
+          recur = recurrentsCat(cat);
+          partFixe = c.budget > 0 ? c.budget : recur.sum;         // manuel sinon auto
+          const win12 = winBk(ST.period, 12);
+          const sbm = {}; win12.forEach(b => sbm[b] = spentCat(cat, b));
+          const suggestProv = BP.med10(prevBk(ST.period, 6).map(b => Math.max(0, spentCat(cat, b) - partFixe)));
+          provision = c.prov > 0 ? c.prov : suggestProv;
+          reserve = BP.deriveReserve(sbm, partFixe, provision, win12);
+          seuil = partFixe + provision;
+          const over = spent - seuil;
+          if (spent <= seuil) { statusColor = 'var(--green)'; fillColor = 'var(--green)'; note = 'dans la provision'; statusLabel = 'reste ' + BP.eur0(seuil - spent); }
+          else if (over <= reserve) { statusColor = 'var(--indigo)'; fillColor = 'var(--indigo)'; note = 'reserve mobilisee'; statusLabel = 'puise ' + BP.eur0(over) + ' dans la reserve'; }
+          else { statusColor = 'var(--red)'; fillColor = 'var(--red)'; note = 'reserve epuisee'; statusLabel = 'depasse de ' + BP.eur0(over - reserve); }
+          const scale = Math.max(spent, seuil + reserve, 1) * 1.1;
+          fillPct = Math.min(100, spent / scale * 100); markPct = Math.min(100, seuil / scale * 100);
+          const cs = seuil / scale * 100, ce = Math.min(100, (seuil + reserve) / scale * 100);
+          cushion = 'left:' + cs + '%;width:' + Math.max(0, ce - cs) + '%';
+        } else {
+          seuil = mode === 'auto' ? median6 : (c.budget || median6);
+          const ratio = seuil > 0 ? spent / seuil : 0;
+          statusColor = ratio > 1 ? 'var(--red)' : (ratio > 0.9 ? 'var(--warn)' : 'var(--green)');
+          fillColor = statusColor;
+          note = mode === 'auto' ? ('mediane 6 m · ' + BP.eur0(median6)) : 'plafond fixe';
+          const ecart = seuil - spent;
+          statusLabel = ecart >= 0 ? ('reste ' + BP.eur0(ecart)) : ('depasse de ' + BP.eur0(-ecart));
+          const scale = Math.max(spent, seuil, 1) * 1.18;
+          fillPct = Math.min(100, spent / scale * 100); markPct = Math.min(100, seuil / scale * 100);
+        }
+        return {
+          cat, color: c.color, mode, natureAuto, famille, autoMode, hasOverride,
+          imprevuMois: (A.imprevuByMonth && A.imprevuByMonth[ST.period]) || 0,
+          spent, seuil, median6, statusColor, fillColor, note, statusLabel,
+          fillPct, markPct, cushion, reserve, partFixe, provision, recur,
+          editing: ST.editing === cat, budget: c.budget, prov: c.prov, rowId: c.rowId
+        };
+      }
+
+      /* ---- trajectoire : epargne reelle par bucket + prevu ------------- */
+      const surplus = bk => ravOf(bk).rav;
+
+      // Prevu d'une categorie pour un bucket : fige si snapshot present, sinon
+      // mediane des 6 buckets precedents.
+      function prevuCat(cat, bk) {
+        const ex = PREV_MAP[bk + '||' + cat];
+        if (ex && ex.fige) return ex.prevu;
+        return BP.med10(prevBk(bk, 6).map(b => spentCat(cat, b)));
+      }
+
+      // Categories de depense a afficher dans la grille trajectoire.
+      function trajCats() {
+        const win = winBk(ST.period, 6);
+        return store.catRows
+          .filter(c => c.type === 'depense' && !BP.isLocatif(c.cat))
+          .map(c => { let s = 0; win.forEach(b => s += spentCat(c.cat, b)); return { c, recent: s }; })
+          .filter(x => x.recent > 0)
+          .sort((a, b) => spentCat(b.c.cat, ST.period) - spentCat(a.c.cat, ST.period))
+          .map(x => x.c.cat);
+      }
+
+      /* ================================================================= */
+      /* ECRITURES SUR CATEGORIES (via le store partage -> reload + notify) */
+      /* ================================================================= */
+      function setMode(cat, mode) {
+        const c = store.catMap[cat]; if (!c) return;
+        const f = { Budget_mode: mode };
+        if (mode === 'fixe' && !(c.budget > 0)) f.Budget_mensuel = envelope(c).median6;
+        ST.editing = cat;
+        store.apply([['UpdateRecord', 'Categories', c.rowId, f]]);
+      }
+      function figer(cat) {
+        const c = store.catMap[cat]; if (!c) return;
+        ST.editing = cat;
+        store.apply([['UpdateRecord', 'Categories', c.rowId, { Budget_mode: 'fixe', Budget_mensuel: envelope(c).median6 }]]);
+      }
+      function commitNum(cat, field, val) {
+        const c = store.catMap[cat]; if (!c) return;
+        const v = Math.max(0, Math.round(parseFloat(String(val).replace(',', '.')) || 0));
+        store.apply([['UpdateRecord', 'Categories', c.rowId, { [field]: v }]]);
+      }
+
+      /* ---- ecritures sur les tables propres (objectif, figement) ------- */
+      function setObjectif(val) {
+        const v = Math.max(0, Math.round(parseFloat(String(val).replace(',', '.')) || 0));
+        if (PARAM_ROW['objectif_epargne'] != null)
+          applyOwn([['UpdateRecord', 'Parametres', PARAM_ROW['objectif_epargne'], { Valeur: String(v) }]]);
+        else
+          applyOwn([['AddRecord', 'Parametres', null, { Cle: 'objectif_epargne', Valeur: String(v) }]]);
+      }
+      function figerMois() {
+        const m = ST.period, acts = [];
+        trajCats().forEach(cat => {
+          const prevu = Math.round(prevuCat(cat, m));
+          const ex = PREV_MAP[m + '||' + cat];
+          if (ex) acts.push(['UpdateRecord', 'Previsionnel', ex.rowId, { Prevu: prevu, Fige: true }]);
+          else acts.push(['AddRecord', 'Previsionnel', null, { Mois: m, Categorie: cat, Prevu: prevu, Fige: true }]);
+        });
+        if (acts.length) applyOwn(acts);
+      }
+
+      /* ================================================================= */
+      /* RENDU                                                             */
+      /* ================================================================= */
+      const seg = (label, on, act, arg) =>
+        '<button class="' + (on ? 'on' : '') + '" data-act="' + act + '" data-arg="' + arg + '">' + label + '</button>';
+
+      function headerHtml() {
+        const allB = buckets(), i = allB.indexOf(ST.period);
+        const atOldest = i <= 0, atNewest = i >= allB.length - 1;
+        const navBtn = (act, sym, off) =>
+          '<button class="sv-navbtn" data-act="' + act + '" ' + (off ? 'disabled' : '')
+          + ' title="' + (act === 'prevPeriod' ? 'Periode precedente (fleche gauche)' : 'Periode suivante (fleche droite)') + '">' + sym + '</button>';
+        const periodNav = '<div class="sv-navwrap">' + navBtn('prevPeriod', '‹', atOldest)
+          + '<span class="mono lbl">' + bucketLabel(ST.period) + '</span>' + navBtn('nextPeriod', '›', atNewest) + '</div>';
+
+        const cycleAvail = !!ST.salaryDay;
+        const modeSeg = '<div class="seg">' + seg('Calendaire', ST.mode === 'cal', 'mode', 'cal')
+          + (cycleAvail ? seg('Cycle de paie', ST.mode === 'cycle', 'mode', 'cycle') : '') + '</div>';
+        const widthSeg = '<div class="seg">' + seg('Etroit', ST.width === 'narrow', 'width', 'narrow')
+          + seg('Moyen', ST.width === 'medium', 'width', 'medium') + seg('Large', ST.width === 'wide', 'width', 'wide') + '</div>';
+
+        return '<div class="sv-topbar">'
+          + '<div style="margin-right:auto">'
+          + '<div class="sv-title">Suivi <span style="color:var(--muted)">·</span> <span style="color:var(--indigo)">' + bucketLabel(ST.period) + '</span></div>'
+          + '<div class="note">' + bucketSub() + '</div>'
+          + '</div>'
+          + periodNav + modeSeg + widthSeg
+          + '</div>';
+      }
+
+      /* ---- COCKPIT : cascade « d'un coup d'oeil » du mois -------------- */
+      // Toutes les sommes passent par l'index (net/spent, plafonnees par cat)
+      // et par detectRecurrents (part fixe). Aucun re-scan manuel des rows.
+      function cockpit(bk, envs) {
+        // Revenus recurrents = mediane sur 6 mois des revenus reels mensuels
+        // (inclut les cats type revenu, ex. remboursement Simone).
+        const revenus = BP.median(winBk(bk, 6).map(revenusMois));
+        // Sommes de seuils (prevu) par FAMILLE + etalon total.
+        let fixeObl = 0, oblVar = 0, arbPrevu = 0, budgetMoyen = 0, ponctuelMois = 0;
+        for (const e of envs) {
+          budgetMoyen += e.seuil;
+          if (e.famille === 'fixe') fixeObl += e.seuil;
+          else if (e.famille === 'variable') oblVar += e.seuil;
+          else if (e.famille === 'arbitrable') arbPrevu += e.seuil;
+          else if (e.famille === 'ponctuel') ponctuelMois += spentCat(e.cat, bk); // reel, informatif
+        }
+        const objectif = OBJECTIF;
+        const resteApresObl = revenus - fixeObl - oblVar;   // apres charges obligatoires
+        const disponibleArb = resteApresObl - objectif;     // apres mise de cote
+        const marge = disponibleArb - arbPrevu;             // apres arbitrable prevu
+        const H = ravOf(bk);                                // reel : revenus, depense, reste
+        const A = analysisAll(); let imprevuMois = 0;
+        for (const k in A) imprevuMois += (A[k].imprevuByMonth[bk] || 0);
+        return { revenus, fixeObl, oblVar, resteApresObl, objectif, disponibleArb, arbPrevu, marge,
+                 ponctuelMois, reelDep: H.dep, reelReste: H.rav, budgetMoyen, reelMois: H.dep, imprevuMois };
+      }
+
+      // Barre d'allocation : largeur = revenus, segmentee par poste. Le RESTE est
+      // la Marge (vert si >=0, sinon debordement rouge hachure au-dela du revenu).
+      function allocBarHtml(ck) {
+        const parts = [
+          { v: Math.max(0, ck.fixeObl), c: BP.FAMILLE_COLOR.fixe },
+          { v: Math.max(0, ck.oblVar), c: BP.FAMILLE_COLOR.variable },
+          { v: Math.max(0, ck.objectif), c: '#9aa1ad' },       // a mettre de cote (gris clair)
+          { v: Math.max(0, ck.arbPrevu), c: BP.FAMILLE_COLOR.arbitrable }
+        ];
+        const rev = Math.max(0, ck.revenus);
+        const committed = parts.reduce((a, p) => a + p.v, 0);
+        const scale = Math.max(rev, committed, 1);
+        let segs = parts.map(p => '<div class="sg" style="width:' + (p.v / scale * 100) + '%;background:' + p.c + '"></div>').join('');
+        let over = '';
+        if (ck.marge >= 0) {
+          segs += '<div class="sg" style="width:' + (ck.marge / scale * 100) + '%;background:#46d39a"></div>';
+        } else {
+          // depassement : bande hachuree rouge du revenu jusqu'au total engage + marqueur.
+          const left = rev / scale * 100, w = (committed - rev) / scale * 100;
+          over = '<div class="ck-alloc-over" style="left:' + left + '%;width:' + w + '%"></div>'
+            + '<div class="ck-alloc-mark" style="left:' + left + '%"></div>';
+        }
+        const leg = [
+          ['Fixe obligatoire', BP.FAMILLE_COLOR.fixe, ck.fixeObl],
+          ['Obligatoire variable', BP.FAMILLE_COLOR.variable, ck.oblVar],
+          ['A mettre de cote', '#9aa1ad', ck.objectif],
+          ['Arbitrable prevu', BP.FAMILLE_COLOR.arbitrable, ck.arbPrevu],
+          [ck.marge >= 0 ? 'Marge' : 'Depassement', ck.marge >= 0 ? '#46d39a' : '#ff7a7a', Math.abs(ck.marge)]
+        ].map(it => '<div class="it"><span class="pt" style="background:' + it[1] + '"></span>' + it[0]
+          + ' <span class="amt mono">' + BP.eur0(it[2]) + '</span></div>').join('');
+        return '<div class="ck-alloc">' + segs + over + '</div><div class="ck-leg">' + leg + '</div>';
+      }
+
+      function cockpitHtml(envs) {
+        const ck = cockpit(ST.period, envs);
+        const objField = ck.objectif
+          ? '<input class="mono ck-obj" value="' + ck.objectif + '" data-input="objectif"> €'
+          : '<input class="mono ck-obj" value="" placeholder="a definir" data-input="objectif"> €';
+        const dispColor = ck.disponibleArb >= 0 ? '#fff' : '#ff7a7a';
+        const margeColor = ck.marge >= 0 ? '#46d39a' : '#ff7a7a';
+        const line = (l, v, vColor) => '<div class="ck-row"><span class="ck-l">' + l + '</span>'
+          + '<span class="ck-v mono"' + (vColor ? ' style="color:' + vColor + '"' : '') + '>' + v + '</span></div>';
+        const midLine = (l, v, vColor) => '<div class="ck-row ck-mid"><span class="ck-l">' + l + '</span>'
+          + '<span class="ck-v mono" style="color:' + vColor + '">' + v + '</span></div>';
+        const bigLine = (l, v, vColor) => '<div class="ck-row ck-big"><span class="ck-l">' + l + '</span>'
+          + '<span class="ck-v mono" style="color:' + vColor + '">' + v + '</span></div>';
+        // Verdict d'execution : reel du mois vs budget etalon (Σ seuils).
+        const depasse = ck.reelMois - ck.budgetMoyen;
+        const verdict = depasse <= 0
+          ? '<span class="vd" style="color:#46d39a">tient · ' + BP.eur0(-depasse) + ' de marge</span>'
+          : '<span class="vd" style="color:#ff7a7a">depasse de ' + BP.eur0(depasse) + '</span>';
+        const impLine = ck.imprevuMois > 0
+          ? '<div class="ck-row"><span class="ck-l" style="color:#ffb4b4">dont imprevu ce mois</span>'
+            + '<span class="ck-v mono" style="color:#ffb4b4">' + BP.eur0(ck.imprevuMois) + '</span></div>'
+          : '';
+        return '<div class="hero" style="display:block">'
+          + '<div class="lab" style="margin-bottom:8px">Cockpit du mois <span style="text-transform:none;letter-spacing:0;color:#dfe3ea">· ' + bucketLabel(ST.period) + '</span></div>'
+          // ---- ZONE PLAN : barre de synthese + cascade compacte ----
+          + '<div class="ck-zone">Plan (previsionnel)</div>'
+          + allocBarHtml(ck)
+          + '<div class="ck">'
+          + line('Revenus (recurrents)', BP.eur0(ck.revenus), '#fff')
+          + line('− Fixe obligatoire', BP.eur0(ck.fixeObl))
+          + line('− Obligatoire variable', BP.eur0(ck.oblVar))
+          + '<div class="ck-sep"></div>'
+          + midLine('= Reste apres obligatoire', BP.eur0(ck.resteApresObl), ck.resteApresObl >= 0 ? '#eef0f4' : '#ff9a9a')
+          + '<div class="ck-row"><span class="ck-l">− A mettre de cote</span><span class="ck-v mono">' + objField + '</span></div>'
+          + '<div class="ck-sep"></div>'
+          + bigLine('= Disponible pour l\'arbitrable', BP.eur0(ck.disponibleArb), dispColor)
+          + line('− Arbitrable prevu', BP.eur0(ck.arbPrevu))
+          + '<div class="ck-sep"></div>'
+          + bigLine('= Marge', (ck.marge >= 0 ? '+' : '') + BP.eur0(ck.marge), margeColor)
+          + '</div>'
+          + '<div class="ck-sep strong"></div>'
+          // ---- ZONE REEL : execution du mois + verdict ----
+          + '<div class="ck-zone">Reel (ce mois)</div>'
+          + '<div class="ck">'
+          + line('Ponctuel ce mois (hors flux)', BP.eur0(ck.ponctuelMois), '#dfe3ea')
+          + impLine
+          + line('Depense a ce jour', '−' + BP.eur0(ck.reelDep).replace('−', ''), '#ff9a9a')
+          + line('Reste reel', BP.eur0(ck.reelReste), ck.reelReste >= 0 ? '#eef0f4' : '#ff9a9a')
+          + '</div>'
+          + '<div class="ck-verdict"><span class="lb">Reel vs budget</span>' + verdict + '</div>'
+          + '</div>';
+      }
+
+      /* ---- VUE MOIS ---------------------------------------------------- */
+      function envEditorHtml(e) {
+        if (e.mode === 'fixe') {
+          return '<div style="margin-top:10px">'
+            + '<label class="note" style="font-weight:600;display:block;margin-bottom:5px">Plafond mensuel</label>'
+            + '<div style="display:flex;align-items:center;gap:7px">'
+            + '<input class="inp mono sv-num" value="' + (e.budget || Math.round(e.seuil)) + '" data-input="num" data-cat="' + e.cat + '" data-field="Budget_mensuel">'
+            + '<span class="note">€ / mois</span></div></div>';
+        }
+        if (e.mode === 'auto') {
+          return '<div style="margin-top:10px">'
+            + '<div style="font-size:12px;color:var(--ink);line-height:1.5">Seuil = <b>mediane des 6 derniers mois</b> = '
+            + '<span class="mono" style="font-weight:600;color:var(--indigo)">' + BP.eur0(e.median6) + '</span>. Recalcule chaque mois.</div>'
+            + '<button class="sv-btn-go" data-act="figer" data-arg="' + e.cat + '" style="margin-top:9px;background:var(--soft);color:var(--indigo)">Figer a ' + BP.eur0(e.median6) + ' (passer en fixe)</button></div>';
+        }
+        // flottant
+        const recurList = e.recur.items.length
+          ? e.recur.items.map(r => '<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0">'
+              + '<span style="width:6px;height:6px;border-radius:50%;background:var(--indigo);flex:none"></span>'
+              + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.label + '</span>'
+              + '<span class="mono" style="color:var(--ink)">' + BP.eur0(r.amount) + '</span></div>').join('')
+          : '<div class="note">Aucun mouvement recurrent detecte.</div>';
+        const partFixeManuel = e.budget > 0;
+        return '<div style="margin-top:10px">'
+          + '<div class="note" style="font-weight:600;margin-bottom:6px">Part fixe ' + (partFixeManuel ? '(manuelle)' : '(recurrents detectes)') + ' · ' + BP.eur0(e.partFixe) + '</div>'
+          + '<div style="background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:9px 11px">' + recurList
+          + (e.recur.items.length ? '<div style="border-top:1px dashed var(--line);margin-top:7px;padding-top:7px;font-size:11.5px;color:var(--muted)">= <b class="mono" style="color:var(--indigo)">' + BP.eur0(e.recur.sum) + '</b> de recurrents</div>' : '') + '</div>'
+          + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">'
+          + '<div><label class="note" style="font-weight:600;display:block;margin-bottom:5px">Part fixe forcee</label>'
+          + '<input class="inp mono sv-num" value="' + (e.budget || '') + '" placeholder="auto" data-input="num" data-cat="' + e.cat + '" data-field="Budget_mensuel"></div>'
+          + '<div><label class="note" style="font-weight:600;display:block;margin-bottom:5px">Provision / mois</label>'
+          + '<input class="inp mono sv-num" value="' + (e.prov || Math.round(e.provision)) + '" data-input="num" data-cat="' + e.cat + '" data-field="Provision"></div>'
+          + '</div>'
+          + '<div class="note" style="margin-top:9px;line-height:1.5">Reserve actuelle <b class="mono" style="color:var(--indigo)">' + BP.eur0(e.reserve) + '</b> '
+          + '— derivee des 12 derniers mois, jamais stockee. Elle se remplit les mois calmes et absorbe les gros mois.</div>'
+          + '</div>';
+      }
+
+      function envelopeCardHtml(e) {
+        // Pastille = couleur de FAMILLE (coherence avec le regroupement/la barre).
+        const famColor = BP.FAMILLE_COLOR[e.famille] || e.color;
+        const reserveChip = e.mode === 'flottant' && e.reserve > 0
+          ? '<span class="chip" style="background:var(--soft);color:var(--indigo)">reserve ' + BP.eur0(e.reserve) + '</span>' : '';
+        // Puce d'alerte si la categorie a de l'imprevu ce mois (point rouge + texte).
+        const imprevuChip = e.imprevuMois > 0
+          ? '<span class="chip sv-imp"><span class="sv-dot"></span>imprevu ' + BP.eur0(e.imprevuMois) + '</span>' : '';
+        // Panneau d'EDITION (deplie via le bouton reglages) : toggle de mode + editeur.
+        const modeNote = e.hasOverride ? 'reglage manuel' : ('auto · ' + BP.NATURE_LABEL[e.natureAuto]);
+        const editPanel = e.editing
+          ? '<div class="env-edit">'
+            + '<div class="sv-modeseg">'
+            + '<button class="' + (e.mode === 'fixe' ? 'on' : '') + '" data-act="setmode" data-cat="' + e.cat + '" data-arg="fixe">Engagement fixe</button>'
+            + '<button class="' + (e.mode === 'auto' ? 'on' : '') + '" data-act="setmode" data-cat="' + e.cat + '" data-arg="auto">Courant</button>'
+            + '<button class="' + (e.mode === 'flottant' ? 'on' : '') + '" data-act="setmode" data-cat="' + e.cat + '" data-arg="flottant">Ponctuel</button>'
+            + '</div>'
+            + '<div class="note" style="margin:2px 0 0">' + modeNote + '</div>'
+            + envEditorHtml(e)
+            + '</div>'
+          : '';
+        // Carte compacte : pastille + nom + chip imprevu + bouton reglages ; valeur ;
+        // barre fine ; reste. Pas de toggle permanent.
+        return '<div class="card">'
+          + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'
+          + '<span style="width:10px;height:10px;border-radius:3px;background:' + famColor + ';flex:none"></span>'
+          + '<span style="font-size:13.5px;font-weight:650;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + e.cat + '">' + e.cat + '</span>'
+          + imprevuChip
+          + '<button class="sv-editbtn' + (e.editing ? ' on' : '') + '" data-act="edit" data-arg="' + e.cat + '" title="Reglages">⋯</button>'
+          + '</div>'
+          + '<div style="display:flex;align-items:baseline;gap:7px;margin-bottom:7px;flex-wrap:wrap">'
+          + '<span class="mono" style="font-size:20px;font-weight:600;color:' + e.statusColor + '">' + BP.eur0(e.spent) + '</span>'
+          + '<span class="note">/ ' + BP.eur0(e.seuil) + '</span>' + reserveChip
+          + '<span style="margin-left:auto;font-size:11.5px;font-weight:600;color:' + e.statusColor + '">' + e.statusLabel + '</span></div>'
+          + '<div class="bar">' + (e.cushion ? '<div style="position:absolute;top:0;height:100%;' + e.cushion + ';background:repeating-linear-gradient(90deg,var(--indigo),var(--indigo) 3px,transparent 3px,transparent 6px);opacity:.35"></div>' : '')
+          + '<div class="fill" style="width:' + e.fillPct + '%;background:' + e.fillColor + '"></div></div>'
+          + '<div style="position:relative;height:0"><div style="position:absolute;top:-9px;left:' + e.markPct + '%;width:2px;height:9px;background:var(--ink);border-radius:2px"></div></div>'
+          + editPanel
+          + '</div>';
+      }
+
+      function trendHtml() {
+        const bks = winBk(ST.period, 6);
+        const vals = bks.map(b => {
+          let s = 0;
+          store.catRows.forEach(c => { if (c.type === 'depense' && !BP.isLocatif(c.cat)) s += spentCat(c.cat, b); });
+          return { b, v: s };
+        });
+        const max = Math.max.apply(null, vals.map(x => x.v).concat([1])) * 1.1;
+        const med = BP.median(vals.map(x => x.v));
+        const bars = vals.map((x, i) => {
+          const cur = i === vals.length - 1, h = Math.max(4, x.v / max * 84);
+          return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">'
+            + '<div class="mono" style="font-size:10.5px;color:' + (cur ? 'var(--indigo)' : 'var(--muted)') + '">' + (Math.round(x.v / 100) / 10) + 'k</div>'
+            + '<div style="width:100%;max-width:34px;height:' + h + 'px;border-radius:5px 5px 3px 3px;background:' + (cur ? 'var(--indigo)' : 'var(--line)') + '"></div>'
+            + '<div class="note">' + bucketLabel(x.b).split(' ')[0] + '</div></div>';
+        }).join('');
+        return '<div class="card" style="margin-top:14px">'
+          + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">'
+          + '<div style="font-size:13px;font-weight:680">Depenses, 6 periodes</div><div class="note">mediane ' + BP.eur0(med) + '</div></div>'
+          + '<div style="display:flex;align-items:flex-end;gap:10px;height:108px">' + bars + '</div></div>';
+      }
+
+      // Enveloppes regroupees par FAMILLE (4 sections), sous-totaux budget/reel.
+      function envelopesHtml(envs) {
+        const groups = {}; BP.FAMILLE_ORDER.forEach(f => groups[f] = []);
+        envs.forEach(e => (groups[e.famille] || (groups[e.famille] = [])).push(e));
+        let sections = '';
+        BP.FAMILLE_ORDER.forEach(fam => {
+          const list = (groups[fam] || []).slice().sort((a, b) => b.seuil - a.seuil);
+          if (!list.length) return;
+          const budget = list.reduce((a, e) => a + e.seuil, 0);
+          const reel = list.reduce((a, e) => a + spentCat(e.cat, ST.period), 0);
+          sections += '<div class="sv-grouphead">'
+            + '<span class="sv-gname"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + (BP.FAMILLE_COLOR[fam] || 'var(--muted)') + ';margin-right:7px;vertical-align:baseline"></span>' + BP.FAMILLE_LABEL[fam] + '</span>'
+            + '<span class="note sv-gtot">budget <b class="mono">' + BP.eur0(budget) + '</b> · reel <b class="mono">' + BP.eur0(reel) + '</b></span>'
+            + '</div>'
+            + '<div class="grid">' + list.map(envelopeCardHtml).join('') + '</div>';
+        });
+        return '<div style="margin:20px 0 10px">'
+          + '<div style="font-size:13px;font-weight:680">Enveloppes <span class="note">· ' + envs.length + ' categories, regroupees par famille</span></div>'
+          + '</div>'
+          + (sections || '<div class="note">Aucune depense categorisee sur cette periode.</div>')
+          + trendHtml();
+      }
+
+      /* ---- SECTION TRAJECTOIRE (repliable, en bas de page) ------------ */
+      function trajSectionHtml() {
+        const open = ST.trajOpen;
+        const head = '<button class="sv-trajhead" data-act="trajToggle">'
+          + '<span class="sv-caret">' + (open ? '▾' : '▸') + '</span>'
+          + 'Trajectoire &amp; objectif'
+          + '<span class="note" style="margin-left:auto;font-weight:400">objectif, KPIs, courbe, prevu vs reel</span></button>';
+        return '<div style="margin-top:22px">' + head
+          + (open ? '<div style="margin-top:12px">' + viewTrajHtml() + '</div>' : '')
+          + '</div>';
+      }
+
+      function trajectorySVG() {
+        const ms = buckets(), obj = OBJECTIF;
+        const real = ms.map(surplus); let cum = 0; const cumReal = real.map(v => cum += v);
+        const projN = 6, lastCum = cumReal[cumReal.length - 1] || 0;
+        const cumObj = ms.map((_, i) => obj * (i + 1));
+        const allMax = Math.max.apply(null, cumReal.concat(cumObj, [lastCum + obj * projN, 1])) * 1.05;
+        const allMin = Math.min.apply(null, [0].concat(cumReal));
+        const N = ms.length + projN;
+        const X = i => 10 + i * (580 / Math.max(1, N - 1));
+        const Y = v => 8 + (1 - (v - allMin) / ((allMax - allMin) || 1)) * 150;
+        const realPts = cumReal.map((v, i) => X(i).toFixed(1) + ',' + Y(v).toFixed(1)).join(' ');
+        const objPts = ms.map((_, i) => X(i).toFixed(1) + ',' + Y(cumObj[i]).toFixed(1)).join(' ');
+        const projPts = [];
+        for (let k = 0; k <= projN; k++) projPts.push(X(ms.length - 1 + k).toFixed(1) + ',' + Y(lastCum + obj * k).toFixed(1));
+        return '<svg viewBox="0 0 600 170" preserveAspectRatio="none" style="width:100%;height:150px;display:block">'
+          + '<polyline class="sv-line-obj" points="' + objPts + '" fill="none" stroke-width="2" stroke-dasharray="5 4"></polyline>'
+          + '<polyline class="sv-line-proj" points="' + projPts.join(' ') + '" fill="none" stroke-width="2" stroke-dasharray="2 4"></polyline>'
+          + '<polyline class="sv-line-real" points="' + realPts + '" fill="none" stroke-width="2.5"></polyline>'
+          + '</svg>';
+      }
+
+      function kpiTile(lab, val, color, sub) {
+        return '<div class="card" style="padding:12px 14px">'
+          + '<div class="lab" style="color:var(--muted)">' + lab + '</div>'
+          + '<div class="mono" style="font-size:20px;font-weight:600;margin-top:4px;color:' + (color || 'var(--ink)') + '">' + val + '</div>'
+          + '<div class="note">' + (sub || '') + '</div></div>';
+      }
+
+      function viewTrajHtml() {
+        const m = ST.period, obj = OBJECTIF, real = surplus(m), ecart = real - obj;
+        const cats = trajCats();
+        const totalPrevu = cats.reduce((a, c) => a + prevuCat(c, m), 0);
+        const totalReel = cats.reduce((a, c) => a + spentCat(c, m), 0);
+
+        // KPIs globaux sur toute la serie.
+        const allB = buckets();
+        const reals = allB.map(surplus);
+        const moy = reals.length ? reals.reduce((a, b) => a + b, 0) / reals.length : 0;
+        let cum = 0; const cumReal = reals.map(v => cum += v);
+        const lastCum = cumReal[cumReal.length - 1] || 0;
+        const ecartCum = lastCum - obj * allB.length;
+        const projection = lastCum + obj * 6;
+
+        const rowsHtml = cats.map(c => {
+          const p = prevuCat(c, m), reel = spentCat(c, m), e = p - reel;
+          const fige = PREV_MAP[m + '||' + c] && PREV_MAP[m + '||' + c].fige;
+          const color = (store.catMap[c] && store.catMap[c].color) || '#5b6470';
+          return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + color + ';margin-right:7px"></span>' + c + (fige ? ' <span class="note">· fige</span>' : '') + '</td>'
+            + '<td class="mono">' + BP.eur0(p) + '</td><td class="mono">' + BP.eur0(reel) + '</td>'
+            + '<td class="mono" style="color:' + (e >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (e >= 0 ? '+' : '') + BP.eur0(e) + '</td></tr>';
+        }).join('');
+        const totalEcart = totalPrevu - totalReel;
+
+        return '<div class="hero" style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end">'
+          + '<div><div class="lab">Objectif d\'epargne / mois</div>'
+          + '<div style="margin-top:6px"><input class="inp mono sv-obj" value="' + (obj || '') + '" placeholder="0" data-input="objectif"> <span class="note">€</span></div></div>'
+          + '<div><div class="lab">Epargne ' + bucketLabel(m) + '</div>'
+          + '<div class="mono" style="font-size:30px;font-weight:600;margin-top:4px;color:' + (real < 0 ? '#ff7a7a' : '#fff') + '">' + BP.eur0(real) + '</div>'
+          + '<div class="note">reste-a-vivre degage</div></div>'
+          + '<div><div class="lab">Ecart a l\'objectif</div>'
+          + '<div class="mono" style="font-size:22px;font-weight:600;margin-top:4px;color:' + (ecart >= 0 ? '#46d39a' : '#ff7a7a') + '">' + (ecart >= 0 ? '+' : '') + BP.eur0(ecart) + '</div>'
+          + '<div class="note">' + (ecart >= 0 ? 'objectif atteint' : 'sous l\'objectif') + '</div></div>'
+          + '</div>'
+          + '<div class="sv-kpis">'
+          + kpiTile('Epargne reelle moyenne', BP.eur0(moy), moy >= obj ? 'var(--green)' : 'var(--ink)', 'sur ' + allB.length + ' periodes')
+          + kpiTile('Ecart cumule / objectif', (ecartCum >= 0 ? '+' : '') + BP.eur0(ecartCum), ecartCum >= 0 ? 'var(--green)' : 'var(--red)', 'depuis le debut')
+          + kpiTile('Projection +6 mois', BP.eur0(projection), 'var(--indigo)', 'cumul a l\'objectif')
+          + '</div>'
+          + '<div class="card" style="margin-top:14px">'
+          + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">'
+          + '<div style="font-size:13px;font-weight:680">Trajectoire d\'epargne cumulee</div>'
+          + '<div class="note"><span style="color:var(--indigo)">▬</span> reel · <span style="color:var(--warn)">▬</span> objectif · <span style="color:var(--muted)">▬</span> projection</div>'
+          + '</div>' + trajectorySVG()
+          + '<div style="display:flex;justify-content:space-between;margin-top:2px" class="note"><span>' + bucketLabel(allB[0] || m) + '</span><span>+6 mois projetes</span></div>'
+          + '</div>'
+          + '<div class="card" style="margin-top:14px">'
+          + '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+          + '<div style="font-size:13px;font-weight:680">Prevu vs reel · ' + bucketLabel(m) + '</div>'
+          + '<button class="sv-btn-go" data-act="figerMois">Figer ce mois</button></div>'
+          + '<table class="sv-tbl"><thead><tr><th>Categorie</th><th>Prevu</th><th>Reel</th><th>Ecart</th></tr></thead>'
+          + '<tbody>' + (rowsHtml || '<tr><td colspan="4" class="note">Aucune depense ce mois.</td></tr>') + '</tbody>'
+          + '<tfoot><tr style="font-weight:680"><td>Total</td><td class="mono">' + BP.eur0(totalPrevu) + '</td><td class="mono">' + BP.eur0(totalReel) + '</td>'
+          + '<td class="mono" style="color:' + (totalEcart >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (totalEcart >= 0 ? '+' : '') + BP.eur0(totalEcart) + '</td></tr></tfoot>'
+          + '</table>'
+          + '<div class="note" style="margin-top:8px">Prevu = mediane 6 mois, ou valeur figee. « Figer » fixe le prevu du mois comme reference (snapshot).</div>'
+          + '</div>';
+      }
+
+      /* ---- rendu global ----------------------------------------------- */
+      function render() {
+        if (!host.isConnected) return;
+        clampPeriod();
+        _recurCache = {}; _analysis = null;  // portee des caches = ce rendu
+        const wpx = WIDTHS[ST.width];
+        // Enveloppes calculees une fois, partagees cockpit + sections.
+        const envs = activeCats().map(envelope);
+        // Page unique qui defile : cockpit -> enveloppes -> trajectoire repliable.
+        host.innerHTML = '<div class="wrap" style="max-width:' + wpx + 'px">'
+          + headerHtml()
+          + cockpitHtml(envs)
+          + envelopesHtml(envs)
+          + trajSectionHtml()
+          + '<div class="note" style="margin-top:14px;text-align:right">Lecture de ' + store.rows.length + ' operations · '
+          + '<a href="#" data-act="reload" style="color:var(--indigo)">rafraichir</a></div>'
+          + '</div>';
+      }
+
+      /* ================================================================= */
+      /* SYNCHRONISATION + EVENEMENTS                                      */
+      /* ================================================================= */
+      function clampPeriod() {
+        const b = buckets();
+        if (!b.length) { ST.period = ST.period || BP.ym(new Date()); return; }
+        if (b.indexOf(ST.period) < 0) ST.period = b[b.length - 1];
+      }
+
+      // Rafraichissement quand les donnees partagees changent (store.apply, etc.)
+      function onShared() {
+        if (!host.isConnected) return;         // navigation partie ailleurs : on ignore
+        ST.salaryDay = detectSalaryDay();
+        if (!ST.salaryDay && ST.mode === 'cycle') ST.mode = 'cal';
+        ST._index = null; ST._idxMode = null;  // l'index doit etre reconstruit
+        render();
+      }
+      store.onChange(onShared);
+
+      async function hardReload() {
+        try { await store.load(); } catch (e) {}
+        await loadOwn();
+        ST.salaryDay = detectSalaryDay();
+        ST._index = null; ST._idxMode = null;
+        render();
+      }
+
+      function stepPeriod(dir) {
+        const b = buckets(), i = b.indexOf(ST.period);
+        if (dir < 0 && i > 0) { ST.period = b[i - 1]; render(); }
+        if (dir > 0 && i >= 0 && i < b.length - 1) { ST.period = b[i + 1]; render(); }
+      }
+
+      host.addEventListener('click', e => {
+        const a = e.target.closest('[data-act]'); if (!a) return;
+        const act = a.dataset.act, arg = a.dataset.arg, cat = a.dataset.cat;
+        if (act === 'reload') { e.preventDefault(); hardReload(); return; }
+        if (act === 'trajToggle') { ST.trajOpen = !ST.trajOpen; render(); return; }
+        if (act === 'width') { ST.width = arg; render(); return; }
+        if (act === 'mode') { ST.mode = arg; ST._index = null; ST._idxMode = null; render(); return; }
+        if (act === 'edit') { ST.editing = ST.editing === arg ? null : arg; render(); return; }
+        if (act === 'setmode') { setMode(cat, arg); return; }
+        if (act === 'figer') { figer(arg); return; }
+        if (act === 'figerMois') { figerMois(); return; }
+        if (act === 'prevPeriod') { stepPeriod(-1); return; }
+        if (act === 'nextPeriod') { stepPeriod(1); return; }
+      });
+
+      host.addEventListener('change', e => {
+        const num = e.target.closest('input[data-input="num"]');
+        if (num) { commitNum(num.dataset.cat, num.dataset.field, num.value); return; }
+        const obj = e.target.closest('input[data-input="objectif"]');
+        if (obj) { setObjectif(obj.value); return; }
+      });
+
+      // Fleches clavier : navigation de periode (ignore si le focus est un champ).
+      document.addEventListener('keydown', e => {
+        if (!host.isConnected) return;
+        if (e.key === 'Enter' && e.target.matches('input[data-input]')) { e.target.blur(); return; }
+        if (e.target.matches('input,select,textarea')) return;
+        if (e.key === 'ArrowLeft') stepPeriod(-1);
+        else if (e.key === 'ArrowRight') stepPeriod(1);
+      });
+
+      /* ================================================================= */
+      /* INITIALISATION                                                    */
+      /* ================================================================= */
+      (async function init() {
+        host.innerHTML = '<div class="msg">Chargement…</div>';
+        await ensureOwnTables();
+        await loadOwn();
+        ST.salaryDay = detectSalaryDay();
+        if (!ST.salaryDay && ST.mode === 'cycle') ST.mode = 'cal';
+        ST._index = null; ST._idxMode = null;
+        const b = buckets();
+        ST.period = b[b.length - 1] || BP.ym(new Date());
+        render();
+      })();
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

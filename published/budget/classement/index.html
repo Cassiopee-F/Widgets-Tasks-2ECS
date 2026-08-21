@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  /* ---- Tokens & thème (identité partagée de la suite) ------------------ */
+  :root{
+    --paper:#f6f7f9; --ink:#171a21; --muted:#6b7280; --line:#e6e9ef;
+    --indigo:#3d5afe; --green:#0f8a5f; --red:#d14343; --warn:#b9742a;
+    --card:#fff; --soft:#eef0f4; --shadow:0 1px 2px rgba(20,22,28,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --paper:#14161b; --ink:#e8eaee; --muted:#9aa1ad; --line:#2a2e37;
+      --card:#1b1e25; --soft:#22262f; --shadow:0 1px 2px rgba(0,0,0,.4); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
+  /* segments / boutons */
+  .seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:none;border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:.12s}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  /* cartes / hero / barres */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px}
+  /* hero : panneau volontairement TOUJOURS sombre (ne pas utiliser var(--ink) qui
+     bascule en clair en thème sombre et rendrait le texte blanc illisible). */
+  .hero{background:#161a23;border-radius:16px;padding:20px 22px;color:#fff;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end}
+  .hero .rav{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1.05;margin-top:4px}
+  .hero .lab{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa1ad}
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:2px}
+  .fill{position:absolute;left:0;top:0;height:100%;border-radius:5px;transition:width .35s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:12px}
+  /* champs / puces / notes */
+  .inp{border:1px solid var(--indigo);border-radius:8px;padding:6px 9px;font-size:13px;outline:none;background:var(--card);color:var(--ink)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;border-radius:20px;padding:3px 9px}
+  .note{font-size:11px;color:var(--muted)}
+  .msg{max-width:620px;margin:60px auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:14px;line-height:1.6}
+  /* barre de navigation (mode single-page) */
+  .topnav{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:20}
+  .topnav .brand{font-weight:800;letter-spacing:-.01em;margin-right:6px}
+  .topnav .tab{border:none;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}
+  .topnav .tab.on{background:var(--soft);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<!-- ===================================================================== -->
+<!-- CŒUR PARTAGÉ : en dev via <script src>, inliné par build-budget.js.    -->
+<script>
+/* budget-core.js — cœur partagé de la suite Budget perso (Grist).
+   SOURCE UNIQUE de la taxonomie FR, des helpers communs et de l'index d'agrégation.
+   Inliné dans chaque module entre les marqueurs // <budget-core> / // <end-budget-core>
+   par scripts/build-budget.js (mode --check en CI). Expose l'objet global BP. */
+(function (root) {
+  // <budget-core>
+
+  /* ---- Taxonomie FR : motif (regex, toujours /i) -> famille [, exclu] -----
+     Source canonique. Toute évolution se fait ICI puis est ré-inlinée par build. */
+  const TAXO = [
+    [/SALAIRE|REMUNERATION|\bPAYE\b|BULLETIN|TRAITEMENT/i, 'Revenus'],
+    [/POLE EMPLOI|FRANCE TRAVAIL|\bCAF\b|ALLOCATION|CPAM|ASSURANCE MALADIE|RETRAITE|PENSION/i, 'Revenus'],
+    [/CARREFOUR|LECLERC|\bAUCHAN\b|INTERMARCHE|\bLIDL\b|\bALDI\b|MONOPRIX|FRANPRIX|\bCASINO\b|SUPER ?U|MAGASIN U|\bU EXPRESS|PICARD|GRAND FRAIS|NATURALIA|\bBIO\b|PRIMEUR|BOUCHERIE|BOULANGERIE|MARCHE|EPICERIE/i, 'Alimentation'],
+    [/MC ?DO|MCDONALD|BURGER|\bKFC\b|\bRESTO|RESTAURANT|PIZZ|SUSHI|BRASSERIE|\bCAFE\b|\bBAR\b|TABAC|UBER ?EATS|DELIVEROO|JUST EAT|FOODORA/i, 'Restaurants & sorties'],
+    [/\bSNCF\b|\bTER\b|\bTGV\b|\bRATP\b|\bRTM\b|TRANSILIEN|NAVIGO|BLABLA|\bUBER\b|\bBOLT\b|\bFREE ?NOW|TAXI|VELIB/i, 'Transports'],
+    [/TOTAL|\bESSO\b|\bSHELL\b|\bBP\b|AVIA|\bENI\b|STATION|CARBURANT|ESSENCE|PEAGE|VINCI|AUTOROUTE|ESCOTA|\bASF\b|SANEF|APRR|PARKING|STATIONNEMENT/i, 'Transports'],
+    [/\bLOYER\b|SYNDIC|COPRO|FONCIA|NEXITY|SERGIC|SOGIMA|BAILLEUR|\bHLM\b/i, 'Logement'],
+    [/\bEDF\b|ENGIE|TOTALENERGIES|\bGAZ\b|ELECTRICITE|\bEAU\b|VEOLIA|\bSUEZ\b|ENERGIE/i, 'Logement'],
+    [/\bFREE\b|ORANGE|\bSFR\b|BOUYGUES|\bSOSH\b|RED BY|\bB&YOU|INTERNET|TELEPHONIE|MOBILE/i, 'Logement'],
+    [/ASSURANCE HABITAT|\bMAIF\b|\bMACIF\b|MATMUT|GMF|AXA|ALLIANZ|\bMMA\b|GENERALI|LUKO|LEMONADE/i, 'Assurances'],
+    [/PHARMACIE|\bDOCTEUR\b|MEDECIN|MEDICAL|HOPITAL|CLINIQUE|LABORATOIRE|DENTAIRE|DENTISTE|OPTIC|MUTUELLE|KINE|OSTEO|DOCTOLIB/i, 'Santé'],
+    [/AMAZON|\bFNAC\b|DARTY|BOULANGER|\bZARA\b|\bH&M\b|UNIQLO|DECATHLON|\bIKEA\b|LEROY MERLIN|CASTORAMA|WELDOM|BRICO|ZALANDO|VINTED|ASOS|SHEIN|CDISCOUNT|\bACTION\b/i, 'Shopping'],
+    [/COIFF|BARBIER|INSTITUT|BEAUTE|ESTHETIC|\bSPA\b/i, 'Soins'],
+    [/NETFLIX|SPOTIFY|DEEZER|DISNEY|CANAL|\bOCS\b|PRIME VIDEO|CINEMA|\bUGC\b|PATHE|GAUMONT|STEAM|PLAYSTATION|XBOX|NINTENDO|CULTURA|\bFNAC SPECT|BILLETT|CONCERT|MUSEE|THEATRE/i, 'Loisirs'],
+    [/GOOGLE|\bAPPLE\b|MICROSOFT|\bOVH\b|HOSTINGER|GANDI|ADOBE|OPENAI|ANTHROPIC|MISTRAL|GITHUB|NOTION|FIGMA|DROPBOX|ICLOUD|\bAWS\b/i, 'Abonnements & numérique'],
+    [/DGFIP|FINANCES PUBLIQUES|TRESOR PUBLIC|\bIMPOT|TAXE FONCIERE|TAXE HABITATION|\bURSSAF\b|PRELEVEMENT A LA SOURCE/i, 'Impôts & taxes'],
+    [/FRAIS BANCAIRE|COTISATION|COMMISSION|\bAGIOS\b|FRAIS DE TENUE|FRAIS ACHAT ETRANGER|FRAIS RETR/i, 'Frais bancaires'],
+    [/RETRAIT|\bDAB\b|DISTRIBUTEUR|\bATM\b|RET ?DAB/i, "Retrait d'espèces"],
+    [/LIVRET|\bLDDS\b|\bLEP\b|\bPEL\b|\bCEL\b|EPARGNE|ASSURANCE VIE|\bPEA\b|\bPER\b|TRADE REPUBLIC|BOURSORAMA VIE|PARTS SOCIALES/i, 'Épargne', true],
+    [/VIREMENT INTERNE|VIR INTERNE|VERS COMPTE|VERS LIVRET|VERS EPARGNE|VIREMENT DE COMPTE/i, 'Virement interne', true],
+    [/REMBOURSEMENT|\bREMB\b|\bRBT\b/i, 'Remboursement', true]
+  ];
+
+  /* ---- Catégories de départ : [nom, type, couleur] ----------------------- */
+  const CAT_SEED = [
+    ['Revenus', 'revenu', '#0f8a5f'], ['Alimentation', 'depense', '#3d5afe'], ['Restaurants & sorties', 'depense', '#7c4dff'],
+    ['Transports', 'depense', '#00a8a8'], ['Logement', 'depense', '#d14343'], ['Assurances', 'depense', '#b9742a'],
+    ['Santé', 'depense', '#e85d75'], ['Shopping', 'depense', '#5b6470'], ['Soins', 'depense', '#c77b9a'],
+    ['Loisirs', 'depense', '#f0883e'], ['Abonnements & numérique', 'depense', '#6b7280'], ['Impôts & taxes', 'depense', '#8a5a00'],
+    ['Frais bancaires', 'depense', '#a0524d'], ["Retrait d'espèces", 'depense', '#9b8a5f'], ['Épargne', 'epargne', '#2f8f5b'],
+    ['Virement interne', 'exclu', '#8a8f99'], ['Remboursement', 'exclu', '#8a8f99'], ['Famille', 'depense', '#c0508a'],
+    ['Loyer (vie commune)', 'depense', '#d14343'], ['À catégoriser', 'depense', '#b9742a']
+  ];
+
+  /* ---- Sous-catégories de départ : famille -> [sous-catégories] ----------- */
+  const SOUS_SEED = {
+    'Alimentation': ['Supermarché', 'Boulangerie', 'Primeur / marché', 'Boucherie', 'Épicerie', 'Bio'],
+    'Restaurants & sorties': ['Restaurant', 'Fast-food', 'Bar', 'Café', 'Livraison'],
+    'Transports': ['Carburant', 'Train', 'Transports en commun', 'Péage / parking', 'VTC / taxi', 'Vélo', 'Avion'],
+    'Logement': ['Loyer', 'Crédit immobilier', 'Électricité / gaz', 'Eau', 'Internet / téléphone', 'Charges / copropriété', 'Assurance habitation', 'Entretien'],
+    'Santé': ['Pharmacie', 'Médecin', 'Mutuelle', 'Dentiste', 'Optique', 'Hôpital'],
+    'Shopping': ['Vêtements', 'High-tech', 'Maison / déco', 'Bricolage', 'Sport', 'Beauté', 'Divers'],
+    'Soins': ['Coiffeur', 'Institut', 'Spa'],
+    'Loisirs': ['Streaming', 'Cinéma / spectacle', 'Jeux vidéo', 'Sport / loisir', 'Voyage', 'Livres'],
+    'Abonnements & numérique': ['Logiciels / SaaS', 'Cloud / hébergement', 'IA', 'Téléphonie'],
+    'Impôts & taxes': ['Impôt sur le revenu', 'Taxe foncière', "Taxe d'habitation", 'Prélèvement à la source', 'URSSAF'],
+    'Revenus': ['Salaire', 'Prime', 'Aides / allocations', 'Intérêts', 'Remboursement', 'Autre'],
+    'Assurances': ['Habitation', 'Auto / moto', 'Santé', 'Prévoyance'],
+    'Frais bancaires': ['Cotisation', 'Commission', 'Agios', 'Frais étranger'],
+    "Retrait d'espèces": ['Retrait DAB'],
+    'Épargne': ['Livret', 'Assurance-vie', 'PEA / bourse', 'Autre'],
+    'Famille': ['Don', 'Aide', 'Cadeau', 'Prêt', 'Remboursement'],
+    'Loyer (vie commune)': ['Loyer mensuel'],
+    'Virement interne': ['Vers épargne', 'Entre comptes']
+  };
+
+  /* ---- Helpers texte / format ------------------------------------------- */
+  // norm : normalisation "métier" (MAJUSCULES sans accents) — matching taxonomie/marchands.
+  const norm = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  // normHeader : normalisation des EN-TÊTES CSV (minuscules) — usage import uniquement.
+  // Nommée distinctement pour ne PAS entrer en collision avec `norm` (contrat opposé).
+  const normHeader = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const eur = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €';
+  const eur0 = v => eur(v, 0);
+
+  /* ---- Dates / périodes ------------------------------------------------- */
+  const gristToDate = ts => ts ? new Date(ts * 1000) : null;
+  const dateToGrist = d => d ? Math.floor(d.getTime() / 1000) : null;
+  // clé année-mois 'YYYY-MM' (heure locale, cohérente entre tous les modules).
+  const ym = d => { const x = (d instanceof Date) ? d : new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+  const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  // libellé lisible d'un bucket 'YYYY-MM' -> "juin 2026".
+  const moisLabel = key => { const [y, m] = String(key).split('-').map(Number); return (MOIS[m - 1] || '?').replace('.', '') + ' ' + y; };
+
+  /* ---- Parsing relevés (import) ----------------------------------------- */
+  function parseDate(v) {
+    v = (v || '').trim(); if (!v) return null;
+    let m = v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]) / 1000;
+    m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) { let y = +m[3]; if (y < 100) y += 2000; return Date.UTC(y, +m[2] - 1, +m[1]) / 1000; }
+    const t = Date.parse(v); return isNaN(t) ? null : Math.floor(t / 1000);
+  }
+  // Montant SIGNÉ (négatif = débit). Gère décimale FR, signe en suffixe ("12,50-")
+  // et parenthèses comptables ("(12,50)") = débit.
+  function parseAmount(v) {
+    if (v == null) return null; v = v.toString().trim(); if (!v) return null;
+    let s = v.replace(/\s| |€|EUR/gi, '');
+    let neg = false;
+    if (/-$/.test(s)) { neg = true; s = s.slice(0, -1); }
+    else if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+    if (s.indexOf(',') > -1 && s.indexOf('.') > -1) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    s = s.replace(/[^0-9.\-+]/g, ''); const n = parseFloat(s); if (isNaN(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  /* ---- Clé marchand (regroupement du classement) ------------------------ */
+  function merchantKey(lib) {
+    let s = norm(lib);
+    s = s.replace(/\bPRLV SEPA\b|\bVIR INST\b|\bVIR\b|\bPRLV\b|\bPAIEMENT\b|\bACHAT\b|\bFACTURE\b|\bSEPA\b|\bCB\b|\bCARTE\b/g, ' ');
+    s = s.replace(/\*+\d+/g, ' ').replace(/\b\d{2}\/\d{2}(\/\d{2,4})?\b/g, ' ').replace(/\b\d{6,}\b/g, ' ');
+    s = s.replace(/\d+[.,]\d{2}\s?EUR/g, ' ').replace(/\bEUR\b/g, ' ');
+    s = s.replace(/\b\d{2,5}[A-Z][A-Z]{2,}\b/g, ' ');
+    s = s.replace(/[^A-Z0-9& ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const toks = s.split(' ').filter(t => t.length > 1);
+    return toks.slice(0, 2).join(' ') || s || norm(lib).slice(0, 12);
+  }
+
+  /* ---- Typage : le contrat partagé -------------------------------------- */
+  // cats : map { [categorie]: { type } }. Fallback 'depense'.
+  const makeTypeOf = cats => cat => (cats[cat] && cats[cat].type) || 'depense';
+
+  /* ---- Lentille perso : exclure le sous-ensemble Locatif -----------------
+     Convention : catégories préfixées "Locatif -" = lentille immo/LMNP, ignorées
+     par le budget perso (RAV, enveloppes) SANS toucher à leur Type. */
+  const isLocatif = cat => /^locatif\b/i.test((cat || '').toString().trim().normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+  /* ---- Catégorisation par taxonomie ------------------------------------- */
+  // Renvoie la 1re famille dont le motif matche le libellé, sinon null.
+  function guessCategory(lib) {
+    const L = norm(lib);
+    for (const [re, cat] of TAXO) if (re.test(L)) return cat;
+    return null;
+  }
+
+  /* ---- Statistiques ----------------------------------------------------- */
+  function median(a) { const s = [...a].sort((x, y) => x - y); const n = s.length; if (!n) return 0; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; }
+  const med10 = a => Math.round(median(a) / 10) * 10;
+
+  /* ---- Index d'agrégation (LE remplaçant des re-scans spentCat/surplus) --
+     Une seule passe O(n) sur les opérations -> somme SIGNÉE par catégorie et par
+     bucket, plus la liste ordonnée des buckets. Tout le reste en dérive en O(1).
+
+     rows     : [{ cat, montant, exclu, ... }] déjà normalisées (montant signé).
+     bucketOf : (row) -> clé de bucket (ex. r.ym, ou cycle de paie). Injectée par
+                le module car le découpage (calendaire vs cycle) lui appartient.
+
+     Renvoie { net(cat,bk), spent(cat,bk), buckets, cats, forEachCatBucket } :
+       net   = Σ montant signé (revenu>0, dépense<0) — non plafonné.
+       spent = Math.max(0, -net) = dépense nette plafonnée PAR CATÉGORIE
+               (refunds déduits, jamais négatif). C'est l'invariant du contrat :
+               on plafonne toujours par catégorie, jamais une somme globale. */
+  function buildIndex(rows, bucketOf) {
+    const idx = Object.create(null);   // cat -> (bucket -> somme signée)
+    const bset = new Set();
+    for (const r of rows) {
+      if (r.exclu) continue;
+      const bk = bucketOf(r); if (bk == null) continue;
+      bset.add(bk);
+      const m = idx[r.cat] || (idx[r.cat] = Object.create(null));
+      m[bk] = (m[bk] || 0) + r.montant;
+    }
+    const buckets = [...bset].sort();
+    const net = (cat, bk) => (idx[cat] && idx[cat][bk]) || 0;
+    const spent = (cat, bk) => Math.max(0, -net(cat, bk));
+    return { idx, buckets, cats: Object.keys(idx), net, spent };
+  }
+
+  /* ---- Nature d'une catégorie (fixe / courante / ponctuelle) ------------
+     Classée depuis les stats de dépense calculées sur le PRÉVU (hors imprévu) :
+       partFixe   = somme des charges récurrentes détectées (detectRecurrents)
+       medMensuel = médiane des dépenses mensuelles (>0)
+       present    = nb de mois avec dépense sur la fenêtre
+       window     = taille de la fenêtre (mois)
+       cv         = coefficient de variation (écart-type / moyenne) des mois
+     - 'fixe'       : dominée par une charge récurrente (loyer, abo, assurance) —
+                      couverture >= 0.7 et présente presque tous les mois.
+     - 'ponctuelle' : irrégulière ou à gros pics (vacances, santé) — présente < moitié
+                      des mois, ou forte variabilité.
+     - 'courante'   : récurrente mais montant qui bouge (alimentation, transport). */
+  function natureFrom(stats) {
+    const { partFixe = 0, medMensuel = 0, present = 0, window = 12, cv = 0 } = stats || {};
+    const couverture = partFixe / Math.max(medMensuel, 1);
+    if (couverture >= 0.7 && present >= 0.7 * window) return 'fixe';
+    if (present < 0.5 * window || cv > 0.6) return 'ponctuelle';
+    return 'courante';
+  }
+  // Mode d'enveloppe par défaut déduit de la nature (surchargé par Budget_mode si défini).
+  const modeForNature = n => n === 'fixe' ? 'fixe' : n === 'ponctuelle' ? 'flottant' : 'auto';
+  // Libellé lisible de la nature auto (3 classes détectées depuis la donnée).
+  const NATURE_LABEL = { fixe: 'Engagement fixe', courante: 'Dépense courante', ponctuelle: 'Ponctuelle / provisionnée' };
+
+  /* ---- Familles de budget (modèle utilisateur, 4 classes) ---------------
+     Portées par Categories.Nature (piloté par l'utilisateur). L'auto (3 classes)
+     ne sert que de suggestion quand Nature est vide. 'arbitrable' n'est jamais
+     déduit automatiquement (c'est un jugement de valeur : subi vs choisi). */
+  const FAMILLE_LABEL = { fixe: 'Fixe obligatoire', variable: 'Obligatoire variable', arbitrable: 'Arbitrable', ponctuel: 'Ponctuel' };
+  const FAMILLE_ORDER = ['fixe', 'variable', 'arbitrable', 'ponctuel'];
+  // Couleurs de famille (barre d'allocation, pastilles de section/carte).
+  const FAMILLE_COLOR = { fixe: '#3d5afe', variable: '#0f8a5f', arbitrable: '#b9742a', ponctuel: '#7c4dff' };
+  // Famille effective : Nature explicite sinon repli sur l'auto (fixe→fixe, courante→variable, ponctuelle→ponctuel).
+  function familleOf(nature, autoNature) {
+    if (nature && FAMILLE_LABEL[nature]) return nature;
+    return autoNature === 'courante' ? 'variable' : autoNature === 'ponctuelle' ? 'ponctuel' : 'fixe';
+  }
+
+  /* ---- Période d'activité d'une catégorie (engagements datés) -----------
+     Un engagement fixe (crédit conso, moto…) n'est actif que dans sa fenêtre
+     Actif_debut..Actif_fin (bornes 'YYYY-MM' incluses, comparaison lexicale ;
+     bornes vides = pas de limite). Un crédit soldé disparaît des mois suivants. */
+  function estActif(debut, fin, bk) {
+    if (!bk) return true;
+    if (debut && bk < debut) return false;
+    if (fin && bk > fin) return false;
+    return true;
+  }
+  // Seuil au-delà duquel une ligne est un imprévu (choc) dans sa catégorie :
+  // le plus grand entre la dépense mensuelle médiane et 3x la ligne médiane.
+  function outlierThreshold(lineAmounts, medMensuel) {
+    const med = median((lineAmounts || []).map(Math.abs));
+    return Math.max(medMensuel || 0, 3 * med);
+  }
+
+  /* ---- Détection des récurrents (part fixe auto du mode Flottant) ------- */
+  function detectRecurrents(txns) {
+    const byKey = {};
+    for (const t of txns) { (byKey[t.key] = byKey[t.key] || []).push(t); }
+    const recur = [];
+    for (const k in byKey) {
+      const g = byKey[k];
+      const months = new Set(g.map(t => t.ym));
+      if (months.size < 3) continue;
+      const amts = g.map(t => Math.abs(t.amount));
+      const mean = amts.reduce((a, b) => a + b, 0) / amts.length;
+      if (mean <= 0) continue;
+      const sd = Math.sqrt(amts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / amts.length);
+      if (sd / mean > 0.35) continue;
+      recur.push({ key: k, label: g[0].label || k, amount: median(amts), months: months.size });
+    }
+    recur.sort((a, b) => b.amount - a.amount);
+    return { items: recur, sum: recur.reduce((a, r) => a + r.amount, 0) };
+  }
+
+  /* ---- Réserve dérivée (mode Flottant) — jamais stockée ----------------- */
+  function deriveReserve(spendsByMonth, partFixe, provision, windowYM) {
+    let r = 0;
+    for (const m of windowYM) {
+      const spent = spendsByMonth[m] || 0;
+      const variable = Math.max(0, spent - partFixe);
+      r = Math.max(0, r + provision - variable);
+    }
+    return r;
+  }
+
+  // <end-budget-core>
+  root.BP = {
+    TAXO, CAT_SEED, SOUS_SEED,
+    norm, normHeader, eur, eur0,
+    gristToDate, dateToGrist, ym, MOIS, moisLabel,
+    parseDate, parseAmount, merchantKey,
+    makeTypeOf, isLocatif, guessCategory,
+    median, med10, buildIndex, detectRecurrents, deriveReserve,
+    natureFrom, modeForNature, NATURE_LABEL, outlierThreshold,
+    FAMILLE_LABEL, FAMILLE_ORDER, FAMILLE_COLOR, familleOf, estActif
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<script>
+/* =======================================================================
+   SHELL — contrat de module, couche données (Store), routeur + nav.
+   Un module s'enregistre via BUDGET.register(id, def) où :
+     def = {
+       title:  string,                       // libellé nav
+       access: 'full' | 'read table' | 'none' (défaut 'full'),
+       mount(root, ctx)                       // rend le module dans `root`
+     }
+   ctx = {
+     BP,               // cœur (window.BP)
+     grist,            // API Grist (null en démo)
+     demo,             // bool
+     store,            // couche données partagée (cf. Store)
+     el(html),         // template -> Element
+     navigate(id),     // bascule de module (single-page)
+   }
+   Store (données partagées, chargées une fois) :
+     store.rows       [{ rowId, date, ym, day, lib, montant, cat, sous, exclu }]
+     store.catRows    [{ rowId, cat, type, color, budget, mode, lisser, prov }]
+     store.catMap     { [cat]: catRow }
+     store.typeOf(c)  -> 'revenu'|'depense'|'epargne'|'exclu'
+     store.regles     [{ rowId, motif, cat, sous, prio }]
+     store.sousMap    { [famille]: [sous...] }
+     store.months     ['YYYY-MM', ...] triés
+     store.hasProvision  bool (colonne Categories.Provision présente)
+     await store.load()             (re)charge tout
+     await store.apply(actions)     applyUserActions puis reload + notify
+     store.onChange(cb)             s'abonne aux rechargements
+   ======================================================================= */
+window.BUDGET = window.BUDGET || { modules: {} };
+BUDGET.register = (id, def) => { BUDGET.modules[id] = def; };
+
+(function () {
+  const HAS_GRIST = typeof grist !== 'undefined';
+  const BP = window.BP;
+  const el = html => { const t = document.createElement('template'); t.innerHTML = (html || '').trim(); return t.content.firstElementChild; };
+
+  /* ---- Store : couche données partagée -------------------------------- */
+  const col = (t, n) => (t && t[n]) || [];
+  const Store = {
+    rows: [], catRows: [], catMap: {}, regles: [], sousMap: {}, months: [], hasProvision: false,
+    _subs: [],
+    typeOf(c) { return (this.catMap[c] && this.catMap[c].type) || 'depense'; },
+    onChange(cb) { this._subs.push(cb); },
+    _notify() { this._subs.forEach(cb => { try { cb(); } catch (e) { console.error(e); } }); },
+    async load() {
+      if (!HAS_GRIST) return;
+      const want = ['Transactions', 'Categories', 'Regles', 'Sous_categories'];
+      const got = {};
+      await Promise.all(want.map(async n => { try { got[n] = await grist.docApi.fetchTable(n); } catch (e) { got[n] = null; } }));
+      const cats = got.Categories || {};
+      this.catRows = (cats.id || []).map((rowId, i) => ({
+        rowId, cat: col(cats, 'Categorie')[i],
+        type: (col(cats, 'Type')[i] || 'depense'), color: col(cats, 'Couleur')[i] || '#5b6470',
+        budget: +(col(cats, 'Budget_mensuel')[i] || 0), mode: col(cats, 'Budget_mode')[i] || '',
+        lisser: !!col(cats, 'Lisser')[i], prov: +(col(cats, 'Provision')[i] || 0),
+        nature: col(cats, 'Nature')[i] || '',
+        actifDebut: col(cats, 'Actif_debut')[i] || '', actifFin: col(cats, 'Actif_fin')[i] || ''
+      })).filter(c => c.cat);
+      this.catMap = {}; this.catRows.forEach(c => this.catMap[c.cat] = c);
+      this.hasProvision = Object.prototype.hasOwnProperty.call(cats, 'Provision');
+
+      const tx = got.Transactions || {};
+      this.rows = (tx.id || []).map((rowId, i) => {
+        const date = col(tx, 'Date')[i]; const d = BP.gristToDate(date);
+        return {
+          rowId, date, ym: d ? BP.ym(d) : null, day: d ? d.getDate() : null,
+          lib: col(tx, 'Libelle')[i] || '', montant: +(col(tx, 'Montant')[i] || 0),
+          cat: col(tx, 'Categorie')[i] || 'À catégoriser', sous: col(tx, 'Sous_categorie')[i] || '',
+          exclu: !!col(tx, 'Exclu')[i]
+        };
+      }).filter(r => r.date != null && isFinite(r.montant));
+      this.months = [...new Set(this.rows.map(r => r.ym).filter(Boolean))].sort();
+
+      const reg = got.Regles || {};
+      this.regles = (reg.id || []).map((rowId, i) => ({
+        rowId, motif: col(reg, 'Motif')[i] || '', cat: col(reg, 'Categorie')[i] || '',
+        sous: col(reg, 'Sous_categorie')[i] || '', prio: +(col(reg, 'Priorite')[i] || 0)
+      })).filter(r => r.motif).sort((a, b) => b.prio - a.prio);
+
+      const sc = got.Sous_categories || {}; this.sousMap = {};
+      (sc.id || []).forEach((_, i) => {
+        const f = col(sc, 'Categorie')[i], s = col(sc, 'Sous_categorie')[i];
+        if (f && s) (this.sousMap[f] = this.sousMap[f] || []).push(s);
+      });
+    },
+    async apply(actions) {
+      if (!HAS_GRIST || !actions || !actions.length) return;
+      try { await grist.docApi.applyUserActions(actions); }
+      catch (e) { alert('Écriture refusée : ' + (e && e.message || e)); }
+      await this.load(); this._notify();
+    }
+  };
+
+  /* ---- Routeur + nav --------------------------------------------------- */
+  // Ordre canonique de la nav (tableau de bord d'abord). Les ids hors liste suivent.
+  const ORDER = ['suivi', 'classement', 'import'];
+  const orderedIds = () => Object.keys(BUDGET.modules).slice()
+    .sort((a, b) => (ORDER.indexOf(a) < 0 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(b) < 0 ? 99 : ORDER.indexOf(b)));
+  // Vue pinnée par le build (per-module) OU ?view= OU 1re vue de l'ordre.
+  const PIN = window.__BUDGET_VIEW__ || null;
+  function currentView() {
+    if (PIN) return PIN;
+    const q = new URLSearchParams(location.search).get('view');
+    if (q && BUDGET.modules[q]) return q;
+    return orderedIds()[0];
+  }
+  let VIEW = null;
+  const ctxBase = { BP, grist: HAS_GRIST ? grist : null, demo: !HAS_GRIST, store: Store, el, navigate };
+
+  function renderNav() {
+    const nav = document.getElementById('nav');
+    const ids = orderedIds();
+    if (PIN || ids.length < 2) { nav.innerHTML = ''; return; }   // pas de nav si pinné ou module unique
+    nav.innerHTML = '';
+    const bar = el('<div class="topnav"><span class="brand">Budget</span></div>');
+    ids.forEach(id => {
+      const b = el('<button class="tab">' + (BUDGET.modules[id].title || id) + '</button>');
+      if (id === VIEW) b.classList.add('on');
+      b.onclick = () => navigate(id);
+      bar.appendChild(b);
+    });
+    nav.appendChild(bar);
+  }
+
+  function mountView() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    const def = BUDGET.modules[VIEW];
+    if (!def) { root.innerHTML = '<div class="msg">Module introuvable : ' + VIEW + '</div>'; return; }
+    if (HAS_GRIST) { try { grist.ready({ requiredAccess: def.access || 'full' }); } catch (e) {} }
+    def.mount(root, Object.assign({}, ctxBase, { view: VIEW }));
+  }
+
+  function navigate(id) {
+    if (!BUDGET.modules[id]) return;
+    VIEW = id;
+    if (!PIN) { const u = new URL(location.href); u.searchParams.set('view', id); history.replaceState(null, '', u); }
+    renderNav(); mountView();
+  }
+
+  /* ---- Boot ------------------------------------------------------------ */
+  async function boot() {
+    if (!Object.keys(BUDGET.modules).length) {
+      document.getElementById('root').innerHTML = '<div class="msg">Aucun module chargé.</div>'; return;
+    }
+    VIEW = currentView();
+    if (HAS_GRIST) { try { await Store.load(); } catch (e) {} }
+    renderNav(); mountView();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+
+<!-- ===================================================================== -->
+<!-- MODULES : en dev via <script src>, inlinés/filtrés par build-budget.js. -->
+<script>window.__BUDGET_VIEW__="classement";</script>
+<script>
+/* modules/classement.js — Classement des operations non categorisees.
+   Regroupe les operations « A categoriser » par marchand (BP.merchantKey) et, pour
+   chaque groupe, propose UNE combobox intelligente « tape un terme » qui filtre en
+   direct les paires Famille > Sous-categorie existantes, classees par pertinence
+   (historique du marchand > taxonomie > correspondance du terme). Selectionner une
+   entree applique famille + sous-categorie d'un coup (BulkUpdateRecord). La combobox
+   sait aussi CREER une sous-categorie ou une famille a la volee (dedup insensible
+   casse/accents) et le module apprend une Regle quand c'est pertinent.
+
+   Contrat shell : BUDGET.register(id, { title, access, mount(root, ctx) }).
+   Donnees deja chargees dans ctx.store ; ecritures via ctx.store.apply(actions). */
+(function () {
+  'use strict';
+  if (!window.BUDGET || typeof window.BUDGET.register !== 'function') return;
+
+  // Etat au niveau module (le shell rappelle mount() a chaque navigation).
+  let _ctx = null, _root = null, _bound = false;
+  let _closeOpen = null;                 // ferme le menu combobox actuellement ouvert
+
+  const CSS_ID = 'cls-module-css';
+  const TYPES = [['depense', 'Depense'], ['revenu', 'Revenu'], ['epargne', 'Epargne'], ['exclu', 'Exclu']];
+  const SRC_META = {
+    'appris': 'var(--green)', 'regle': 'var(--indigo)',
+    'connu': 'var(--warn)', 'a confirmer': 'var(--muted)'
+  };
+  const SRC_LABEL = { 'appris': 'appris', 'regle': 'regle', 'connu': 'connu', 'a confirmer': 'a confirmer' };
+
+  /* ---- Styles propres au module (tokens du shell, clair/sombre herites) ---- */
+  function injectCss() {
+    if (document.getElementById(CSS_ID)) return;
+    const s = document.createElement('style');
+    s.id = CSS_ID;
+    s.textContent = [
+      '.cls-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}',
+      '.cls-grp{margin-bottom:10px}',
+      '.cls-gh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}',
+      '.cls-dot{width:10px;height:10px;border-radius:3px;flex:none}',
+      '.cls-name{font-size:14px;font-weight:700}',
+      '.cls-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+      '.cls-cb{position:relative;flex:1;min-width:240px}',
+      '.cls-cb .inp{width:100%}',
+      '.cls-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;background:var(--card);',
+      '  border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-height:300px;overflow:auto;padding:4px}',
+      '.cls-menu[hidden]{display:none}',
+      '.cls-opt{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13px}',
+      '.cls-opt.hi{background:var(--soft)}',
+      '.cls-opt .odot{width:9px;height:9px;border-radius:3px;flex:none}',
+      '.cls-opt .osub{color:var(--muted)}',
+      '.cls-opt .osep{color:var(--muted)}',
+      '.cls-opt.create{color:var(--indigo);font-weight:600}',
+      '.cls-opt .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.cls-opt .seg{margin-left:auto}',
+      '.cls-empty{padding:10px;color:var(--muted);font-size:12.5px}',
+      '.cls-sug{border:none;background:var(--soft);color:var(--ink);border-radius:8px;padding:6px 11px;',
+      '  font-size:12.5px;font-weight:600;cursor:pointer}',
+      '.cls-more{border:none;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:4px 2px}',
+      '.cls-detail{margin-top:8px}',
+      '.cls-line{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px}'
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+
+  /* ---- Une operation est « non classee » si vide ou « A categoriser » ------ */
+  function isUncat(cat, norm) {
+    if (!cat) return true;
+    const n = norm(cat);
+    return n === '' || n === 'A CATEGORISER';
+  }
+
+  const mk = (tag, cls, txt) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    return e;
+  };
+
+  /* ===================================================================== */
+  /* Rendu complet (rejoue a chaque store.onChange, apres chaque ecriture). */
+  /* ===================================================================== */
+  function render() {
+    if (!_ctx || !_root) return;
+    const ctx = _ctx, root = _root, store = ctx.store, BP = ctx.BP;
+    const norm = BP.norm;
+    _closeOpen = null;                   // les anciens menus viennent d'etre detruits
+
+    /* --- Precalcul : cle marchand par ligne (une seule fois) -------------- */
+    const keyOf = new Map();
+    const histCount = new Map();         // cle -> Map(label -> {cat,sous,n})
+    for (const r of store.rows) {
+      const k = BP.merchantKey(r.lib);
+      keyOf.set(r.rowId, k);
+      if (isUncat(r.cat, norm)) continue;
+      let hm = histCount.get(k);
+      if (!hm) { hm = new Map(); histCount.set(k, hm); }
+      const lbl = r.cat + '||' + (r.sous || '');
+      const cur = hm.get(lbl) || { cat: r.cat, sous: r.sous || '', n: 0 };
+      cur.n++; hm.set(lbl, cur);
+    }
+    // Marchand -> classement le plus frequent dans l'historique.
+    const histByMerchant = new Map();
+    histCount.forEach((hm, k) => {
+      let best = null;
+      hm.forEach(v => { if (!best || v.n > best.n) best = v; });
+      if (best) histByMerchant.set(k, { cat: best.cat, sous: best.sous });
+    });
+
+    /* --- Precalcul : paires Famille > Sous existantes (hors revenu/epargne) - */
+    const pairs = [];
+    store.catRows.forEach(c => {
+      if (isUncat(c.cat, norm)) return;
+      const t = store.typeOf(c.cat);
+      if (t === 'revenu' || t === 'epargne') return;
+      const color = c.color || '#c2c7d0';
+      pairs.push({ cat: c.cat, sous: '', normFam: norm(c.cat), normSous: '', normLabel: norm(c.cat), color });
+      (store.sousMap[c.cat] || []).forEach(s => {
+        pairs.push({ cat: c.cat, sous: s, normFam: norm(c.cat), normSous: norm(s), normLabel: norm(c.cat + ' ' + s), color });
+      });
+    });
+
+    /* --- Groupes de marchands non classes (indexes par cle) --------------- */
+    const gmap = new Map();
+    for (const r of store.rows) {
+      if (!isUncat(r.cat, norm)) continue;
+      const k = keyOf.get(r.rowId);
+      let g = gmap.get(k);
+      if (!g) { g = { key: k, items: [], libs: [] }; gmap.set(k, g); }
+      g.items.push(r); g.libs.push(r.lib);
+    }
+    const groups = [...gmap.values()].sort((a, b) => b.items.length - a.items.length);
+
+    /* --- Suggestion de pre-remplissage : Appris > Regle > Connu > confirmer  */
+    function suggestFor(g) {
+      const h = histByMerchant.get(g.key);
+      if (h && h.cat) return { cat: h.cat, sous: h.sous || '', src: 'appris' };
+      for (const rg of store.regles) {
+        const m = norm(rg.motif);
+        if (!m) continue;
+        if (norm(g.key).includes(m) || g.libs.some(l => norm(l).includes(m)))
+          return { cat: rg.cat, sous: rg.sous || '', src: 'regle' };
+      }
+      const guess = BP.guessCategory(g.libs[0] || g.key);
+      if (guess) return { cat: guess, sous: '', src: 'connu' };
+      return { cat: '', sous: '', src: 'a confirmer' };
+    }
+
+    /* --- Ecritures ------------------------------------------------------- */
+    // N'apprend une regle que si le marchand est specifique (pas 1 token trop court)
+    // et qu'aucune regle existante ne le couvre deja.
+    function maybeRuleAction(g, famille, sous) {
+      const key = g.key;
+      if (!key) return null;
+      const toks = key.split(' ').filter(Boolean);
+      const compact = key.replace(/\s+/g, '');
+      if (toks.length < 2 && compact.length < 4) return null;   // trop generique -> sur-matching
+      const covered = store.regles.some(rg => {
+        const m = norm(rg.motif);
+        if (!m) return false;
+        return norm(key).includes(m) || g.libs.some(l => norm(l).includes(m));
+      });
+      if (covered) return null;
+      return ['AddRecord', 'Regles', null, { Motif: key, Categorie: famille, Sous_categorie: sous || '', Priorite: 10 }];
+    }
+
+    // Applique famille + sous a tout le groupe, + apprentissage regle, en un seul lot atomique.
+    async function classify(g, famille, sous, extra) {
+      if (!famille) return;
+      const ids = g.items.map(i => i.rowId);
+      const acts = (extra || []).slice();
+      acts.push(['BulkUpdateRecord', 'Transactions', ids, {
+        Categorie: ids.map(() => famille),
+        Sous_categorie: ids.map(() => sous || '')
+      }]);
+      const rule = maybeRuleAction(g, famille, sous);
+      if (rule) acts.push(rule);
+      await store.apply(acts);           // recharge + notifie -> render()
+    }
+
+    // Dedup insensible casse/accents : reutilise l'existant sinon prepare l'AddRecord.
+    function ensureSous(famille, term) {
+      const nt = norm(term);
+      const existing = (store.sousMap[famille] || []).find(s => norm(s) === nt);
+      if (existing) return { sous: existing, acts: [] };
+      return { sous: term, acts: [['AddRecord', 'Sous_categories', null, { Categorie: famille, Sous_categorie: term }]] };
+    }
+    function ensureFamille(term, type) {
+      const nt = norm(term);
+      const existing = store.catRows.find(c => norm(c.cat) === nt);
+      if (existing) return { fam: existing.cat, acts: [] };
+      return { fam: term, acts: [['AddRecord', 'Categories', null, { Categorie: term, Type: type || 'depense', Couleur: '#5b6470' }]] };
+    }
+
+    /* --- Etat vide / rien a classer -------------------------------------- */
+    root.innerHTML = '';
+    const wrap = mk('div', 'wrap');
+    root.appendChild(wrap);
+
+    if (!store.rows.length) {
+      wrap.appendChild(el(ctx,
+        '<div class="msg"><b>Aucune operation.</b><br><span class="note">Importe d\'abord un releve : le classement lit la table Transactions.</span></div>'));
+      return;
+    }
+    if (!groups.length) {
+      wrap.appendChild(el(ctx,
+        '<div class="msg"><b>Tout est categorise.</b><br><span class="note">' + store.rows.length +
+        ' operations, aucune en attente. Le classement reprendra au prochain import.</span></div>'));
+      return;
+    }
+
+    /* --- En-tete --------------------------------------------------------- */
+    const nOps = groups.reduce((a, g) => a + g.items.length, 0);
+    const head = mk('div', 'cls-head');
+    const hTitle = mk('div', null);
+    hTitle.appendChild(mk('div', null, 'Classement'));
+    hTitle.querySelector('div').style.cssText = 'font-size:19px;font-weight:700';
+    const hNote = mk('div', 'note',
+      nOps + ' operation' + (nOps > 1 ? 's' : '') + ' a categoriser · ' +
+      groups.length + ' marchand' + (groups.length > 1 ? 's' : ''));
+    head.appendChild(hTitle);
+    head.appendChild(hNote);
+    wrap.appendChild(head);
+
+    /* --- Une carte par marchand ------------------------------------------ */
+    groups.forEach(g => wrap.appendChild(buildGroupCard(g)));
+
+    /* ---- Construction d'une carte de groupe ----------------------------- */
+    function buildGroupCard(g) {
+      const sug = suggestFor(g);
+      const guessFam = (BP.guessCategory(g.libs[0] || g.key)) || '';
+      const total = g.items.reduce((a, i) => a + i.montant, 0);
+
+      const card = mk('div', 'card cls-grp');
+
+      // Ligne de titre marchand + chip source + montant.
+      const gh = mk('div', 'cls-gh');
+      const dot = mk('span', 'cls-dot');
+      dot.style.background = (store.catMap[sug.cat] && store.catMap[sug.cat].color) || '#c2c7d0';
+      gh.appendChild(dot);
+      gh.appendChild(mk('span', 'cls-name', g.key || '(marchand inconnu)'));
+      gh.appendChild(mk('span', 'note',
+        g.items.length + ' op. · ' + BP.eur0(total)));
+      const chip = mk('span', 'chip', SRC_LABEL[sug.src] || sug.src);
+      chip.style.cssText = 'margin-left:auto;background:var(--soft);color:' + (SRC_META[sug.src] || 'var(--muted)');
+      gh.appendChild(chip);
+      card.appendChild(gh);
+
+      // Ligne d'action : combobox + suggestion rapide + detail.
+      const rowEl = mk('div', 'cls-row');
+      rowEl.appendChild(buildCombobox(g, sug, guessFam));
+
+      if (sug.cat && sug.src !== 'a confirmer') {
+        const sugBtn = mk('button', 'cls-sug',
+          'Classer « ' + sug.cat + (sug.sous ? ' › ' + sug.sous : '') + ' »');
+        sugBtn.onclick = () => classify(g, sug.cat, sug.sous, []);
+        rowEl.appendChild(sugBtn);
+      }
+
+      const moreBtn = mk('button', 'cls-more', '▸ detail');
+      const detail = mk('div', 'cls-detail');
+      detail.hidden = true;
+      moreBtn.onclick = () => {
+        detail.hidden = !detail.hidden;
+        moreBtn.textContent = detail.hidden ? '▸ detail' : '▾ replier';
+        if (!detail.childElementCount) fillDetail(detail, g);
+      };
+      rowEl.appendChild(moreBtn);
+      card.appendChild(rowEl);
+      card.appendChild(detail);
+      return card;
+    }
+
+    function fillDetail(box, g) {
+      g.items.forEach(r => {
+        const line = mk('div', 'cls-line');
+        const d = BP.gristToDate(r.date);
+        const dEl = mk('span', 'note', d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '');
+        dEl.style.width = '52px';
+        const lib = mk('span', 'grow', r.lib);
+        lib.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        const amt = mk('span', 'mono', BP.eur(r.montant));
+        amt.style.color = r.montant < 0 ? 'var(--red)' : 'var(--green)';
+        line.appendChild(dEl); line.appendChild(lib); line.appendChild(amt);
+        box.appendChild(line);
+      });
+    }
+
+    /* ---- Combobox intelligente ------------------------------------------ */
+    function buildCombobox(g, sug, guessFam) {
+      const cb = mk('div', 'cls-cb');
+      const input = mk('input', 'inp');
+      input.type = 'text';
+      input.placeholder = 'tape un terme (ex. courses, restaurant, EDF…)';
+      const menu = mk('div', 'cls-menu');
+      menu.hidden = true;
+      cb.appendChild(input);
+      cb.appendChild(menu);
+
+      let entries = [];                  // entrees courantes du menu
+      let hi = 0;                        // index surligne
+
+      const close = () => { menu.hidden = true; };
+      const open = () => {
+        if (_closeOpen && _closeOpen !== close) _closeOpen();
+        _closeOpen = close;
+        menu.hidden = false;
+      };
+
+      // Pertinence d'une paire : historique/taxo d'abord, puis qualite du terme.
+      function score(p, nt) {
+        let s = 0;
+        if (sug.cat && p.cat === sug.cat) s += (p.sous === sug.sous) ? 1000 : 600;
+        if (guessFam && p.cat === guessFam) s += 300;
+        if (nt) {
+          const fp = p.normFam.indexOf(nt), sp = p.normSous.indexOf(nt);
+          if (fp === 0 || sp === 0) s += 200;
+          else if (fp >= 0 || sp >= 0) s += 100;
+        }
+        return s;
+      }
+
+      function build(term) {
+        const t = (term || '').trim();
+        const nt = norm(t);
+        let list = pairs;
+        if (nt) list = pairs.filter(p => p.normLabel.includes(nt));
+        const scored = list.map(p => ({ p, s: score(p, nt) }))
+          .sort((a, b) => b.s - a.s
+            || a.p.cat.localeCompare(b.p.cat, 'fr')
+            || a.p.normSous.localeCompare(b.p.normSous, 'fr'));
+
+        const exact = nt && pairs.some(p => p.normFam === nt || p.normSous === nt);
+        entries = [];
+        menu.innerHTML = '';
+
+        // Options de creation en tete quand le terme ne matche pas exactement.
+        if (nt && !exact) {
+          const ctxFam = (scored[0] && scored[0].p.cat) || sug.cat || guessFam || '';
+          if (ctxFam) entries.push({ type: 'csous', term: t, fam: ctxFam });
+          entries.push({ type: 'cfam', term: t });
+        }
+        scored.slice(0, 50).forEach(x => entries.push({ type: 'pair', pair: x.p }));
+
+        if (!entries.length) {
+          menu.appendChild(mk('div', 'cls-empty', 'Aucune categorie — tape un nom pour la creer.'));
+        } else {
+          hi = 0;
+          entries.forEach((en, i) => menu.appendChild(renderEntry(en, i)));
+          paintHi();
+        }
+      }
+
+      function renderEntry(en, i) {
+        const opt = mk('div', 'cls-opt');
+        opt.dataset.i = i;
+        if (en.type === 'pair') {
+          const d = mk('span', 'odot'); d.style.background = en.pair.color;
+          opt.appendChild(d);
+          opt.appendChild(mk('span', 'grow', en.pair.cat));
+          if (en.pair.sous) {
+            opt.appendChild(mk('span', 'osep', '›'));
+            opt.appendChild(mk('span', 'osub', en.pair.sous));
+          }
+        } else if (en.type === 'csous') {
+          opt.classList.add('create');
+          opt.appendChild(mk('span', 'grow',
+            '+ Creer sous-categorie « ' + en.term + ' » dans ' + en.fam));
+        } else {
+          opt.classList.add('create');
+          opt.appendChild(mk('span', 'grow', '+ Nouvelle famille « ' + en.term + ' »'));
+          // Choix du Type (defaut : depense).
+          const seg = mk('div', 'seg');
+          TYPES.forEach(([val, lbl]) => {
+            const b = mk('button', val === 'depense' ? 'on' : null, lbl);
+            b.onmousedown = ev => { ev.preventDefault(); ev.stopPropagation(); doCreateFam(en.term, val); };
+            seg.appendChild(b);
+          });
+          opt.appendChild(seg);
+        }
+        opt.onmouseenter = () => { hi = i; paintHi(); };
+        opt.onmousedown = ev => { ev.preventDefault(); activate(en); };
+        return opt;
+      }
+
+      function paintHi() {
+        const opts = menu.querySelectorAll('.cls-opt');
+        opts.forEach((o, i) => o.classList.toggle('hi', i === hi));
+        const cur = opts[hi];
+        if (cur) cur.scrollIntoView({ block: 'nearest' });
+      }
+
+      function activate(en) {
+        if (en.type === 'pair') classify(g, en.pair.cat, en.pair.sous, []);
+        else if (en.type === 'csous') doCreateSous(en.fam, en.term);
+        else doCreateFam(en.term, 'depense');
+      }
+      function doCreateSous(fam, term) {
+        const r = ensureSous(fam, term);
+        classify(g, fam, r.sous, r.acts);
+      }
+      function doCreateFam(term, type) {
+        const r = ensureFamille(term, type);
+        classify(g, r.fam, '', r.acts);
+      }
+
+      input.addEventListener('focus', () => { build(input.value); open(); });
+      input.addEventListener('input', () => { build(input.value); open(); });
+      input.addEventListener('keydown', ev => {
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); if (menu.hidden) { build(input.value); open(); } else if (entries.length) { hi = (hi + 1) % entries.length; paintHi(); } }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (entries.length) { hi = (hi - 1 + entries.length) % entries.length; paintHi(); } }
+        else if (ev.key === 'Enter') { ev.preventDefault(); if (menu.hidden) { build(input.value); open(); } else if (entries[hi]) activate(entries[hi]); }
+        else if (ev.key === 'Escape') { close(); }
+      });
+
+      return cb;
+    }
+  }
+
+  // Template -> Element (reprend ctx.el du shell si dispo, sinon fallback local).
+  function el(ctx, html) {
+    if (ctx && typeof ctx.el === 'function') return ctx.el(html);
+    const t = document.createElement('template');
+    t.innerHTML = (html || '').trim();
+    return t.content.firstElementChild;
+  }
+
+  /* ===================================================================== */
+  BUDGET.register('classement', {
+    title: 'Classement',
+    access: 'full',
+    mount(root, ctx) {
+      _ctx = ctx; _root = root;
+      if (ctx.demo) {
+        root.innerHTML = '<div class="wrap"><div class="msg"><b>Classement — apercu.</b><br>' +
+          'Ouvre ce widget dans un document Grist (acces complet) : il regroupe les operations ' +
+          'non categorisees par marchand et propose une recherche intelligente Famille › Sous-categorie ' +
+          'avec creation a la volee.</div></div>';
+        return;
+      }
+      injectCss();
+      if (!_bound) {
+        ctx.store.onChange(render);
+        _bound = true;
+        if (!window.__clsDocBound) {
+          window.__clsDocBound = true;
+          document.addEventListener('mousedown', e => {
+            const inside = e.target && e.target.closest && e.target.closest('.cls-cb');
+            if (_closeOpen && !inside) _closeOpen();
+          });
+        }
+      }
+      render();
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

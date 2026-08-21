@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget perso</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  /* ---- Tokens & thème (identité partagée de la suite) ------------------ */
+  :root{
+    --paper:#f6f7f9; --ink:#171a21; --muted:#6b7280; --line:#e6e9ef;
+    --indigo:#3d5afe; --green:#0f8a5f; --red:#d14343; --warn:#b9742a;
+    --card:#fff; --soft:#eef0f4; --shadow:0 1px 2px rgba(20,22,28,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --paper:#14161b; --ink:#e8eaee; --muted:#9aa1ad; --line:#2a2e37;
+      --card:#1b1e25; --soft:#22262f; --shadow:0 1px 2px rgba(0,0,0,.4); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  button,input,select{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:14px 16px 40px;max-width:1100px;margin:0 auto}
+  /* segments / boutons */
+  .seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:none;border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:.12s}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  /* cartes / hero / barres */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px}
+  /* hero : panneau volontairement TOUJOURS sombre (ne pas utiliser var(--ink) qui
+     bascule en clair en thème sombre et rendrait le texte blanc illisible). */
+  .hero{background:#161a23;border-radius:16px;padding:20px 22px;color:#fff;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end}
+  .hero .rav{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1.05;margin-top:4px}
+  .hero .lab{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa1ad}
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:2px}
+  .fill{position:absolute;left:0;top:0;height:100%;border-radius:5px;transition:width .35s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:12px}
+  /* champs / puces / notes */
+  .inp{border:1px solid var(--indigo);border-radius:8px;padding:6px 9px;font-size:13px;outline:none;background:var(--card);color:var(--ink)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;border-radius:20px;padding:3px 9px}
+  .note{font-size:11px;color:var(--muted)}
+  .msg{max-width:620px;margin:60px auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:14px;line-height:1.6}
+  /* barre de navigation (mode single-page) */
+  .topnav{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:20}
+  .topnav .brand{font-weight:800;letter-spacing:-.01em;margin-right:6px}
+  .topnav .tab{border:none;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}
+  .topnav .tab.on{background:var(--soft);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="root"><div class="msg">Chargement…</div></div>
+
+<!-- ===================================================================== -->
+<!-- CŒUR PARTAGÉ : en dev via <script src>, inliné par build-budget.js.    -->
+<script>
+/* budget-core.js — cœur partagé de la suite Budget perso (Grist).
+   SOURCE UNIQUE de la taxonomie FR, des helpers communs et de l'index d'agrégation.
+   Inliné dans chaque module entre les marqueurs // <budget-core> / // <end-budget-core>
+   par scripts/build-budget.js (mode --check en CI). Expose l'objet global BP. */
+(function (root) {
+  // <budget-core>
+
+  /* ---- Taxonomie FR : motif (regex, toujours /i) -> famille [, exclu] -----
+     Source canonique. Toute évolution se fait ICI puis est ré-inlinée par build. */
+  const TAXO = [
+    [/SALAIRE|REMUNERATION|\bPAYE\b|BULLETIN|TRAITEMENT/i, 'Revenus'],
+    [/POLE EMPLOI|FRANCE TRAVAIL|\bCAF\b|ALLOCATION|CPAM|ASSURANCE MALADIE|RETRAITE|PENSION/i, 'Revenus'],
+    [/CARREFOUR|LECLERC|\bAUCHAN\b|INTERMARCHE|\bLIDL\b|\bALDI\b|MONOPRIX|FRANPRIX|\bCASINO\b|SUPER ?U|MAGASIN U|\bU EXPRESS|PICARD|GRAND FRAIS|NATURALIA|\bBIO\b|PRIMEUR|BOUCHERIE|BOULANGERIE|MARCHE|EPICERIE/i, 'Alimentation'],
+    [/MC ?DO|MCDONALD|BURGER|\bKFC\b|\bRESTO|RESTAURANT|PIZZ|SUSHI|BRASSERIE|\bCAFE\b|\bBAR\b|TABAC|UBER ?EATS|DELIVEROO|JUST EAT|FOODORA/i, 'Restaurants & sorties'],
+    [/\bSNCF\b|\bTER\b|\bTGV\b|\bRATP\b|\bRTM\b|TRANSILIEN|NAVIGO|BLABLA|\bUBER\b|\bBOLT\b|\bFREE ?NOW|TAXI|VELIB/i, 'Transports'],
+    [/TOTAL|\bESSO\b|\bSHELL\b|\bBP\b|AVIA|\bENI\b|STATION|CARBURANT|ESSENCE|PEAGE|VINCI|AUTOROUTE|ESCOTA|\bASF\b|SANEF|APRR|PARKING|STATIONNEMENT/i, 'Transports'],
+    [/\bLOYER\b|SYNDIC|COPRO|FONCIA|NEXITY|SERGIC|SOGIMA|BAILLEUR|\bHLM\b/i, 'Logement'],
+    [/\bEDF\b|ENGIE|TOTALENERGIES|\bGAZ\b|ELECTRICITE|\bEAU\b|VEOLIA|\bSUEZ\b|ENERGIE/i, 'Logement'],
+    [/\bFREE\b|ORANGE|\bSFR\b|BOUYGUES|\bSOSH\b|RED BY|\bB&YOU|INTERNET|TELEPHONIE|MOBILE/i, 'Logement'],
+    [/ASSURANCE HABITAT|\bMAIF\b|\bMACIF\b|MATMUT|GMF|AXA|ALLIANZ|\bMMA\b|GENERALI|LUKO|LEMONADE/i, 'Assurances'],
+    [/PHARMACIE|\bDOCTEUR\b|MEDECIN|MEDICAL|HOPITAL|CLINIQUE|LABORATOIRE|DENTAIRE|DENTISTE|OPTIC|MUTUELLE|KINE|OSTEO|DOCTOLIB/i, 'Santé'],
+    [/AMAZON|\bFNAC\b|DARTY|BOULANGER|\bZARA\b|\bH&M\b|UNIQLO|DECATHLON|\bIKEA\b|LEROY MERLIN|CASTORAMA|WELDOM|BRICO|ZALANDO|VINTED|ASOS|SHEIN|CDISCOUNT|\bACTION\b/i, 'Shopping'],
+    [/COIFF|BARBIER|INSTITUT|BEAUTE|ESTHETIC|\bSPA\b/i, 'Soins'],
+    [/NETFLIX|SPOTIFY|DEEZER|DISNEY|CANAL|\bOCS\b|PRIME VIDEO|CINEMA|\bUGC\b|PATHE|GAUMONT|STEAM|PLAYSTATION|XBOX|NINTENDO|CULTURA|\bFNAC SPECT|BILLETT|CONCERT|MUSEE|THEATRE/i, 'Loisirs'],
+    [/GOOGLE|\bAPPLE\b|MICROSOFT|\bOVH\b|HOSTINGER|GANDI|ADOBE|OPENAI|ANTHROPIC|MISTRAL|GITHUB|NOTION|FIGMA|DROPBOX|ICLOUD|\bAWS\b/i, 'Abonnements & numérique'],
+    [/DGFIP|FINANCES PUBLIQUES|TRESOR PUBLIC|\bIMPOT|TAXE FONCIERE|TAXE HABITATION|\bURSSAF\b|PRELEVEMENT A LA SOURCE/i, 'Impôts & taxes'],
+    [/FRAIS BANCAIRE|COTISATION|COMMISSION|\bAGIOS\b|FRAIS DE TENUE|FRAIS ACHAT ETRANGER|FRAIS RETR/i, 'Frais bancaires'],
+    [/RETRAIT|\bDAB\b|DISTRIBUTEUR|\bATM\b|RET ?DAB/i, "Retrait d'espèces"],
+    [/LIVRET|\bLDDS\b|\bLEP\b|\bPEL\b|\bCEL\b|EPARGNE|ASSURANCE VIE|\bPEA\b|\bPER\b|TRADE REPUBLIC|BOURSORAMA VIE|PARTS SOCIALES/i, 'Épargne', true],
+    [/VIREMENT INTERNE|VIR INTERNE|VERS COMPTE|VERS LIVRET|VERS EPARGNE|VIREMENT DE COMPTE/i, 'Virement interne', true],
+    [/REMBOURSEMENT|\bREMB\b|\bRBT\b/i, 'Remboursement', true]
+  ];
+
+  /* ---- Catégories de départ : [nom, type, couleur] ----------------------- */
+  const CAT_SEED = [
+    ['Revenus', 'revenu', '#0f8a5f'], ['Alimentation', 'depense', '#3d5afe'], ['Restaurants & sorties', 'depense', '#7c4dff'],
+    ['Transports', 'depense', '#00a8a8'], ['Logement', 'depense', '#d14343'], ['Assurances', 'depense', '#b9742a'],
+    ['Santé', 'depense', '#e85d75'], ['Shopping', 'depense', '#5b6470'], ['Soins', 'depense', '#c77b9a'],
+    ['Loisirs', 'depense', '#f0883e'], ['Abonnements & numérique', 'depense', '#6b7280'], ['Impôts & taxes', 'depense', '#8a5a00'],
+    ['Frais bancaires', 'depense', '#a0524d'], ["Retrait d'espèces", 'depense', '#9b8a5f'], ['Épargne', 'epargne', '#2f8f5b'],
+    ['Virement interne', 'exclu', '#8a8f99'], ['Remboursement', 'exclu', '#8a8f99'], ['Famille', 'depense', '#c0508a'],
+    ['Loyer (vie commune)', 'depense', '#d14343'], ['À catégoriser', 'depense', '#b9742a']
+  ];
+
+  /* ---- Sous-catégories de départ : famille -> [sous-catégories] ----------- */
+  const SOUS_SEED = {
+    'Alimentation': ['Supermarché', 'Boulangerie', 'Primeur / marché', 'Boucherie', 'Épicerie', 'Bio'],
+    'Restaurants & sorties': ['Restaurant', 'Fast-food', 'Bar', 'Café', 'Livraison'],
+    'Transports': ['Carburant', 'Train', 'Transports en commun', 'Péage / parking', 'VTC / taxi', 'Vélo', 'Avion'],
+    'Logement': ['Loyer', 'Crédit immobilier', 'Électricité / gaz', 'Eau', 'Internet / téléphone', 'Charges / copropriété', 'Assurance habitation', 'Entretien'],
+    'Santé': ['Pharmacie', 'Médecin', 'Mutuelle', 'Dentiste', 'Optique', 'Hôpital'],
+    'Shopping': ['Vêtements', 'High-tech', 'Maison / déco', 'Bricolage', 'Sport', 'Beauté', 'Divers'],
+    'Soins': ['Coiffeur', 'Institut', 'Spa'],
+    'Loisirs': ['Streaming', 'Cinéma / spectacle', 'Jeux vidéo', 'Sport / loisir', 'Voyage', 'Livres'],
+    'Abonnements & numérique': ['Logiciels / SaaS', 'Cloud / hébergement', 'IA', 'Téléphonie'],
+    'Impôts & taxes': ['Impôt sur le revenu', 'Taxe foncière', "Taxe d'habitation", 'Prélèvement à la source', 'URSSAF'],
+    'Revenus': ['Salaire', 'Prime', 'Aides / allocations', 'Intérêts', 'Remboursement', 'Autre'],
+    'Assurances': ['Habitation', 'Auto / moto', 'Santé', 'Prévoyance'],
+    'Frais bancaires': ['Cotisation', 'Commission', 'Agios', 'Frais étranger'],
+    "Retrait d'espèces": ['Retrait DAB'],
+    'Épargne': ['Livret', 'Assurance-vie', 'PEA / bourse', 'Autre'],
+    'Famille': ['Don', 'Aide', 'Cadeau', 'Prêt', 'Remboursement'],
+    'Loyer (vie commune)': ['Loyer mensuel'],
+    'Virement interne': ['Vers épargne', 'Entre comptes']
+  };
+
+  /* ---- Helpers texte / format ------------------------------------------- */
+  // norm : normalisation "métier" (MAJUSCULES sans accents) — matching taxonomie/marchands.
+  const norm = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  // normHeader : normalisation des EN-TÊTES CSV (minuscules) — usage import uniquement.
+  // Nommée distinctement pour ne PAS entrer en collision avec `norm` (contrat opposé).
+  const normHeader = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const eur = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €';
+  const eur0 = v => eur(v, 0);
+
+  /* ---- Dates / périodes ------------------------------------------------- */
+  const gristToDate = ts => ts ? new Date(ts * 1000) : null;
+  const dateToGrist = d => d ? Math.floor(d.getTime() / 1000) : null;
+  // clé année-mois 'YYYY-MM' (heure locale, cohérente entre tous les modules).
+  const ym = d => { const x = (d instanceof Date) ? d : new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+  const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  // libellé lisible d'un bucket 'YYYY-MM' -> "juin 2026".
+  const moisLabel = key => { const [y, m] = String(key).split('-').map(Number); return (MOIS[m - 1] || '?').replace('.', '') + ' ' + y; };
+
+  /* ---- Parsing relevés (import) ----------------------------------------- */
+  function parseDate(v) {
+    v = (v || '').trim(); if (!v) return null;
+    let m = v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]) / 1000;
+    m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) { let y = +m[3]; if (y < 100) y += 2000; return Date.UTC(y, +m[2] - 1, +m[1]) / 1000; }
+    const t = Date.parse(v); return isNaN(t) ? null : Math.floor(t / 1000);
+  }
+  // Montant SIGNÉ (négatif = débit). Gère décimale FR, signe en suffixe ("12,50-")
+  // et parenthèses comptables ("(12,50)") = débit.
+  function parseAmount(v) {
+    if (v == null) return null; v = v.toString().trim(); if (!v) return null;
+    let s = v.replace(/\s| |€|EUR/gi, '');
+    let neg = false;
+    if (/-$/.test(s)) { neg = true; s = s.slice(0, -1); }
+    else if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+    if (s.indexOf(',') > -1 && s.indexOf('.') > -1) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    s = s.replace(/[^0-9.\-+]/g, ''); const n = parseFloat(s); if (isNaN(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  /* ---- Clé marchand (regroupement du classement) ------------------------ */
+  function merchantKey(lib) {
+    let s = norm(lib);
+    s = s.replace(/\bPRLV SEPA\b|\bVIR INST\b|\bVIR\b|\bPRLV\b|\bPAIEMENT\b|\bACHAT\b|\bFACTURE\b|\bSEPA\b|\bCB\b|\bCARTE\b/g, ' ');
+    s = s.replace(/\*+\d+/g, ' ').replace(/\b\d{2}\/\d{2}(\/\d{2,4})?\b/g, ' ').replace(/\b\d{6,}\b/g, ' ');
+    s = s.replace(/\d+[.,]\d{2}\s?EUR/g, ' ').replace(/\bEUR\b/g, ' ');
+    s = s.replace(/\b\d{2,5}[A-Z][A-Z]{2,}\b/g, ' ');
+    s = s.replace(/[^A-Z0-9& ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const toks = s.split(' ').filter(t => t.length > 1);
+    return toks.slice(0, 2).join(' ') || s || norm(lib).slice(0, 12);
+  }
+
+  /* ---- Typage : le contrat partagé -------------------------------------- */
+  // cats : map { [categorie]: { type } }. Fallback 'depense'.
+  const makeTypeOf = cats => cat => (cats[cat] && cats[cat].type) || 'depense';
+
+  /* ---- Lentille perso : exclure le sous-ensemble Locatif -----------------
+     Convention : catégories préfixées "Locatif -" = lentille immo/LMNP, ignorées
+     par le budget perso (RAV, enveloppes) SANS toucher à leur Type. */
+  const isLocatif = cat => /^locatif\b/i.test((cat || '').toString().trim().normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+  /* ---- Catégorisation par taxonomie ------------------------------------- */
+  // Renvoie la 1re famille dont le motif matche le libellé, sinon null.
+  function guessCategory(lib) {
+    const L = norm(lib);
+    for (const [re, cat] of TAXO) if (re.test(L)) return cat;
+    return null;
+  }
+
+  /* ---- Statistiques ----------------------------------------------------- */
+  function median(a) { const s = [...a].sort((x, y) => x - y); const n = s.length; if (!n) return 0; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; }
+  const med10 = a => Math.round(median(a) / 10) * 10;
+
+  /* ---- Index d'agrégation (LE remplaçant des re-scans spentCat/surplus) --
+     Une seule passe O(n) sur les opérations -> somme SIGNÉE par catégorie et par
+     bucket, plus la liste ordonnée des buckets. Tout le reste en dérive en O(1).
+
+     rows     : [{ cat, montant, exclu, ... }] déjà normalisées (montant signé).
+     bucketOf : (row) -> clé de bucket (ex. r.ym, ou cycle de paie). Injectée par
+                le module car le découpage (calendaire vs cycle) lui appartient.
+
+     Renvoie { net(cat,bk), spent(cat,bk), buckets, cats, forEachCatBucket } :
+       net   = Σ montant signé (revenu>0, dépense<0) — non plafonné.
+       spent = Math.max(0, -net) = dépense nette plafonnée PAR CATÉGORIE
+               (refunds déduits, jamais négatif). C'est l'invariant du contrat :
+               on plafonne toujours par catégorie, jamais une somme globale. */
+  function buildIndex(rows, bucketOf) {
+    const idx = Object.create(null);   // cat -> (bucket -> somme signée)
+    const bset = new Set();
+    for (const r of rows) {
+      if (r.exclu) continue;
+      const bk = bucketOf(r); if (bk == null) continue;
+      bset.add(bk);
+      const m = idx[r.cat] || (idx[r.cat] = Object.create(null));
+      m[bk] = (m[bk] || 0) + r.montant;
+    }
+    const buckets = [...bset].sort();
+    const net = (cat, bk) => (idx[cat] && idx[cat][bk]) || 0;
+    const spent = (cat, bk) => Math.max(0, -net(cat, bk));
+    return { idx, buckets, cats: Object.keys(idx), net, spent };
+  }
+
+  /* ---- Nature d'une catégorie (fixe / courante / ponctuelle) ------------
+     Classée depuis les stats de dépense calculées sur le PRÉVU (hors imprévu) :
+       partFixe   = somme des charges récurrentes détectées (detectRecurrents)
+       medMensuel = médiane des dépenses mensuelles (>0)
+       present    = nb de mois avec dépense sur la fenêtre
+       window     = taille de la fenêtre (mois)
+       cv         = coefficient de variation (écart-type / moyenne) des mois
+     - 'fixe'       : dominée par une charge récurrente (loyer, abo, assurance) —
+                      couverture >= 0.7 et présente presque tous les mois.
+     - 'ponctuelle' : irrégulière ou à gros pics (vacances, santé) — présente < moitié
+                      des mois, ou forte variabilité.
+     - 'courante'   : récurrente mais montant qui bouge (alimentation, transport). */
+  function natureFrom(stats) {
+    const { partFixe = 0, medMensuel = 0, present = 0, window = 12, cv = 0 } = stats || {};
+    const couverture = partFixe / Math.max(medMensuel, 1);
+    if (couverture >= 0.7 && present >= 0.7 * window) return 'fixe';
+    if (present < 0.5 * window || cv > 0.6) return 'ponctuelle';
+    return 'courante';
+  }
+  // Mode d'enveloppe par défaut déduit de la nature (surchargé par Budget_mode si défini).
+  const modeForNature = n => n === 'fixe' ? 'fixe' : n === 'ponctuelle' ? 'flottant' : 'auto';
+  // Libellé lisible de la nature auto (3 classes détectées depuis la donnée).
+  const NATURE_LABEL = { fixe: 'Engagement fixe', courante: 'Dépense courante', ponctuelle: 'Ponctuelle / provisionnée' };
+
+  /* ---- Familles de budget (modèle utilisateur, 4 classes) ---------------
+     Portées par Categories.Nature (piloté par l'utilisateur). L'auto (3 classes)
+     ne sert que de suggestion quand Nature est vide. 'arbitrable' n'est jamais
+     déduit automatiquement (c'est un jugement de valeur : subi vs choisi). */
+  const FAMILLE_LABEL = { fixe: 'Fixe obligatoire', variable: 'Obligatoire variable', arbitrable: 'Arbitrable', ponctuel: 'Ponctuel' };
+  const FAMILLE_ORDER = ['fixe', 'variable', 'arbitrable', 'ponctuel'];
+  // Couleurs de famille (barre d'allocation, pastilles de section/carte).
+  const FAMILLE_COLOR = { fixe: '#3d5afe', variable: '#0f8a5f', arbitrable: '#b9742a', ponctuel: '#7c4dff' };
+  // Famille effective : Nature explicite sinon repli sur l'auto (fixe→fixe, courante→variable, ponctuelle→ponctuel).
+  function familleOf(nature, autoNature) {
+    if (nature && FAMILLE_LABEL[nature]) return nature;
+    return autoNature === 'courante' ? 'variable' : autoNature === 'ponctuelle' ? 'ponctuel' : 'fixe';
+  }
+
+  /* ---- Période d'activité d'une catégorie (engagements datés) -----------
+     Un engagement fixe (crédit conso, moto…) n'est actif que dans sa fenêtre
+     Actif_debut..Actif_fin (bornes 'YYYY-MM' incluses, comparaison lexicale ;
+     bornes vides = pas de limite). Un crédit soldé disparaît des mois suivants. */
+  function estActif(debut, fin, bk) {
+    if (!bk) return true;
+    if (debut && bk < debut) return false;
+    if (fin && bk > fin) return false;
+    return true;
+  }
+  // Seuil au-delà duquel une ligne est un imprévu (choc) dans sa catégorie :
+  // le plus grand entre la dépense mensuelle médiane et 3x la ligne médiane.
+  function outlierThreshold(lineAmounts, medMensuel) {
+    const med = median((lineAmounts || []).map(Math.abs));
+    return Math.max(medMensuel || 0, 3 * med);
+  }
+
+  /* ---- Détection des récurrents (part fixe auto du mode Flottant) ------- */
+  function detectRecurrents(txns) {
+    const byKey = {};
+    for (const t of txns) { (byKey[t.key] = byKey[t.key] || []).push(t); }
+    const recur = [];
+    for (const k in byKey) {
+      const g = byKey[k];
+      const months = new Set(g.map(t => t.ym));
+      if (months.size < 3) continue;
+      const amts = g.map(t => Math.abs(t.amount));
+      const mean = amts.reduce((a, b) => a + b, 0) / amts.length;
+      if (mean <= 0) continue;
+      const sd = Math.sqrt(amts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / amts.length);
+      if (sd / mean > 0.35) continue;
+      recur.push({ key: k, label: g[0].label || k, amount: median(amts), months: months.size });
+    }
+    recur.sort((a, b) => b.amount - a.amount);
+    return { items: recur, sum: recur.reduce((a, r) => a + r.amount, 0) };
+  }
+
+  /* ---- Réserve dérivée (mode Flottant) — jamais stockée ----------------- */
+  function deriveReserve(spendsByMonth, partFixe, provision, windowYM) {
+    let r = 0;
+    for (const m of windowYM) {
+      const spent = spendsByMonth[m] || 0;
+      const variable = Math.max(0, spent - partFixe);
+      r = Math.max(0, r + provision - variable);
+    }
+    return r;
+  }
+
+  // <end-budget-core>
+  root.BP = {
+    TAXO, CAT_SEED, SOUS_SEED,
+    norm, normHeader, eur, eur0,
+    gristToDate, dateToGrist, ym, MOIS, moisLabel,
+    parseDate, parseAmount, merchantKey,
+    makeTypeOf, isLocatif, guessCategory,
+    median, med10, buildIndex, detectRecurrents, deriveReserve,
+    natureFrom, modeForNature, NATURE_LABEL, outlierThreshold,
+    FAMILLE_LABEL, FAMILLE_ORDER, FAMILLE_COLOR, familleOf, estActif
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<script>
+/* =======================================================================
+   SHELL — contrat de module, couche données (Store), routeur + nav.
+   Un module s'enregistre via BUDGET.register(id, def) où :
+     def = {
+       title:  string,                       // libellé nav
+       access: 'full' | 'read table' | 'none' (défaut 'full'),
+       mount(root, ctx)                       // rend le module dans `root`
+     }
+   ctx = {
+     BP,               // cœur (window.BP)
+     grist,            // API Grist (null en démo)
+     demo,             // bool
+     store,            // couche données partagée (cf. Store)
+     el(html),         // template -> Element
+     navigate(id),     // bascule de module (single-page)
+   }
+   Store (données partagées, chargées une fois) :
+     store.rows       [{ rowId, date, ym, day, lib, montant, cat, sous, exclu }]
+     store.catRows    [{ rowId, cat, type, color, budget, mode, lisser, prov }]
+     store.catMap     { [cat]: catRow }
+     store.typeOf(c)  -> 'revenu'|'depense'|'epargne'|'exclu'
+     store.regles     [{ rowId, motif, cat, sous, prio }]
+     store.sousMap    { [famille]: [sous...] }
+     store.months     ['YYYY-MM', ...] triés
+     store.hasProvision  bool (colonne Categories.Provision présente)
+     await store.load()             (re)charge tout
+     await store.apply(actions)     applyUserActions puis reload + notify
+     store.onChange(cb)             s'abonne aux rechargements
+   ======================================================================= */
+window.BUDGET = window.BUDGET || { modules: {} };
+BUDGET.register = (id, def) => { BUDGET.modules[id] = def; };
+
+(function () {
+  const HAS_GRIST = typeof grist !== 'undefined';
+  const BP = window.BP;
+  const el = html => { const t = document.createElement('template'); t.innerHTML = (html || '').trim(); return t.content.firstElementChild; };
+
+  /* ---- Store : couche données partagée -------------------------------- */
+  const col = (t, n) => (t && t[n]) || [];
+  const Store = {
+    rows: [], catRows: [], catMap: {}, regles: [], sousMap: {}, months: [], hasProvision: false,
+    _subs: [],
+    typeOf(c) { return (this.catMap[c] && this.catMap[c].type) || 'depense'; },
+    onChange(cb) { this._subs.push(cb); },
+    _notify() { this._subs.forEach(cb => { try { cb(); } catch (e) { console.error(e); } }); },
+    async load() {
+      if (!HAS_GRIST) return;
+      const want = ['Transactions', 'Categories', 'Regles', 'Sous_categories'];
+      const got = {};
+      await Promise.all(want.map(async n => { try { got[n] = await grist.docApi.fetchTable(n); } catch (e) { got[n] = null; } }));
+      const cats = got.Categories || {};
+      this.catRows = (cats.id || []).map((rowId, i) => ({
+        rowId, cat: col(cats, 'Categorie')[i],
+        type: (col(cats, 'Type')[i] || 'depense'), color: col(cats, 'Couleur')[i] || '#5b6470',
+        budget: +(col(cats, 'Budget_mensuel')[i] || 0), mode: col(cats, 'Budget_mode')[i] || '',
+        lisser: !!col(cats, 'Lisser')[i], prov: +(col(cats, 'Provision')[i] || 0),
+        nature: col(cats, 'Nature')[i] || '',
+        actifDebut: col(cats, 'Actif_debut')[i] || '', actifFin: col(cats, 'Actif_fin')[i] || ''
+      })).filter(c => c.cat);
+      this.catMap = {}; this.catRows.forEach(c => this.catMap[c.cat] = c);
+      this.hasProvision = Object.prototype.hasOwnProperty.call(cats, 'Provision');
+
+      const tx = got.Transactions || {};
+      this.rows = (tx.id || []).map((rowId, i) => {
+        const date = col(tx, 'Date')[i]; const d = BP.gristToDate(date);
+        return {
+          rowId, date, ym: d ? BP.ym(d) : null, day: d ? d.getDate() : null,
+          lib: col(tx, 'Libelle')[i] || '', montant: +(col(tx, 'Montant')[i] || 0),
+          cat: col(tx, 'Categorie')[i] || 'À catégoriser', sous: col(tx, 'Sous_categorie')[i] || '',
+          exclu: !!col(tx, 'Exclu')[i]
+        };
+      }).filter(r => r.date != null && isFinite(r.montant));
+      this.months = [...new Set(this.rows.map(r => r.ym).filter(Boolean))].sort();
+
+      const reg = got.Regles || {};
+      this.regles = (reg.id || []).map((rowId, i) => ({
+        rowId, motif: col(reg, 'Motif')[i] || '', cat: col(reg, 'Categorie')[i] || '',
+        sous: col(reg, 'Sous_categorie')[i] || '', prio: +(col(reg, 'Priorite')[i] || 0)
+      })).filter(r => r.motif).sort((a, b) => b.prio - a.prio);
+
+      const sc = got.Sous_categories || {}; this.sousMap = {};
+      (sc.id || []).forEach((_, i) => {
+        const f = col(sc, 'Categorie')[i], s = col(sc, 'Sous_categorie')[i];
+        if (f && s) (this.sousMap[f] = this.sousMap[f] || []).push(s);
+      });
+    },
+    async apply(actions) {
+      if (!HAS_GRIST || !actions || !actions.length) return;
+      try { await grist.docApi.applyUserActions(actions); }
+      catch (e) { alert('Écriture refusée : ' + (e && e.message || e)); }
+      await this.load(); this._notify();
+    }
+  };
+
+  /* ---- Routeur + nav --------------------------------------------------- */
+  // Ordre canonique de la nav (tableau de bord d'abord). Les ids hors liste suivent.
+  const ORDER = ['suivi', 'classement', 'import'];
+  const orderedIds = () => Object.keys(BUDGET.modules).slice()
+    .sort((a, b) => (ORDER.indexOf(a) < 0 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(b) < 0 ? 99 : ORDER.indexOf(b)));
+  // Vue pinnée par le build (per-module) OU ?view= OU 1re vue de l'ordre.
+  const PIN = window.__BUDGET_VIEW__ || null;
+  function currentView() {
+    if (PIN) return PIN;
+    const q = new URLSearchParams(location.search).get('view');
+    if (q && BUDGET.modules[q]) return q;
+    return orderedIds()[0];
+  }
+  let VIEW = null;
+  const ctxBase = { BP, grist: HAS_GRIST ? grist : null, demo: !HAS_GRIST, store: Store, el, navigate };
+
+  function renderNav() {
+    const nav = document.getElementById('nav');
+    const ids = orderedIds();
+    if (PIN || ids.length < 2) { nav.innerHTML = ''; return; }   // pas de nav si pinné ou module unique
+    nav.innerHTML = '';
+    const bar = el('<div class="topnav"><span class="brand">Budget</span></div>');
+    ids.forEach(id => {
+      const b = el('<button class="tab">' + (BUDGET.modules[id].title || id) + '</button>');
+      if (id === VIEW) b.classList.add('on');
+      b.onclick = () => navigate(id);
+      bar.appendChild(b);
+    });
+    nav.appendChild(bar);
+  }
+
+  function mountView() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    const def = BUDGET.modules[VIEW];
+    if (!def) { root.innerHTML = '<div class="msg">Module introuvable : ' + VIEW + '</div>'; return; }
+    if (HAS_GRIST) { try { grist.ready({ requiredAccess: def.access || 'full' }); } catch (e) {} }
+    def.mount(root, Object.assign({}, ctxBase, { view: VIEW }));
+  }
+
+  function navigate(id) {
+    if (!BUDGET.modules[id]) return;
+    VIEW = id;
+    if (!PIN) { const u = new URL(location.href); u.searchParams.set('view', id); history.replaceState(null, '', u); }
+    renderNav(); mountView();
+  }
+
+  /* ---- Boot ------------------------------------------------------------ */
+  async function boot() {
+    if (!Object.keys(BUDGET.modules).length) {
+      document.getElementById('root').innerHTML = '<div class="msg">Aucun module chargé.</div>'; return;
+    }
+    VIEW = currentView();
+    if (HAS_GRIST) { try { await Store.load(); } catch (e) {} }
+    renderNav(); mountView();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+
+<!-- ===================================================================== -->
+<!-- MODULES : en dev via <script src>, inlinés/filtrés par build-budget.js. -->
+<script>window.__BUDGET_VIEW__="import";</script>
+<script>
+/* modules/import.js — Import de relevés CSV multi-banques vers Transactions.
+   Module de la suite Budget (contrat BUDGET.register du shell app.html).
+   Le parsing, la taxonomie et les helpers viennent du coeur partage (window.BP) :
+   on NE reimplemente NI parseDate/parseAmount, NI la categorisation, NI la taxonomie.
+   - En-tetes CSV : BP.normHeader (minuscules).
+   - Logique metier (marchand, categorisation, dedup) : BP.norm (MAJUSCULES).
+   Le fichier est inline dans un <script> par build-budget.js. */
+(function () {
+  'use strict';
+
+  /* ---- Schema bootstrappe (widget maitre d'un document neuf) ------------ */
+  const SCHEMA = {
+    Transactions: [
+      { id: 'Date', type: 'Date' }, { id: 'Libelle', type: 'Text' }, { id: 'Montant', type: 'Numeric' },
+      { id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' }, { id: 'Compte', type: 'Text' },
+      { id: 'Banque', type: 'Text' }, { id: 'Reference', type: 'Text' }, { id: 'Exclu', type: 'Bool' }, { id: 'Notes', type: 'Text' }
+    ],
+    Regles: [
+      { id: 'Motif', type: 'Text' }, { id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' },
+      { id: 'Exclu', type: 'Bool' }, { id: 'Priorite', type: 'Int' }
+    ],
+    Categories: [{ id: 'Categorie', type: 'Text' }, { id: 'Type', type: 'Text' }, { id: 'Couleur', type: 'Text' }],
+    Sous_categories: [{ id: 'Categorie', type: 'Text' }, { id: 'Sous_categorie', type: 'Text' }]
+  };
+
+  /* ---- Presets de formats FR : signature d'en-tetes -> roles de colonnes -- */
+  const PRESETS = [
+    {
+      bank: 'LCL / CIC / Credit Mutuel', sep: ';',
+      sig: ['date de comptabilisation', 'libelle simplifie', 'debit', 'credit'],
+      map: { date: 'Date de comptabilisation', label: 'Libelle simplifie', label2: 'Informations complementaires', debit: 'Debit', credit: 'Credit', ref: 'Reference' }
+    },
+    {
+      bank: 'Boursorama', sep: ';',
+      sig: ['dateop', 'label', 'amount'],
+      map: { date: 'dateOp', label: 'label', amount: 'amount', cat: 'category' }
+    },
+    {
+      bank: 'Credit Agricole', sep: ';',
+      sig: ['date', 'libelle', 'debit euros', 'credit euros'],
+      map: { date: 'Date', label: 'Libelle', debit: 'Debit euros', credit: 'Credit euros' }
+    },
+    {
+      bank: 'Societe Generale', sep: ';',
+      sig: ['date de l', 'libelle', 'montant'],
+      map: { date: "Date de l'operation", label: 'Libelle', amount: 'Montant de l’operation' }
+    },
+    {
+      bank: 'BNP Paribas', sep: ';',
+      sig: ['date operation', 'libelle', 'montant'],
+      map: { date: 'Date operation', label: 'Libelle operation', amount: 'Montant' }
+    },
+    {
+      bank: 'Caisse d’Epargne / Banque Populaire', sep: ';',
+      sig: ['date', 'libelle', 'debit', 'credit'],
+      map: { date: 'Date', label: 'Libelle', debit: 'Debit', credit: 'Credit' }
+    },
+    {
+      bank: 'Revolut', sep: ',',
+      sig: ['type', 'started date', 'description', 'amount'],
+      map: { date: 'Started Date', label: 'Description', amount: 'Amount' }
+    },
+    {
+      bank: 'N26', sep: ',',
+      sig: ['date', 'payee', 'amount'],
+      map: { date: 'Date', label: 'Payee', amount: 'Amount (EUR)' }
+    }
+  ];
+
+  /* ---- CSS specifique au module (tokens du shell, clair/sombre herites) --- */
+  function injectCss() {
+    if (document.getElementById('imp-css')) return;
+    const st = document.createElement('style');
+    st.id = 'imp-css';
+    st.textContent = [
+      '.imp-lede{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:640px}',
+      '.imp-step{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:13px}',
+      '.imp-step .n{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:11px;font-weight:700}',
+      '.imp-drop{border:1.5px dashed var(--line);border-radius:10px;padding:24px;text-align:center;transition:.15s;cursor:pointer;background:var(--soft)}',
+      '.imp-drop:hover,.imp-drop.over{border-color:var(--indigo)}',
+      '.imp-drop strong{color:var(--indigo)}',
+      '.imp-drop p{margin:6px 0 0;color:var(--muted);font-size:12.5px}',
+      '.imp-or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;margin:14px 0;text-transform:uppercase;letter-spacing:.08em}',
+      '.imp-or::before,.imp-or::after{content:"";flex:1;height:1px;background:var(--line)}',
+      '.imp-ta{width:100%;min-height:82px;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--line);border-radius:9px;padding:10px;resize:vertical;color:var(--ink);background:var(--card)}',
+      '.imp-ta:focus{outline:none;border-color:var(--indigo)}',
+      '.imp-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:20px;font-size:12.5px;font-weight:600;background:var(--soft);color:var(--indigo)}',
+      '.imp-chip.guess{color:var(--warn)}',
+      '.imp-chip .dot{width:7px;height:7px;border-radius:50%;background:currentColor}',
+      '.imp-map{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;margin-bottom:9px}',
+      '.imp-map label{font-size:12.5px;color:var(--muted)}',
+      '.imp-sel{width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}',
+      '.imp-sel:focus{outline:none;border-color:var(--indigo)}',
+      '.imp-stats{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:14px}',
+      '.imp-stat .v{font-family:ui-monospace,Menlo,monospace;font-size:21px;font-weight:600;letter-spacing:-.02em}',
+      '.imp-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}',
+      '.imp-stat.dup .v{color:var(--warn)}',
+      '.imp-scroll{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:9px}',
+      '.imp-ledger{width:100%;border-collapse:collapse;font-size:12.5px}',
+      '.imp-ledger th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}',
+      '.imp-ledger td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}',
+      '.imp-ledger tr.dup{opacity:.45}',
+      '.imp-ledger .date{font-family:ui-monospace,Menlo,monospace;color:var(--muted);white-space:nowrap}',
+      '.imp-ledger .lib{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.imp-ledger .amt{font-family:ui-monospace,Menlo,monospace;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}',
+      '.imp-ledger .amt.pos{color:var(--green)} .imp-ledger .amt.neg{color:var(--red)}',
+      '.imp-ledger .imp-sel.cat{font-size:11.5px;padding:3px 6px;max-width:180px}',
+      '.imp-badge{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:5px;background:var(--soft);color:var(--muted)}',
+      '.imp-badge.new{color:var(--green)}',
+      '.imp-badge.exq{color:var(--red)}',
+      '.imp-actions{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}',
+      '.imp-btn{font-family:inherit;font-size:13.5px;font-weight:600;border:none;border-radius:9px;padding:10px 18px;cursor:pointer;transition:.12s}',
+      '.imp-btn.primary{background:var(--indigo);color:#fff}',
+      '.imp-btn.primary:hover{filter:brightness(1.07)}',
+      '.imp-btn.primary:disabled{background:var(--line);color:var(--muted);cursor:default;filter:none}',
+      '.imp-btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}',
+      '.imp-btn.ghost:hover{border-color:var(--ink);color:var(--ink)}',
+      '.imp-setup{background:var(--soft);border:1px solid var(--warn);border-radius:9px;padding:13px 15px;font-size:12.5px;color:var(--ink);margin-bottom:16px}',
+      '.imp-setup .imp-btn{margin-top:9px;background:var(--warn);color:#fff;padding:7px 14px;font-size:12.5px}',
+      '.imp-hidden{display:none}',
+      '.imp-msg{font-size:12.5px;margin-top:2px}',
+      '.imp-msg.ok{color:var(--green)} .imp-msg.err{color:var(--red)}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
+  /* ---- Robustesse CSV : separateur detecte, guillemets, BOM ------------- */
+  function detectSep(line) {
+    const cand = [[';', 0], ['\t', 0], [',', 0]];
+    cand.forEach(c => { c[1] = line.split(c[0]).length; });
+    cand.sort((a, b) => b[1] - a[1]);
+    return cand[0][1] > 1 ? cand[0][0] : ';';
+  }
+
+  function parseCSV(text) {
+    text = (text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+    const lines = text.split('\n').filter(l => l.trim().length);
+    if (!lines.length) return { head: [], rows: [], sep: ';' };
+    const sep = detectSep(lines[0]);
+    const split = line => {
+      const out = []; let cur = '', q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (q) {
+          if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+          else cur += ch;
+        } else {
+          if (ch === '"') q = true;
+          else if (ch === sep) { out.push(cur); cur = ''; }
+          else cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(c => c.trim());
+    };
+    const head = split(lines[0]);
+    const rows = lines.slice(1).map(split).filter(r => r.length >= Math.max(2, head.length - 2));
+    return { head, rows, sep };
+  }
+
+  /* ---- Detection format : preset par signature, sinon mapping devine ---- */
+  function detect(head, sampleRows) {
+    const H = head.map(h => BP.normHeader(h));
+    for (const p of PRESETS) {
+      if (p.sig.every(s => H.some(h => h.includes(s)))) {
+        const map = {};
+        for (const role in p.map) {
+          const want = BP.normHeader(p.map[role]);
+          const idx = H.findIndex(h => h === want || h.includes(want) || want.includes(h));
+          if (idx > -1) map[role] = idx;
+        }
+        return { bank: p.bank, map, guess: false };
+      }
+    }
+    // heuristique generique
+    const map = {};
+    const score = re => head.findIndex(h => re.test(BP.normHeader(h)));
+    let i;
+    if ((i = score(/date.*compta|date.*op|^date$|dateop|date.*valeur/)) > -1) map.date = i;
+    else if ((i = score(/date/)) > -1) map.date = i;
+    if ((i = score(/debit/)) > -1) map.debit = i;
+    if ((i = score(/credit/)) > -1) map.credit = i;
+    if (map.debit == null && map.credit == null) { if ((i = score(/montant|amount/)) > -1) map.amount = i; }
+    if ((i = score(/libell|label|description|payee|nature|motif|detail/)) > -1) map.label = i;
+    if ((i = score(/reference|^ref/)) > -1) map.ref = i;
+    if ((i = score(/categor/)) > -1) map.cat = i;
+    const sample = sampleRows.slice(0, 8);
+    const enough = Math.min(3, sample.length);
+    if (map.date == null) {
+      for (let c = 0; c < head.length; c++) {
+        if (sample.filter(r => BP.parseDate(r[c])).length >= enough) { map.date = c; break; }
+      }
+    }
+    if (map.amount == null && map.debit == null) {
+      for (let c = 0; c < head.length; c++) {
+        if (c === map.date) continue;
+        const ok = sample.filter(r => BP.parseAmount(r[c]) != null && /[.,]\d|^-?\d+$/.test((r[c] || '').replace(/\s/g, ''))).length;
+        if (ok >= enough) { map.amount = c; break; }
+      }
+    }
+    if (map.label == null) {
+      let best = -1, bl = 0;
+      for (let c = 0; c < head.length; c++) {
+        if (c === map.date) continue;
+        const avg = sample.reduce((a, r) => a + (r[c] || '').length, 0) / Math.max(1, sample.length);
+        if (avg > bl) { bl = avg; best = c; }
+      }
+      if (best > -1) map.label = best;
+    }
+    return { bank: 'Format inconnu', map, guess: true };
+  }
+
+  /* ---- Enregistrement du module ----------------------------------------- */
+  BUDGET.register('import', {
+    title: 'Import',
+    access: 'full',
+    mount(root, ctx) {
+      const BP = ctx.BP, store = ctx.store, el = ctx.el;
+
+      // Mode demo : le module ne fonctionne qu'attache a un document Grist.
+      if (ctx.demo) {
+        root.appendChild(el(
+          '<div class="msg">' +
+          '<strong>Import de releves bancaires.</strong><br>' +
+          'Ce module s’execute a l’interieur d’un document Grist : ajoute-le comme widget ' +
+          'personnalise (acces <em>Full</em>), puis colle ou depose le CSV de ta banque. ' +
+          'Il detecte le format, categorise les operations et les ecrit dans la table ' +
+          '<code>Transactions</code> (qu’il cree au besoin).' +
+          '</div>'
+        ));
+        return;
+      }
+
+      injectCss();
+
+      /* --- etat local (reconstruit a chaque montage) --- */
+      let HEAD = [], ROWS = [], MAP = {}, BANK = '', PARSED = [];
+
+      /* --- squelette DOM --- */
+      const wrap = el('<div class="wrap"></div>');
+      wrap.innerHTML =
+        '<h1 style="font-size:19px;font-weight:680;letter-spacing:-.01em;margin:0 0 3px">Importateur de releves</h1>' +
+        '<p class="imp-lede">Depose le releve CSV de ta banque. Le format est detecte, les colonnes mappees, ' +
+        'les operations categorisees — tu valides, et tout part dans ta table <code>Transactions</code>.</p>' +
+
+        '<div id="imp-setup" class="imp-setup imp-hidden">' +
+        'Ce document n’a pas encore la structure du template. Je peux creer les tables ' +
+        '<strong>Transactions</strong>, <strong>Regles</strong>, <strong>Categories</strong> et ' +
+        '<strong>Sous_categories</strong> (avec la taxonomie francaise de depart) en un clic.' +
+        '<div><button id="imp-boot" class="imp-btn">Creer la structure du template</button></div>' +
+        '</div>' +
+
+        '<div class="card" style="margin-bottom:16px">' +
+        '<div class="imp-step"><span class="n">1</span> Charger le releve</div>' +
+        '<div id="imp-drop" class="imp-drop"><strong>Choisir un fichier CSV</strong> ou glisse-le ici' +
+        '<p>LCL · CIC · Credit Mutuel · Boursorama · BNP · Credit Agricole · Societe Generale · Caisse d’Epargne · Revolut · N26 — ou n’importe quel CSV</p>' +
+        '<input id="imp-file" type="file" accept=".csv,.txt" class="imp-hidden"></div>' +
+        '<div class="imp-or">ou coller le contenu</div>' +
+        '<textarea id="imp-paste" class="imp-ta" placeholder="Date;Libelle;Debit;Credit&#10;…colle ici les lignes de ton export…"></textarea>' +
+        '<div class="imp-actions"><button id="imp-parse" class="imp-btn ghost">Analyser</button></div>' +
+        '</div>' +
+
+        '<div id="imp-mapcard" class="card imp-hidden" style="margin-bottom:16px">' +
+        '<div class="imp-step"><span class="n">2</span> Format detecte</div>' +
+        '<div id="imp-detect" style="margin-bottom:14px"></div>' +
+        '<div id="imp-mapgrid"></div>' +
+        '<div class="note" style="margin-top:6px">Corrige un role si la detection s’est trompee — le tableau se met a jour en direct.</div>' +
+        '</div>' +
+
+        '<div id="imp-prevcard" class="card imp-hidden">' +
+        '<div class="imp-step"><span class="n">3</span> Verifier et importer</div>' +
+        '<div class="imp-stats" id="imp-statsbox"></div>' +
+        '<div class="imp-scroll"><table class="imp-ledger"><thead><tr>' +
+        '<th>Date</th><th>Libelle</th><th class="amt">Montant</th><th>Categorie</th><th></th>' +
+        '</tr></thead><tbody id="imp-rows"></tbody></table></div>' +
+        '<div class="imp-actions">' +
+        '<button id="imp-commit" class="imp-btn primary">Importer</button>' +
+        '<button id="imp-reset" class="imp-btn ghost">Recommencer</button>' +
+        '<span id="imp-msg" class="imp-msg"></span>' +
+        '</div>' +
+        '</div>';
+      root.appendChild(wrap);
+
+      const $ = id => wrap.querySelector('#' + id);
+
+      /* --- helpers d'affichage --- */
+      const esc = s => (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const fdate = ts => { const d = new Date(ts * 1000); return String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0') + '/' + d.getUTCFullYear(); };
+      const catList = () => {
+        const fromStore = (store.catRows || []).map(c => c.cat).filter(Boolean);
+        const base = fromStore.length ? fromStore : BP.CAT_SEED.map(c => c[0]);
+        return [...new Set([...base, 'A categoriser'])];
+      };
+
+      /* --- categorisation : Regles utilisateur puis taxonomie (core) ------
+         L'attribut Exclu derive du Type de la categorie (contrat partage),
+         jamais devine d'un nom de categorie en dur. */
+      function categorize(lib) {
+        const L = BP.norm(lib);
+        for (const r of store.regles) {
+          if (r.motif && L.includes(BP.norm(r.motif))) {
+            const cat = r.cat || 'A categoriser';
+            return { cat, sous: r.sous || '', exclu: store.typeOf(cat) === 'exclu' };
+          }
+        }
+        const g = BP.guessCategory(lib);
+        if (g) return { cat: g, sous: '', exclu: store.typeOf(g) === 'exclu' };
+        return { cat: 'A categoriser', sous: '', exclu: false };
+      }
+
+      /* --- construction des operations depuis le mapping courant --------- */
+      function build() {
+        PARSED = [];
+        const m = MAP;
+        for (const r of ROWS) {
+          const date = BP.parseDate(r[m.date]);
+          let montant = null;
+          if (m.amount != null) montant = BP.parseAmount(r[m.amount]);
+          else {
+            const d = BP.parseAmount(r[m.debit]);
+            const c = BP.parseAmount(r[m.credit]);
+            if (d != null && d !== 0) montant = -Math.abs(d);
+            else if (c != null && c !== 0) montant = Math.abs(c);
+            else montant = 0;
+          }
+          let lib = (r[m.label] || '').trim();
+          if (m.label2 != null && r[m.label2]) lib += (lib ? ' — ' : '') + r[m.label2].trim();
+          if (date == null || montant == null || !lib) continue;
+          if (montant === 0) continue;                 // lignes de solde / montant nul : pas des operations
+          montant = Math.round(montant * 100) / 100;
+          const cat = categorize(lib);
+          PARSED.push({
+            Date: date, Libelle: lib, Montant: montant,
+            Categorie: cat.cat, Sous_categorie: cat.sous, Exclu: cat.exclu,
+            Banque: (BANK && BANK !== 'Format inconnu') ? BANK : '',
+            Reference: (m.ref != null ? r[m.ref] : '') || '',
+            dup: false
+          });
+        }
+      }
+
+      /* --- dedoublonnage : contre la table (store.rows) ET intra-fichier -- */
+      const compositeKey = (date, montant, lib) => 'K:' + date + '|' + Math.round((montant || 0) * 100) + '|' + BP.norm(lib).slice(0, 18);
+      function flagDuplicates() {
+        const existing = new Set();
+        for (const row of store.rows) existing.add(compositeKey(row.date, row.montant, row.lib));
+        const seen = new Set();                         // dedup intra-fichier
+        for (const p of PARSED) {
+          const ck = compositeKey(p.Date, p.Montant, p.Libelle);
+          const fk = p.Reference ? ('R:' + p.Reference) : ck;
+          const tableDup = existing.has(ck);
+          const fileDup = seen.has(fk);
+          p.dup = tableDup || fileDup;
+          seen.add(fk);
+        }
+      }
+
+      /* --- rendu du mapping (roles corrigeables a la main) --------------- */
+      function renderMapping(det) {
+        BANK = det.bank; MAP = det.map;
+        $('imp-detect').innerHTML = '<span class="imp-chip ' + (det.guess ? 'guess' : '') + '"><span class="dot"></span>' +
+          (det.guess ? 'Format non reconnu — mapping devine' : 'Detecte : ' + esc(det.bank)) + '</span>';
+        const roles = [['date', 'Date'], ['label', 'Libelle'], ['amount', 'Montant (signe)'], ['debit', 'Debit'], ['credit', 'Credit'], ['ref', 'Reference'], ['cat', 'Categorie source']];
+        const opts = role => ['<option value="">— aucune —</option>']
+          .concat(HEAD.map((h, j) => '<option value="' + j + '"' + (MAP[role] === j ? ' selected' : '') + '>' + esc(h || ('Colonne ' + (j + 1))) + '</option>')).join('');
+        $('imp-mapgrid').innerHTML = roles.map(([k, lab]) =>
+          '<div class="imp-map"><label>' + lab + '</label><select class="imp-sel" data-role="' + k + '">' + opts(k) + '</select></div>').join('');
+        $('imp-mapgrid').querySelectorAll('select').forEach(sel => {
+          sel.onchange = () => {
+            const v = sel.value;
+            if (v === '') delete MAP[sel.dataset.role]; else MAP[sel.dataset.role] = +v;
+            refresh();
+          };
+        });
+        $('imp-mapcard').classList.remove('imp-hidden');
+      }
+
+      /* --- recalcul + rendu de l'apercu ---------------------------------- */
+      function refresh() {
+        build();
+        flagDuplicates();
+        const nNew = PARSED.filter(p => !p.dup).length;
+        const nDup = PARSED.filter(p => p.dup).length;
+        const sum = PARSED.filter(p => !p.dup).reduce((a, p) => a + p.Montant, 0);
+        $('imp-statsbox').innerHTML =
+          '<div class="imp-stat"><div class="v">' + nNew + '</div><div class="k">a importer</div></div>' +
+          (nDup ? '<div class="imp-stat dup"><div class="v">' + nDup + '</div><div class="k">doublons ignores</div></div>' : '') +
+          '<div class="imp-stat"><div class="v" style="color:' + (sum < 0 ? 'var(--red)' : 'var(--green)') + '">' + BP.eur(sum) + '</div><div class="k">solde net</div></div>';
+
+        const cats = catList();
+        const catOpts = cur => cats.map(c => '<option' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+        $('imp-rows').innerHTML = PARSED.map((p, i) =>
+          '<tr class="' + (p.dup ? 'dup' : '') + '">' +
+          '<td class="date">' + fdate(p.Date) + '</td>' +
+          '<td class="lib" title="' + esc(p.Libelle) + '">' + esc(p.Libelle) + '</td>' +
+          '<td class="amt ' + (p.Montant < 0 ? 'neg' : 'pos') + '">' + BP.eur(p.Montant) + '</td>' +
+          '<td>' + (p.dup ? '<span class="imp-badge">doublon</span>' : '<select class="imp-sel cat" data-i="' + i + '">' + catOpts(p.Categorie) + '</select>') + '</td>' +
+          '<td>' + (p.dup ? '' : (p.Exclu ? '<span class="imp-badge exq">exclu</span>' : '<span class="imp-badge new">nouveau</span>')) + '</td>' +
+          '</tr>').join('');
+        $('imp-rows').querySelectorAll('select.cat').forEach(s => {
+          s.onchange = () => {
+            const p = PARSED[+s.dataset.i];
+            p.Categorie = s.value;
+            p.Exclu = store.typeOf(s.value) === 'exclu';
+            refresh();
+          };
+        });
+
+        const commit = $('imp-commit');
+        commit.disabled = nNew === 0;
+        commit.textContent = nNew ? ('Importer ' + nNew + ' operation' + (nNew > 1 ? 's' : '')) : 'Rien a importer';
+        $('imp-prevcard').classList.remove('imp-hidden');
+        $('imp-prevcard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      /* --- ecriture des operations (batch) via le Store ------------------ */
+      async function commit() {
+        const todo = PARSED.filter(p => !p.dup);
+        if (!todo.length) return;
+        const commitBtn = $('imp-commit'), msg = $('imp-msg');
+        commitBtn.disabled = true; msg.className = 'imp-msg'; msg.textContent = 'Import en cours…';
+        const cols = { Date: [], Libelle: [], Montant: [], Categorie: [], Sous_categorie: [], Compte: [], Banque: [], Reference: [], Exclu: [], Notes: [] };
+        todo.forEach(p => {
+          cols.Date.push(p.Date); cols.Libelle.push(p.Libelle); cols.Montant.push(p.Montant);
+          cols.Categorie.push(p.Categorie); cols.Sous_categorie.push(p.Sous_categorie); cols.Compte.push('');
+          cols.Banque.push(p.Banque); cols.Reference.push(p.Reference); cols.Exclu.push(p.Exclu); cols.Notes.push('');
+        });
+        try {
+          await store.apply([['BulkAddRecord', 'Transactions', todo.map(() => null), cols]]);
+          // store.apply a recharge Transactions : refresh re-marque les operations comme doublons.
+          refresh();
+          msg.className = 'imp-msg ok';
+          msg.textContent = todo.length + ' operation' + (todo.length > 1 ? 's' : '') + ' importee' + (todo.length > 1 ? 's' : '') + ' dans Transactions.';
+        } catch (e) {
+          console.error('[import] echec de l’ecriture des transactions', e);
+          msg.className = 'imp-msg err';
+          msg.textContent = 'Echec : ' + (e && e.message || e);
+          commitBtn.disabled = false;
+        }
+      }
+
+      /* --- bootstrap du schema (tables + taxonomie de depart) ------------ */
+      async function ensureSchema() {
+        const need = [];
+        for (const t in SCHEMA) {
+          try { await ctx.grist.docApi.fetchTable(t); }
+          catch (e) { need.push(t); }                   // fetchTable jette si la table est absente : signal attendu
+        }
+        $('imp-setup').classList.toggle('imp-hidden', need.length === 0);
+      }
+
+      async function bootstrap() {
+        const btn = $('imp-boot');
+        btn.disabled = true; btn.textContent = 'Creation…';
+        try {
+          for (const t in SCHEMA) {
+            let exists = true;
+            try { await ctx.grist.docApi.fetchTable(t); }
+            catch (e) { exists = false; }
+            if (!exists) await ctx.grist.docApi.applyUserActions([['AddTable', t, SCHEMA[t]]]);
+          }
+          // Semences (uniquement si la table est vide).
+          const cats = await ctx.grist.docApi.fetchTable('Categories');
+          if (!(cats.id && cats.id.length)) {
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Categories', BP.CAT_SEED.map(() => null),
+              { Categorie: BP.CAT_SEED.map(x => x[0]), Type: BP.CAT_SEED.map(x => x[1]), Couleur: BP.CAT_SEED.map(x => x[2]) }]]);
+          }
+          const reg = await ctx.grist.docApi.fetchTable('Regles');
+          if (!(reg.id && reg.id.length)) {
+            const seed = [
+              ['CARREFOUR', 'Alimentation', '', false, 5], ['NETFLIX', 'Loisirs', '', false, 5],
+              ['EDF', 'Logement', '', false, 5], ['LOYER', 'Logement', 'Loyer', false, 9]
+            ];
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Regles', seed.map(() => null),
+              { Motif: seed.map(s => s[0]), Categorie: seed.map(s => s[1]), Sous_categorie: seed.map(s => s[2]), Exclu: seed.map(s => s[3]), Priorite: seed.map(s => s[4]) }]]);
+          }
+          const sc = await ctx.grist.docApi.fetchTable('Sous_categories');
+          if (!(sc.id && sc.id.length)) {
+            const pairs = [];
+            for (const cat in BP.SOUS_SEED) for (const s of BP.SOUS_SEED[cat]) pairs.push([cat, s]);
+            await ctx.grist.docApi.applyUserActions([['BulkAddRecord', 'Sous_categories', pairs.map(() => null),
+              { Categorie: pairs.map(p => p[0]), Sous_categorie: pairs.map(p => p[1]) }]]);
+          }
+          await store.load();                            // recharge le Store partage (Regles/Categories/...)
+          $('imp-setup').classList.add('imp-hidden');
+          if (PARSED.length) refresh();                  // re-categorise l'apercu avec les nouvelles regles
+        } catch (e) {
+          console.error('[import] echec du bootstrap du schema', e);
+          btn.disabled = false; btn.textContent = 'Reessayer';
+          alert('Erreur lors de la creation du template : ' + (e && e.message || e));
+        }
+      }
+
+      /* --- ingestion d'un CSV (fichier, glisser-deposer, coller) --------- */
+      function ingest(text) {
+        const p = parseCSV(text);
+        if (!p.head.length) { alert('CSV illisible.'); return; }
+        HEAD = p.head; ROWS = p.rows;
+        renderMapping(detect(p.head, ROWS));
+        refresh();
+      }
+
+      /* --- cablage des controles ---------------------------------------- */
+      const drop = $('imp-drop'), file = $('imp-file');
+      drop.onclick = () => file.click();
+      file.onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => ingest(r.result);
+        r.onerror = () => { console.error('[import] lecture de fichier impossible', r.error); alert('Lecture du fichier impossible.'); };
+        r.readAsText(f, 'utf-8');
+      };
+      ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+      ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+      drop.addEventListener('drop', e => {
+        const f = e.dataTransfer.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => ingest(r.result);
+        r.onerror = () => { console.error('[import] lecture de fichier impossible', r.error); alert('Lecture du fichier impossible.'); };
+        r.readAsText(f, 'utf-8');
+      });
+      $('imp-parse').onclick = () => {
+        const t = $('imp-paste').value.trim();
+        if (t) ingest(t); else alert('Colle d’abord le contenu du releve.');
+      };
+      $('imp-commit').onclick = commit;
+      $('imp-reset').onclick = () => {
+        HEAD = []; ROWS = []; PARSED = []; MAP = {}; BANK = '';
+        $('imp-paste').value = ''; file.value = '';
+        $('imp-mapcard').classList.add('imp-hidden');
+        $('imp-prevcard').classList.add('imp-hidden');
+        $('imp-msg').textContent = '';
+      };
+      $('imp-boot').onclick = bootstrap;
+
+      // Verifie la presence du schema au montage (affiche l'aide au besoin).
+      ensureSchema().catch(e => console.error('[import] verification du schema impossible', e));
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

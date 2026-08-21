@@ -1,0 +1,41 @@
+{
+  "name": "budget",
+  "version": "1.0.0",
+  "description": "Suite de widgets de budget personnel pour Grist",
+  "authors": [
+    {
+      "name": "nic01asfr",
+      "url": "https://github.com/nic01asfr"
+    }
+  ],
+  "grist": [
+    {
+      "widgetId": "budget",
+      "name": "Budget perso — App complète",
+      "url": "",
+      "accessLevel": "full",
+      "description": "App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget"
+    },
+    {
+      "widgetId": "budget-suivi",
+      "name": "Budget — Suivi",
+      "url": "suivi/",
+      "accessLevel": "full",
+      "description": "Cockpit mensuel d'un coup d'œil : revenus, fixes, à mettre de côté, disponible, enveloppes et trajectoire"
+    },
+    {
+      "widgetId": "budget-classement",
+      "name": "Budget — Classement",
+      "url": "classement/",
+      "accessLevel": "full",
+      "description": "Catégorisation intelligente des opérations par marchand : combobox unique famille et sous-catégorie"
+    },
+    {
+      "widgetId": "budget-import",
+      "name": "Budget — Import",
+      "url": "import/",
+      "accessLevel": "full",
+      "description": "Import de relevés CSV multi-banques vers Grist, avec catégorisation et dédoublonnage"
+    }
+  ]
+}

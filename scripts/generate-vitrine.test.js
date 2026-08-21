@@ -113,3 +113,13 @@ test('le texte d’une fiche est echappe, pas injecte', () => {
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /a &amp; b/);
 });
+
+test('la fiche de presentation ne date pas le projet', () => {
+  // Elle vit dans le dossier du widget : l'y avoir ajoutee avait date tous les
+  // projets du jour ou la vitrine est nee. « Mis a jour aujourd'hui » partout
+  // ne renseigne sur rien — c'est le defaut meme qu'on voulait corriger.
+  const { projets } = V.generer();
+  const dates = projets.map((p) => V.majProjet(p).slice(0, 10));
+  assert.ok(new Set(dates).size > 1,
+    `toutes les dates sont identiques (${dates[0]}) — la fiche les ecrase`);
+});
