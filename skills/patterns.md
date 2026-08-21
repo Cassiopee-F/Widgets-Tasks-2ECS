@@ -447,3 +447,95 @@ function showLoading(show) {
 // Démarrer
 init();
 ```
+
+---
+
+## Respecter les droits du document
+
+> Aucun widget ne tient sa propre liste d'accès : tous appliquent celle du
+> document. Implémentation de référence : `projects/tasks_app/core/taskflow-core.js`
+> (lignes ~310-350), appliquée sur les sept widgets TaskFlow.
+
+**Deux niveaux, et le second ne se voit qu'à l'erreur :**
+
+| Niveau | Comment le détecter |
+|---|---|
+| Document ouvert en lecture seule | Grist passe `readonly=true` dans l'URL de l'iframe |
+| Refus sur une ligne (ACL fine) | l'accès du widget vaut `full`, mais le serveur refuse **cette** écriture |
+
+```javascript
+function parametre(nom) {
+    try { return new URLSearchParams(location.search).get(nom); }
+    catch (e) { return null; }
+}
+
+// Grist a-t-il ouvert le widget en lecture seule ?
+function lectureSeule() { return parametre('readonly') === 'true'; }
+
+// Ce message est-il un refus de droits, et non une panne ?
+function refusDeDroits(e) {
+    const m = (e && (e.message || String(e))) || '';
+    return /access denied|not allowed|permission|forbidden|read[- ]?only|cannot (modify|add|remove)|acl/i.test(m);
+}
+```
+
+### Rendre compte plutôt que lever
+
+Une exception qui traverse jusqu'à un `alert()` affiche le message brut du
+serveur, et ne dit pas s'il s'agit des droits ou d'une panne.
+
+```javascript
+async function ecrire(id, champs) {
+    if (lectureSeule()) {
+        return { ok: false, refuse: true, message: 'Document ouvert en lecture seule' };
+    }
+    try {
+        await grist.getTable().update({ id, fields: champs });
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, refuse: refusDeDroits(e), message: e.message || String(e) };
+    }
+}
+
+// À l'appel : distinguer, sinon l'utilisateur cherche un bug là où il faut
+// demander un accès.
+const res = await ecrire(id, champs);
+if (!res.ok) {
+    toast(res.refuse
+        ? 'Vos droits ne permettent pas cette modification'
+        : 'Enregistrement impossible : ' + res.message, res.refuse ? 'warn' : 'error');
+}
+```
+
+### La garde transverse
+
+Pour ne pas modifier chaque site d'écriture, TaskFlow enrobe `applyUserActions`
+une seule fois (`TF.guardWrites`) : lecture seule → bloqué avec `onReadOnly()` ;
+refus ACL → `onDenied(err)`, l'erreur continuant d'être levée pour les `try/catch`
+existants.
+
+### Ne pas proposer ce qu'on refusera
+
+Annoncer la lecture seule tout en affichant des champs à remplir n'est pas
+cohérent. Désactiver **vraiment** — `disabled`, pas un habillage CSS, sinon le
+champ reste atteignable au clavier :
+
+```javascript
+if (lectureSeule()) {
+    racine.querySelectorAll('[data-field]').forEach(el => { el.disabled = true; });
+    racine.querySelectorAll('.editable-tag').forEach(el => el.remove());
+}
+```
+
+Et un bandeau qui **pousse** le contenu au lieu de le recouvrir : masquer la barre
+de titre pour annoncer une restriction serait un remède pire que le mal.
+
+```css
+#bandeau-lecture-seule {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+    padding: 6px 12px; text-align: center; font-size: 12px;
+    background: var(--ca-l); color: var(--ca);
+    border-bottom: 1px solid var(--ca);
+}
+body.avec-bandeau .app-shell { padding-top: 28px; }
+```

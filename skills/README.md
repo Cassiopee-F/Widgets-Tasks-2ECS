@@ -15,7 +15,8 @@ Ce dossier contient les **patterns de code réutilisables** pour le développeme
 | [data-conversion.md](data-conversion.md) | Conversion colonaire → objets, dates, RefList |
 | [inter-widget.md](inter-widget.md) | Communication entre widgets : sélection, options, events |
 | [bridge.md](bridge.md) | GristBridge pour iframes sandboxées |
-| [patterns.md](patterns.md) | Patterns UI : modales, filtres, toasts |
+| [patterns.md](patterns.md) | Patterns UI : modales, filtres, toasts, **respect des droits** |
+| [vitrine.md](vitrine.md) | ⭐ **Publier** : package.json, vitrine.json, manifeste, forum |
 
 ## Usage rapide
 

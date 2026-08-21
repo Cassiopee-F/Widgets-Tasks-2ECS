@@ -15,5 +15,5 @@
     "description": "Trier, filtrer et valider les observations de terrain : transcription, urgence, actions requises, statut"
   },
   "prive": true,
-  "aValider": "Jamais ouvert dans un document Grist réel. Retirer `prive` après validation."
+  "statut": "À refondre dans le produit Terrain — voir projects/terrain/ARCHITECTURE.md. Servi pour référence, jamais publié en l'état."
 }
