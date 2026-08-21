@@ -204,25 +204,50 @@ function donneesStructurees(objet) {
  * ressemble pas au produit ment sur le produit — mais l'accueil, lui, reste
  * neutre pour laisser les cartes se distinguer entre elles.
  */
-function socle(accent) {
+const PEAU_MAISON = {
+  clair: { papier: '#FAF7F0', surface: '#FFFFFF', encre: '#1A1814', plume: '#6B6355', filet: '#E6DFD1' },
+  sombre: { papier: '#14120F', surface: '#1D1A16', encre: '#F2EDE3', plume: '#9A9184', filet: '#2E2A23' },
+  display: 'Georgia, "Times New Roman", serif',
+  accent: '#8B5E3C',
+};
+
+/** Les variables d'une palette, sur une ligne. */
+function variables(p) {
+  return Object.entries(p).map(([k, v]) => `--${k}: ${v};`).join(' ');
+}
+
+/**
+ * Le socle visuel — structure commune, peau du produit.
+ *
+ * La page d'un widget prend la palette et la typographie de ce widget : une
+ * presentation qui ne ressemble pas au produit ment sur le produit, et c'est la
+ * seule chose que le visiteur en voit avant de l'ouvrir. TaskFlow est dense et
+ * bleute, Atlas creme et vermillon — leurs pages doivent l'etre aussi.
+ *
+ * Ce qui ne change pas : la grille, la hierarchie, le fil d'Ariane, le pied. On
+ * doit sentir qu'on est toujours sur le meme site, sinon revenir a l'accueil
+ * ressemble a un depart.
+ *
+ * Une peau qui declare ses deux versions suit le theme du visiteur ; une peau
+ * qui n'en declare qu'une l'impose — c'est le cas d'un produit dont l'identite
+ * est un parti pris.
+ */
+function socle(accent, peau = {}) {
+  const clair = { ...PEAU_MAISON.clair, ...(peau.clair || {}) };
+  const sombre = peau.clair && !peau.sombre ? null : { ...PEAU_MAISON.sombre, ...(peau.sombre || {}) };
+  const display = peau.display || PEAU_MAISON.display;
   return `
-:root {
-  --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355;
-  --filet: #E6DFD1; --accent: ${accent || '#8B5E3C'};
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --papier: #14120F; --surface: #1D1A16; --encre: #F2EDE3; --plume: #9A9184;
-    --filet: #2E2A23;
-  }
-}
+:root { ${variables(clair)} --accent: ${accent || peau.accent || PEAU_MAISON.accent}; }
+${sombre ? `@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { ${variables(sombre)}${peau.accentSombre ? ` --accent: ${peau.accentSombre};` : ''} }
+}` : ''}
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--papier); color: var(--encre);
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 main { max-width: 60rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
-h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 500;
+h1, h2, h3 { font-family: ${display}; font-weight: 500;
   line-height: 1.15; text-wrap: balance; margin: 0; }
 h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.01em; }
 h2 { font-size: 1.5rem; margin-bottom: 1rem; }
@@ -246,7 +271,7 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size:
 }
 
 /** Ouverture et fermeture d'un document — un seul endroit ou elles vivent. */
-function page({ titre, description, accent, corps, css = '', meta = '', ld = '' }) {
+function page({ titre, description, accent, peau, corps, css = '', meta = '', ld = '' }) {
   return `<!doctype html>
 <html lang="fr">
 <head>
@@ -254,7 +279,7 @@ function page({ titre, description, accent, corps, css = '', meta = '', ld = '' 
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${echapper(titre)}</title>
 <meta name="description" content="${echapper(description || '')}">${meta}${ld}
-<style>${socle(accent)}${css}</style>
+<style>${socle(accent, peau)}${css}</style>
 </head>
 <body>
 ${corps}
@@ -548,6 +573,7 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
     titre,
     description,
     accent: v.couleur,
+    peau: v.peau,
     meta: url ? entete({ url, titre, description, image }) : '',
     ld: url ? donneesStructurees({
       '@context': 'https://schema.org',

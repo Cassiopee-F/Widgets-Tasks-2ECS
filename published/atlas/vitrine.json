@@ -2,7 +2,12 @@
   "nom": "Atlas",
   "pitch": "Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.",
   "couleur": "#C44536",
-  "tags": ["Cartographie", "3D", "Terrain", "Récit"],
+  "tags": [
+    "Cartographie",
+    "3D",
+    "Terrain",
+    "Récit"
+  ],
   "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/Atlas",
   "points": [
     {

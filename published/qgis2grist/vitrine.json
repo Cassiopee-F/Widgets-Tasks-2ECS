@@ -1,7 +1,7 @@
 {
   "nom": "QGIS → Grist",
   "pitch": "Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu'Atlas sait relire.",
-  "couleur": "#3A6EA5",
+  "couleur": "#3E5DE7",
   "tags": [
     "Import",
     "QGIS",
@@ -29,5 +29,15 @@
   "principal": "qgis2grist-v2",
   "archives": [
     "qgis2grist"
-  ]
+  ],
+  "peau": {
+    "clair": {
+      "papier": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "encre": "#1E293B",
+      "plume": "#64748B",
+      "filet": "#E2E8F0"
+    },
+    "display": "system-ui, -apple-system, 'Segoe UI', sans-serif"
+  }
 }

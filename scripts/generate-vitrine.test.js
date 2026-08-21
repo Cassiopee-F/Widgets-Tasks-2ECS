@@ -189,3 +189,60 @@ test('la fiche designe le widget mis en avant, pas l’ordre du manifeste', () =
   assert.match(html, /version précédente/);
   assert.ok(html.includes('https://s.io/r/x/'), 'la v1 reste atteignable');
 });
+
+/* ---------- la peau du produit ---------- */
+
+test('une page prend la palette et la typographie de son widget', () => {
+  const html = V.rendreProjet({
+    id: 'x',
+    widgets: [W('x', 'https://s.io/r/x/')],
+    presentation: {
+      couleur: '#3E5DE7',
+      peau: { clair: { papier: '#F5F7FB', encre: '#1F2738' }, display: 'system-ui, sans-serif' },
+    },
+  }, Date.now(), 'https://s.io/r/');
+  assert.match(html, /--papier: #F5F7FB/);
+  assert.match(html, /--encre: #1F2738/);
+  assert.match(html, /--accent: #3E5DE7/);
+  assert.match(html, /font-family: system-ui, sans-serif/);
+});
+
+test('une peau qui ne declare qu’un theme l’impose', () => {
+  // Un produit dont l'identite est un parti pris ne doit pas se retourner selon
+  // le reglage du visiteur : il s'afficherait autrement qu'il n'est.
+  const clairSeul = V.rendreProjet({
+    id: 'x', widgets: [W('x', 'https://s.io/r/x/')],
+    presentation: { peau: { clair: { papier: '#FFFFFF' } } },
+  }, Date.now(), 'https://s.io/r/');
+  assert.doesNotMatch(clairSeul, /prefers-color-scheme: dark/);
+
+  const lesDeux = V.rendreProjet({
+    id: 'y', widgets: [W('y', 'https://s.io/r/y/')],
+    presentation: { peau: { clair: { papier: '#FFFFFF' }, sombre: { papier: '#101010' } } },
+  }, Date.now(), 'https://s.io/r/');
+  assert.match(lesDeux, /prefers-color-scheme: dark/);
+  assert.match(lesDeux, /--papier: #101010/);
+});
+
+test('sans peau declaree, la page garde celle de la maison, dans les deux themes', () => {
+  const html = V.rendreProjet({
+    id: 'z', widgets: [W('z', 'https://s.io/r/z/')], presentation: {},
+  }, Date.now(), 'https://s.io/r/');
+  assert.match(html, /--papier: #FAF7F0/);
+  assert.match(html, /prefers-color-scheme: dark/);
+  assert.match(html, /Georgia/);
+});
+
+test('la structure ne bouge pas d’une peau a l’autre', () => {
+  // On doit sentir qu'on est toujours sur le meme site : sinon revenir a
+  // l'accueil ressemble a un depart.
+  const faire = (peau) => V.rendreProjet({
+    id: 'x', widgets: [W('x', 'https://s.io/r/x/')], presentation: { peau },
+  }, Date.now(), 'https://s.io/r/');
+  for (const html of [faire(undefined), faire({ clair: { papier: '#000' } })]) {
+    assert.match(html, /class="retour"/);
+    assert.match(html, /class="eyebrow"/);
+    assert.match(html, /class="faits"/);
+    assert.match(html, /class="pied"/);
+  }
+});
