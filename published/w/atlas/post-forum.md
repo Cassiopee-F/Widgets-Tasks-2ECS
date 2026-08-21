@@ -34,9 +34,6 @@ Une carte faite pour un dossier finit presque toujours au même endroit : un PDF
 Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.
 
 > C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.
-
-![Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.](https://nic01asfr.github.io/Widgets-Grist/w/atlas/dans-grist.jpg)
-*Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.*
 ### Dans un navigateur, pour diffuser
 
 La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.

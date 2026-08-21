@@ -110,7 +110,8 @@
         "images": [
           {
             "image": "dans-grist.jpg",
-            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent."
+            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.",
+            "prive": true
           }
         ]
       },

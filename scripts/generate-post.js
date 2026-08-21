@@ -105,7 +105,12 @@ function rendre(id) {
       bloc.push(`### ${c.titre}\n`);
       bloc.push(c.texte);
       if (c.pourquoi) bloc.push(`\n> ${c.pourquoi}`);
+      // Une capture prise dans un document de travail montre ses tables et ses
+      // donnees. Sur une page qu'on maitrise c'est discutable ; dans un message
+      // public, ca ne se retire plus. `prive: true` la garde pour la vitrine et
+      // l'ecarte du post.
       for (const i of (c.images || [])) {
+        if (i.prive) continue;
         bloc.push('', image(base, id, i.image, i.legende));
       }
     }
