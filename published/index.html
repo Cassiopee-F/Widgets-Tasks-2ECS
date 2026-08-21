@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Widgets Grist — cartographie 3D, gestion de projet, formulaires</title>
-<meta name="description" content="Widgets libres pour Grist : maquette territoriale 3D, suite de gestion de projet, questionnaires liés aux tables, import de projets QGIS.">
+<title>Des documents Grist qui deviennent des applications métier</title>
+<meta name="description" content="Un tableur collaboratif porte déjà les données, les droits et l&#39;historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.">
 <meta name="google-site-verification" content="zspv6UWxi2UyQizRDorcDA7MoDakCZgcaJcLK6P37iQ">
 <link rel="canonical" href="https://nic01asfr.github.io/Widgets-Grist/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Widgets Grist">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/">
-<meta property="og:title" content="Widgets Grist — cartographie 3D, gestion de projet, formulaires">
-<meta property="og:description" content="Widgets libres pour Grist : maquette territoriale 3D, suite de gestion de projet, questionnaires liés aux tables, import de projets QGIS.">
+<meta property="og:title" content="Des documents Grist qui deviennent des applications métier">
+<meta property="og:description" content="Un tableur collaboratif porte déjà les données, les droits et l&#39;historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Widgets Grist — cartographie 3D, gestion de projet, formulaires">
-<meta name="twitter:description" content="Widgets libres pour Grist : maquette territoriale 3D, suite de gestion de projet, questionnaires liés aux tables, import de projets QGIS.">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Widgets Grist — cartographie 3D, gestion de projet, formulaires","description":"Widgets libres pour Grist : maquette territoriale 3D, suite de gestion de projet, questionnaires liés aux tables, import de projets QGIS.","url":"https://nic01asfr.github.io/Widgets-Grist/","inLanguage":"fr","hasPart":[{"@type":"SoftwareApplication","name":"Artefactory","url":"https://nic01asfr.github.io/Widgets-Grist/w/artefactory/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"Atlas","url":"https://nic01asfr.github.io/Widgets-Grist/w/atlas/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"Form Builder","url":"https://nic01asfr.github.io/Widgets-Grist/w/grist_forms/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"qgis2grist","url":"https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"TaskFlow","url":"https://nic01asfr.github.io/Widgets-Grist/w/taskflow/","applicationCategory":"BusinessApplication","operatingSystem":"Web"}]}</script>
+<meta name="twitter:title" content="Des documents Grist qui deviennent des applications métier">
+<meta name="twitter:description" content="Un tableur collaboratif porte déjà les données, les droits et l&#39;historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Des documents Grist qui deviennent des applications métier","description":"Un tableur collaboratif porte déjà les données, les droits et l'historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.","url":"https://nic01asfr.github.io/Widgets-Grist/","inLanguage":"fr","hasPart":[{"@type":"SoftwareApplication","name":"Artefactory","url":"https://nic01asfr.github.io/Widgets-Grist/w/artefactory/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"Atlas","url":"https://nic01asfr.github.io/Widgets-Grist/w/atlas/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"Form Builder","url":"https://nic01asfr.github.io/Widgets-Grist/w/grist_forms/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"qgis2grist","url":"https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/","applicationCategory":"BusinessApplication","operatingSystem":"Web"},{"@type":"SoftwareApplication","name":"TaskFlow","url":"https://nic01asfr.github.io/Widgets-Grist/w/taskflow/","applicationCategory":"BusinessApplication","operatingSystem":"Web"}]}</script>
 <style>
 :root { --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355; --filet: #E6DFD1; --accent: #8B5E3C; }
 @media (prefers-color-scheme: dark) {
@@ -49,94 +49,234 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size:
   background: var(--surface); border: 1px solid var(--filet); border-radius: 4px;
   padding: .1rem .35rem; }
 
-.grille { display: grid; gap: 1.1rem; margin-top: 2.5rem;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
-.carte { display: block; text-decoration: none; background: var(--surface);
-  border: 1px solid var(--filet); border-radius: 14px; overflow: hidden;
-  transition: border-color .15s, transform .15s; }
-.carte:hover { border-color: var(--teinte); transform: translateY(-2px); }
-.carte .filet { height: 3px; background: var(--teinte); }
-.carte .dedans { padding: 1.3rem 1.4rem 1.5rem; }
-.carte h2 { font-size: 1.22rem; margin: 0 0 .4rem; }
-.carte p { font-size: .92rem; margin: 0 0 .9rem; }
-.carte .bas { display: flex; justify-content: space-between; align-items: center;
-  font-size: .8rem; color: var(--plume); padding-top: .9rem;
-  border-top: 1px solid var(--filet); }
-.intro { max-width: 34rem; }
+:root {
+  --papier: #ffffff; --surface: #f6f8fa; --encre: #1f2328; --plume: #59636e;
+  --filet: #d1d9e0; --accent: #0969da; --vert: #1a7f37;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papier: #0d1117; --surface: #151b23; --encre: #e6edf3; --plume: #9198a1;
+    --filet: #3d444d; --accent: #4493f8; --vert: #3fb950;
+  }
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+  Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6; }
+h1, h2, h3 { font-family: inherit; font-weight: 600; letter-spacing: -.01em; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); line-height: 1.25; }
+h2 { font-size: 1.35rem; margin: 0 0 .4rem; }
+h3 { font-size: 1rem; margin: 0 0 .3rem; }
+main { max-width: 62rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.manifeste { max-width: 46rem; }
+.manifeste .chapeau { font-size: 1.08rem; color: var(--plume); margin-top: 1rem; }
+.section { padding-top: 2.6rem; margin-top: 2.6rem; border-top: 1px solid var(--filet); }
+.section > p { max-width: 46rem; }
+.soustitre { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--plume); font-weight: 600; margin-bottom: .8rem; }
+
+/* Les cartes : la densite d'une liste de depots, sans son habillage. */
+.grille { display: grid; gap: 1rem; margin-top: 1.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); }
+.carte { display: flex; flex-direction: column; text-decoration: none;
+  background: var(--papier); border: 1px solid var(--filet); border-radius: 6px;
+  overflow: hidden; transition: border-color .12s; }
+.carte:hover { border-color: var(--accent); text-decoration: none; }
+/* La non-croissance n est pas decorative : dans une carte en colonne, un enfant
+   s etire pour remplir la hauteur et le rapport annonce est ignore — la
+   vignette devenait un panneau vertical. */
+.vignette { display: block; flex: none; width: 100%; height: auto;
+  aspect-ratio: 1200 / 630; object-fit: cover; object-position: top center;
+  background: var(--surface); border-bottom: 1px solid var(--filet); }
+.carte .dedans { padding: .95rem 1.05rem 1.05rem; display: flex; flex-direction: column;
+  flex: 1; }
+.carte h2 { color: var(--accent); font-size: 1.05rem; }
+.carte p { font-size: .88rem; color: var(--plume); margin: .35rem 0 .8rem; flex: 1; }
+.carte .bas { display: flex; align-items: center; gap: 1rem; font-size: .75rem;
+  color: var(--plume); }
+.pastille { display: inline-flex; align-items: center; gap: .35rem; }
+.pastille::before { content: ''; width: .62rem; height: .62rem; border-radius: 50%;
+  background: var(--teinte, var(--accent)); }
+.tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .7rem; }
+.tag { font-size: .72rem; padding: .1rem .55rem; border-radius: 999px;
+  border: 1px solid var(--filet); color: var(--plume); }
+
+/* Principes et outils : deux colonnes de texte, rien de plus. */
+.paves { display: grid; gap: 1.6rem 2rem; margin-top: 1.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.pave p { font-size: .92rem; color: var(--plume); margin: 0; }
+.pave .role { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--plume); margin-bottom: .15rem; }
+
+/* Les declinaisons : un tableau, parce que ce sont trois fois les memes champs. */
+.decl { width: 100%; border-collapse: collapse; margin-top: 1.2rem; font-size: .92rem; }
+.decl th { text-align: left; font-size: .74rem; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--plume); font-weight: 600;
+  padding: 0 1rem .5rem 0; border-bottom: 1px solid var(--filet); }
+.decl td { padding: .8rem 1rem .8rem 0; border-bottom: 1px solid var(--filet);
+  vertical-align: top; color: var(--plume); }
+.decl td:first-child { color: var(--encre); font-weight: 600; white-space: nowrap; }
+.decl td:last-child { font-size: .85rem; }
+
+/* La chaine : l'ordre porte l'information, donc on le montre. */
+.chaine { display: flex; flex-wrap: wrap; gap: .5rem; align-items: stretch;
+  margin-top: 1.3rem; }
+.maillon { flex: 1 1 9rem; background: var(--surface); border: 1px solid var(--filet);
+  border-radius: 6px; padding: .8rem .9rem; }
+.maillon b { display: block; font-size: .9rem; margin-bottom: .2rem; }
+.maillon span { font-size: .8rem; color: var(--plume); line-height: 1.45; }
+
+.liens { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; margin-top: 1rem;
+  font-size: .9rem; }
+.liens span { color: var(--plume); }
 </style>
 </head>
 <body>
 <main>
-  <p class="eyebrow">Widgets pour Grist</p>
-  <h1>Des outils qui vivent dans vos documents</h1>
-  <p class="intro">Chacun de ces widgets s’ajoute à un document Grist et travaille
-     sur ses tables — la donnée ne bouge pas, elle change de forme.</p>
-  <div class="grille">
-      <a class="carte" href="w/artefactory/" style="--teinte:#3B82F6">
-        <div class="filet"></div>
+  <div class="manifeste">
+    <h1>Des documents Grist qui deviennent des applications métier</h1>
+    <p class="chapeau">Un tableur collaboratif porte déjà les données, les droits et l&#39;historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.</p>
+  </div>
+
+  <section class="section">
+    <h2>Les widgets</h2>
+    <div class="grille">
+      <a class="carte" href="w/artefactory/">
+        <img class="vignette" src="w/artefactory/apercu.png" alt="" loading="lazy" width="1200" height="630">
         <div class="dedans">
           <h2>Artefactory</h2>
           <p>Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.</p>
           <div class="tags"><span class="tag">Atelier</span><span class="tag">No-code</span><span class="tag">Composition</span></div>
           <div class="bas">
-            <span>1 widget</span>
+            <span class="pastille" style="--teinte:#3B82F6">1 widget</span>
             <span>il y a 3 mois</span>
           </div>
         </div>
       </a>
-      <a class="carte" href="w/atlas/" style="--teinte:#C44536">
-        <div class="filet"></div>
+      <a class="carte" href="w/atlas/">
+        <img class="vignette" src="w/atlas/apercu.jpg" alt="" loading="lazy" width="1200" height="630">
         <div class="dedans">
           <h2>Atlas</h2>
           <p>La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.</p>
           <div class="tags"><span class="tag">Cartographie</span><span class="tag">3D</span><span class="tag">Terrain</span></div>
           <div class="bas">
-            <span>1 widget</span>
-            <span><span class="vif"></span>aujourd&#39;hui</span>
+            <span class="pastille" style="--teinte:#C44536">1 widget</span>
+            <span>aujourd&#39;hui</span>
           </div>
         </div>
       </a>
-      <a class="carte" href="w/grist_forms/" style="--teinte:#000091">
-        <div class="filet"></div>
+      <a class="carte" href="w/grist_forms/">
+        <img class="vignette" src="w/grist_forms/apercu.png" alt="" loading="lazy" width="1200" height="630">
         <div class="dedans">
           <h2>Form Builder</h2>
           <p>Des questionnaires branchés sur vos tables : ce qui est répondu atterrit directement dans le document, et le formulaire s&#39;adapte à qui le remplit.</p>
           <div class="tags"><span class="tag">Formulaires</span><span class="tag">Collecte</span><span class="tag">Publication</span></div>
           <div class="bas">
-            <span>1 widget</span>
+            <span class="pastille" style="--teinte:#000091">1 widget</span>
             <span>il y a 15 j</span>
           </div>
         </div>
       </a>
-      <a class="carte" href="w/qgis2grist/" style="--teinte:#3E5DE7">
-        <div class="filet"></div>
+      <a class="carte" href="w/qgis2grist/">
+        <img class="vignette" src="w/qgis2grist/apercu.png" alt="" loading="lazy" width="1200" height="630">
         <div class="dedans">
           <h2>qgis2grist</h2>
           <p>Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu&#39;Atlas sait relire.</p>
           <div class="tags"><span class="tag">Import</span><span class="tag">QGIS</span><span class="tag">Géomatique</span></div>
           <div class="bas">
-            <span>2 widgets</span>
-            <span>il y a 16 j</span>
+            <span class="pastille" style="--teinte:#3E5DE7">2 widgets</span>
+            <span>il y a 17 j</span>
           </div>
         </div>
       </a>
-      <a class="carte" href="w/taskflow/" style="--teinte:#3E5DE7">
-        <div class="filet"></div>
+      <a class="carte" href="w/taskflow/">
+        <img class="vignette" src="w/taskflow/apercu.png" alt="" loading="lazy" width="1200" height="630">
         <div class="dedans">
           <h2>TaskFlow</h2>
           <p>Une suite de gestion de projet qui travaille sur vos propres tables : les mêmes tâches vues en tableau, en planning, en calendrier, en charge par personne. Changez de vue, pas de données.</p>
           <div class="tags"><span class="tag">Gestion de projet</span><span class="tag">Planification</span><span class="tag">Temps</span></div>
           <div class="bas">
-            <span>8 widgets</span>
-            <span><span class="vif"></span>il y a 2 j</span>
+            <span class="pastille" style="--teinte:#3E5DE7">8 widgets</span>
+            <span>il y a 2 j</span>
           </div>
         </div>
       </a>
-  </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <p class="soustitre">Ce qui les rend différents</p>
+    <div class="paves">
+      <div class="pave"><h3>La donnée ne bouge pas</h3><p>Un widget est une vue, pas un export. Il lit la table avec ses formules et ses liens ; quand elle change, la vue a déjà changé. Rien à réexporter, rien à resynchroniser.</p></div>
+      <div class="pave"><h3>Les droits sont ceux du document</h3><p>Aucun système d&#39;accès en plus de celui de Grist. On partage un document, les vues suivent : un lecteur consulte, il ne modifie pas.</p></div>
+      <div class="pave"><h3>Chez vous, pas chez un tiers</h3><p>Ces widgets sont des fichiers statiques servis depuis GitHub Pages, et ils fonctionnent sur n&#39;importe quelle instance Grist, y compris auto-hébergée. Aucun service tiers ne s&#39;intercale entre vous et vos données.</p></div>
+      <div class="pave"><h3>Sans dépendance de build</h3><p>HTML, CSS et JavaScript autonomes. Pas de chaîne de compilation à maintenir, pas de paquet à mettre à jour pour qu&#39;un widget continue de s&#39;ouvrir dans trois ans.</p></div>
+    </div>
+  </section>
+  <section class="section">
+    <h2>Le même widget, trois usages</h2>
+    <p>Un widget n&#39;est pas prisonnier de son document. La même adresse sert à concevoir, à diffuser et à relever sur le terrain — ce qui change, c&#39;est ce que l&#39;environnement permet.</p>
+    <table class="decl">
+      <thead><tr><th>Où</th><th>Ce qu'on y fait</th><th>Accès</th></tr></thead>
+      <tbody>
+        <tr><td>Dans un document Grist</td><td>Le cas courant : le widget est une vue du document, à côté des tables. On construit, on modifie, on écrit dans les mêmes tables.</td><td>Lecture et écriture, selon les droits de la personne</td></tr>
+        <tr><td>Dans un navigateur</td><td>La même adresse ouverte seule. On charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée. Rien à installer pour regarder.</td><td>Ce que le document autorise en lecture</td></tr>
+        <tr><td>Sur le terrain</td><td>Empaqueté en application Android, le widget ouvre les scènes d&#39;un compte sans passer par un document — parce qu&#39;un navigateur ne peut pas présenter de clé API à l&#39;instance.</td><td>Compte complet, hors du moteur web</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="section">
+    <h2>Une chaîne, pas des outils épars</h2>
+    <div class="chaine">
+      <div class="maillon"><b>QGIS</b><span>un projet cartographique, ses couches et sa symbologie</span></div>
+      <div class="maillon"><b>qgis2grist</b><span>l&#39;import : les couches deviennent des tables, le schéma est déduit de la donnée</span></div>
+      <div class="maillon"><b>Grist</b><span>la donnée vit avec ses formules, ses liens et ses droits</span></div>
+      <div class="maillon"><b>Atlas</b><span>la vue : carte, relief, symbolisation, récit rejouable</span></div>
+      <div class="maillon"><b>Terrain</b><span>l&#39;application relève sur place, et écrit dans les mêmes tables</span></div>
+    </div>
+  </section>
+  <section class="section">
+    <h2>Ce qui fabrique ces solutions</h2>
+    <p>Un widget utile suppose des données déjà en forme et un moyen de le produire. Ces outils vivent dans d&#39;autres dépôts et complètent la chaîne.</p>
+    <div class="paves">
+      <div class="pave">
+        <p class="role">Construire depuis une conversation</p>
+        <h3><a href="https://github.com/nic01asFr/GristCoder">GristCoder</a></h3>
+        <p>Un serveur MCP qui relie un assistant à un document Grist, avec un widget d&#39;édition et d&#39;aperçu. Les artefacts produits sont stockés dans le document — rien à héberger ailleurs.</p>
+      </div>
+      <div class="pave">
+        <p class="role">Donner l&#39;API à un agent</p>
+        <h3><a href="https://github.com/nic01asFr/mcp-server-grist">mcp-server-grist</a></h3>
+        <p>L&#39;implémentation MCP de l&#39;API Grist : lire, écrire, décrire un document depuis un assistant, sans interface.</p>
+      </div>
+      <div class="pave">
+        <p class="role">Préparer la donnée géographique</p>
+        <h3><a href="https://github.com/nic01asFr/QgisStreamMCP">QgisStreamMCP</a></h3>
+        <p>QGIS Desktop piloté comme serveur MCP — interface complète, PyQGIS, plus de mille algorithmes de traitement et les jeux de données nationaux.</p>
+      </div>
+      <div class="pave">
+        <p class="role">Composer sans quitter Grist</p>
+        <h3><a href="w/artefactory/">Artefactory</a></h3>
+        <p>Un atelier de widgets dans le document lui-même : on écrit, on prévisualise, on enregistre. Publié ici, comme les autres.</p>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <p class="soustitre">Autour</p>
+    <div class="liens">
+      <span><a href="https://github.com/nic01asFr/StoryMaps">StoryMaps</a> — gabarits de récits cartographiques au Système de design de l&#39;État</span>
+      <span><a href="https://github.com/nic01asFr/geocontext">geocontext</a> — serveur MCP expérimental de contexte spatial pour un modèle de langage</span>
+      <span><a href="https://github.com/nic01asFr/grist-widgets">grist-widgets</a> — widgets antérieurs — carte géospatiale, recherche sémantique</span>
+      <span><a href="https://github.com/nic01asFr/Girabase">Girabase</a> — dimensionnement de la capacité des carrefours giratoires</span>
+    </div>
+  </section>
 </main>
 <footer class="pied">
   <p>Pour ajouter ces widgets à une instance auto-hébergée, pointez
-     <code>GRIST_WIDGET_LIST_URL</code> vers <a href="manifest.json">manifest.json</a>.</p>
+     <code>GRIST_WIDGET_LIST_URL</code> vers <a href="manifest.json">manifest.json</a>.
+     Le code est sur <a href="https://github.com/nic01asFr/Widgets-Grist">GitHub</a>.</p>
+  <p>Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d&#39;aucune organisation et n&#39;engagent qu&#39;eux-mêmes.</p>
 </footer>
 </body>
 </html>

@@ -1,0 +1,116 @@
+{
+  "titre": "Des documents Grist qui deviennent des applications métier",
+  "chapeau": "Un tableur collaboratif porte déjà les données, les droits et l'historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.",
+  "principes": [
+    {
+      "titre": "La donnée ne bouge pas",
+      "texte": "Un widget est une vue, pas un export. Il lit la table avec ses formules et ses liens ; quand elle change, la vue a déjà changé. Rien à réexporter, rien à resynchroniser."
+    },
+    {
+      "titre": "Les droits sont ceux du document",
+      "texte": "Aucun système d'accès en plus de celui de Grist. On partage un document, les vues suivent : un lecteur consulte, il ne modifie pas."
+    },
+    {
+      "titre": "Chez vous, pas chez un tiers",
+      "texte": "Ces widgets sont des fichiers statiques servis depuis GitHub Pages, et ils fonctionnent sur n'importe quelle instance Grist, y compris auto-hébergée. Aucun service tiers ne s'intercale entre vous et vos données."
+    },
+    {
+      "titre": "Sans dépendance de build",
+      "texte": "HTML, CSS et JavaScript autonomes. Pas de chaîne de compilation à maintenir, pas de paquet à mettre à jour pour qu'un widget continue de s'ouvrir dans trois ans."
+    }
+  ],
+  "declinaisonsTitre": "Le même widget, trois usages",
+  "declinaisonsTexte": "Un widget n'est pas prisonnier de son document. La même adresse sert à concevoir, à diffuser et à relever sur le terrain — ce qui change, c'est ce que l'environnement permet.",
+  "declinaisons": [
+    {
+      "ou": "Dans un document Grist",
+      "quoi": "Le cas courant : le widget est une vue du document, à côté des tables. On construit, on modifie, on écrit dans les mêmes tables.",
+      "acces": "Lecture et écriture, selon les droits de la personne"
+    },
+    {
+      "ou": "Dans un navigateur",
+      "quoi": "La même adresse ouverte seule. On charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée. Rien à installer pour regarder.",
+      "acces": "Ce que le document autorise en lecture"
+    },
+    {
+      "ou": "Sur le terrain",
+      "quoi": "Empaqueté en application Android, le widget ouvre les scènes d'un compte sans passer par un document — parce qu'un navigateur ne peut pas présenter de clé API à l'instance.",
+      "acces": "Compte complet, hors du moteur web"
+    }
+  ],
+  "fabriqueTitre": "Ce qui fabrique ces solutions",
+  "fabriqueTexte": "Un widget utile suppose des données déjà en forme et un moyen de le produire. Ces outils vivent dans d'autres dépôts et complètent la chaîne.",
+  "fabrique": [
+    {
+      "nom": "GristCoder",
+      "role": "Construire depuis une conversation",
+      "texte": "Un serveur MCP qui relie un assistant à un document Grist, avec un widget d'édition et d'aperçu. Les artefacts produits sont stockés dans le document — rien à héberger ailleurs.",
+      "url": "https://github.com/nic01asFr/GristCoder"
+    },
+    {
+      "nom": "mcp-server-grist",
+      "role": "Donner l'API à un agent",
+      "texte": "L'implémentation MCP de l'API Grist : lire, écrire, décrire un document depuis un assistant, sans interface.",
+      "url": "https://github.com/nic01asFr/mcp-server-grist"
+    },
+    {
+      "nom": "QgisStreamMCP",
+      "role": "Préparer la donnée géographique",
+      "texte": "QGIS Desktop piloté comme serveur MCP — interface complète, PyQGIS, plus de mille algorithmes de traitement et les jeux de données nationaux.",
+      "url": "https://github.com/nic01asFr/QgisStreamMCP"
+    },
+    {
+      "nom": "Artefactory",
+      "role": "Composer sans quitter Grist",
+      "texte": "Un atelier de widgets dans le document lui-même : on écrit, on prévisualise, on enregistre. Publié ici, comme les autres.",
+      "url": "w/artefactory/"
+    }
+  ],
+  "chaineTitre": "Une chaîne, pas des outils épars",
+  "chaine": [
+    {
+      "etape": "QGIS",
+      "texte": "un projet cartographique, ses couches et sa symbologie"
+    },
+    {
+      "etape": "qgis2grist",
+      "texte": "l'import : les couches deviennent des tables, le schéma est déduit de la donnée"
+    },
+    {
+      "etape": "Grist",
+      "texte": "la donnée vit avec ses formules, ses liens et ses droits"
+    },
+    {
+      "etape": "Atlas",
+      "texte": "la vue : carte, relief, symbolisation, récit rejouable"
+    },
+    {
+      "etape": "Terrain",
+      "texte": "l'application relève sur place, et écrit dans les mêmes tables"
+    }
+  ],
+  "ecosystemeTitre": "Autour",
+  "ecosysteme": [
+    {
+      "nom": "StoryMaps",
+      "texte": "gabarits de récits cartographiques au Système de design de l'État",
+      "url": "https://github.com/nic01asFr/StoryMaps"
+    },
+    {
+      "nom": "geocontext",
+      "texte": "serveur MCP expérimental de contexte spatial pour un modèle de langage",
+      "url": "https://github.com/nic01asFr/geocontext"
+    },
+    {
+      "nom": "grist-widgets",
+      "texte": "widgets antérieurs — carte géospatiale, recherche sémantique",
+      "url": "https://github.com/nic01asFr/grist-widgets"
+    },
+    {
+      "nom": "Girabase",
+      "texte": "dimensionnement de la capacité des carrefours giratoires",
+      "url": "https://github.com/nic01asFr/Girabase"
+    }
+  ],
+  "statut": "Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d'aucune organisation et n'engagent qu'eux-mêmes."
+}
