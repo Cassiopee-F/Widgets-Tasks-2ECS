@@ -71,8 +71,9 @@ donc pas de la documentation : c'est la contrainte de génération.
 | **[Grist-AppStore](https://github.com/nic01asFr/Grist-AppStore)** | les entrées : voix, vision, entraînement embarqué, catalogue de modèles |
 | **Widgets-Grist** (ici) | FormDef, les widgets bureau, la chaîne de publication, Atlas |
 
-Aucun des trois n'a l'ensemble. C'est pourquoi aucun n'aboutit seul, et pourquoi
-« refondre » se lit ici comme **extraire un socle**, pas comme réécrire.
+Aucun des trois n'a l'ensemble, et c'est pourquoi aucun n'aboutit seul.
+« Refondre » se lit donc ici comme **assembler des pièces qui existent** — ni
+réécrire, ni modifier les dépôts d'origine, qui restent intacts.
 
 ---
 

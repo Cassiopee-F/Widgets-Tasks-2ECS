@@ -69,7 +69,8 @@ Les quatre bloquants corrigés, pour mémoire — ils sont instructifs :
 
 Cette répartition évitait de se croiser. Elle vaut toujours pour ne pas écraser
 de travail en cours, mais **son objet a changé** : ce ne sont plus des
-corrections à faire chacun de son côté, c'est un socle à extraire.
+corrections à faire chacun de son côté, c'est un produit à assembler à partir de
+pièces qui existent déjà — sans modifier les dépôts d'où elles viennent.
 
 ---
 
