@@ -127,9 +127,10 @@ Vérifié le 21/08/2026, dans un navigateur.
 
 ## 5. Ce qu'il ne faut surtout pas réimplémenter
 
-**La gestion du hors-ligne.** SURFAC²E l'a payée en production — 437 cotations
+**La gestion du hors-ligne.** SURFAC²E l'a payée en production : 437 cotations
 dupliquées, une photo téléversée quatre fois, 123 saisies bloquées derrière une
-action mal formée. Ses sept règles sont reprises dans
+action mal formée. On copie ses solutions **sans toucher à son dépôt** — c'est
+une référence, pas une dépendance. Ses sept règles sont reprises dans
 [ARCHITECTURE.md](ARCHITECTURE.md#le-hors-ligne--sept-règles-déjà-payées).
 
 La plus contre-intuitive, et celle qui masquait toutes les autres :
@@ -156,10 +157,14 @@ parce que ces contrats visent aussi à être produits par des agents.
 
 ## 7. Ce qu'on attend maintenant
 
-Rien d'urgent, et surtout **pas de code avant décision**. Trois questions sont
-ouvertes en fin d'[ARCHITECTURE.md](ARCHITECTURE.md) et appartiennent à
-l'utilisateur : le rapport à SURFAC²E qui est en production, le niveau « pro » de
-la reconnaissance, et l'endroit où s'applique le modèle entraîné.
+Rien d'urgent, et surtout **pas de code avant décision**. Les questions ouvertes
+sont en fin d'[ARCHITECTURE.md](ARCHITECTURE.md) et appartiennent à
+l'utilisateur : le niveau « pro » de la reconnaissance, et l'endroit où
+s'applique le modèle entraîné.
+
+**Point déjà tranché, à ne pas rouvrir : SURFAC²E n'est pas touché.** Il est en
+production et sert de référence architecturale ; son code se copie et s'adapte,
+il ne se partage pas, et aucune convergence n'est attendue de lui.
 
 Ce qui peut avancer sans les attendre : retirer les mentions d'employeur du dépôt
 `Grist-AppStore`, marquer `to-publish/` comme obsolète, et — utile pour tout le

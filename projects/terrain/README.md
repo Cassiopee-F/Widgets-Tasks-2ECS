@@ -26,10 +26,15 @@ Lisez dans cet ordre, ça prend vingt minutes et ça évite de refaire le chemin
 
 ## En une phrase
 
-Terrain, c'est **SURFAC²E dont on a retiré le métier**. SURFAC²E — développé
-dans un pod Onyxia, spécialisé sur la cotation de bâtiments — a déjà l'hôte, le
-contrat de module et une file hors-ligne éprouvée en production. Terrain extrait
-ce socle et le rend générique : tout type de formulaire, toute saisie de terrain.
+Terrain est **la refonte de Grist-AppStore** : ses quatre démonstrateurs
+deviennent les briques d'un produit unique, générique — tout type de formulaire,
+toute saisie de terrain.
+
+**SURFAC²E sert de référence architecturale, et rien de plus.** Spécialisé sur la
+cotation de bâtiments, développé dans un pod Onyxia, il a déjà l'hôte, le contrat
+de module et une file hors-ligne éprouvée en production : on copie ce qui a fait
+ses preuves. Il est en production, il suit son cours, **on ne le perturbe pas** —
+aucune dépendance partagée, aucune convergence attendue.
 
 Le principe tient en une ligne, héritée de SURFAC²E et généralisée :
 **une seule chaîne, N façons de la remplir.** Un champ déclare ce qu'il attend ;
@@ -62,7 +67,7 @@ donc pas de la documentation : c'est la contrainte de génération.
 
 | Dépôt | Ce qu'il apporte |
 |---|---|
-| **SURFAC²E** (pod Onyxia `proj-surfac2e-terrain`) | l'hôte, le contrat de module, la file hors-ligne et ses sept règles |
+| **SURFAC²E** (pod Onyxia) — *référence, ne pas modifier* | l'hôte, le contrat de module, la file hors-ligne et ses sept règles |
 | **[Grist-AppStore](https://github.com/nic01asFr/Grist-AppStore)** | les entrées : voix, vision, entraînement embarqué, catalogue de modèles |
 | **Widgets-Grist** (ici) | FormDef, les widgets bureau, la chaîne de publication, Atlas |
 
@@ -87,6 +92,6 @@ attendent une validation.
 
 ## Ce qui reste à décider
 
-Voir la fin d'[ARCHITECTURE.md](ARCHITECTURE.md). En résumé : le rapport à
-SURFAC²E qui est en production, le niveau « pro » de la reconnaissance, où
-s'applique le modèle entraîné, et le sort des démonstrateurs.
+Voir la fin d'[ARCHITECTURE.md](ARCHITECTURE.md). En résumé : le niveau « pro »
+de la reconnaissance, où s'applique le modèle entraîné, et le sort des
+démonstrateurs.

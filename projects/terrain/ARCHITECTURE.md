@@ -12,12 +12,17 @@ Terrain est **le socle générique de saisie de terrain** : ce qui permet à un
 professionnel de relever quelque chose sur place et de le déposer dans un
 document Grist, quel que soit le métier.
 
-SURFAC²E en est la première instance — spécialisée sur la cotation de bâtiments.
-Terrain, c'est SURFAC²E dont on a retiré le métier.
+**Terrain est la refonte de Grist-AppStore**, dont les quatre démonstrateurs
+deviennent des briques d'un produit unique.
 
-Terrain n'est donc **pas un nouveau produit à inventer**. C'est un socle à
-extraire de ce qui existe déjà, en trois endroits, et qu'aucun des trois ne
-possède en entier.
+**SURFAC²E est une référence architecturale, pas un projet à faire converger.**
+Il est en production, il suit son cours, et rien ici ne l'engage : on lui
+emprunte des solutions éprouvées — la forme de son hôte, son client Grist et sa
+file hors-ligne — comme on copie un plan qui a fait ses preuves. Aucune
+dépendance partagée, aucune exigence qu'il repose un jour sur Terrain.
+
+Terrain n'est donc **pas un nouveau produit à inventer** : ses pièces existent
+déjà, réparties en trois endroits dont aucun ne les possède toutes.
 
 ---
 
@@ -161,7 +166,7 @@ n'ont pas. C'est pourquoi aucun n'aboutit seul.
 
 | Dépôt | Ce qu'il apporte | État vérifié |
 |---|---|---|
-| **SURFAC²E** (pod Onyxia `proj-surfac2e-terrain`) | l'hôte, le contrat de module, la file hors-ligne et ses leçons | en production |
+| **SURFAC²E** (pod Onyxia `proj-surfac2e-terrain`) | *référence à copier* : l'hôte, le contrat de module, la file hors-ligne et ses leçons | en production — **ne pas modifier** |
 | **Grist-AppStore** | les entrées : voix, vision, entraînement embarqué, catalogue de modèles | démonstrateurs |
 | **Widgets-Grist** (ici) | FormDef, les widgets bureau, la chaîne de publication, Atlas | publié |
 
@@ -259,9 +264,9 @@ synchronisations d'un coup au retour, vérifier qu'il n'y a ni doublon ni perte.
 
 ## Ce qui reste à décider
 
-1. **Le rapport à SURFAC²E.** Terrain est son socle extrait — donc SURFAC²E doit
-   à terme reposer dessus. Cela engage SURFAC²E, qui est en production : ce n'est
-   pas une décision unilatérale du chantier Terrain.
+1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
+   pas perturbé. Il sert de référence ; son code se copie et s'adapte, il ne se
+   partage pas. Ne pas rouvrir cette question sans décision explicite.
 2. **Le niveau « pro » de la reconnaissance.** Un vrai service web, ou le même
    socle avec un modèle plus lourd que le catalogue Grist distribue ? Aujourd'hui
    il n'y a aucun backend : `ml-models.js` sait charger depuis une URL, rien de
