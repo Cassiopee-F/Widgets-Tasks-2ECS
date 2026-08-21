@@ -262,3 +262,42 @@ test('l’apercu lance le widget mis en avant, pas le premier du manifeste', () 
   assert.ok(m, 'apercu absent');
   assert.equal(m[1], 'https://s.io/r/atlas/v2/?vitrine=1');
 });
+
+/* ---------- les blocs d une page produit ---------- */
+
+test('les blocs produit sont facultatifs, et n’existent que remplis', () => {
+  // Une page produit ne merite pas un gabarit a part : ce serait du code qui ne
+  // sert qu'a un projet, et que le suivant devrait reecrire.
+  const nu = V.rendreProjet({
+    id: 'x', widgets: [W('x', 'https://s.io/r/x/')], presentation: {},
+  }, Date.now(), 'https://s.io/r/');
+  for (const marque of ['class="chiffres', 'class="galerie', 'class="sequence', 'class="reveler']) {
+    assert.ok(!nu.includes(marque), `${marque} present sur une fiche vide`);
+  }
+
+  const plein = V.rendreProjet({
+    id: 'x', widgets: [W('x', 'https://s.io/r/x/')],
+    presentation: { produit: {
+      accroche: 'Une phrase de plus',
+      chiffres: [{ valeur: '3', libelle: 'cibles' }],
+      contextes: [{ titre: 'Sur le terrain', texte: 'En application', format: 'mobile',
+        images: [{ image: 'm.jpg', legende: 'Sur un téléphone' }] }],
+      sequence: [{ titre: 'Ajouter', texte: 'Coller l’adresse' }],
+    } },
+  }, Date.now(), 'https://s.io/r/');
+  assert.match(plein, /class="chiffres/);
+  assert.match(plein, /class="telephone"/);
+  assert.match(plein, /class="sequence/);
+  assert.match(plein, /Une phrase de plus/);
+});
+
+test('l’animation ne conditionne pas la lecture', () => {
+  // Une page dont le contenu depend d'une animation est une page vide pour qui
+  // ne l'execute pas — et pour qui a demande moins de mouvement.
+  const html = V.rendreProjet({
+    id: 'x', widgets: [W('x', 'https://s.io/r/x/')],
+    presentation: { produit: { chiffres: [{ valeur: '1', libelle: 'a' }] } },
+  }, Date.now(), 'https://s.io/r/');
+  assert.match(html, /prefers-reduced-motion: reduce/);
+  assert.match(html, /IntersectionObserver' in window/, 'repli si l’API manque');
+});

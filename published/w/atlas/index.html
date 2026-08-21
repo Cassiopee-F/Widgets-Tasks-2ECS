@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Atlas — widget Grist</title>
-<meta name="description" content="Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.">
+<meta name="description" content="La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.">
 <link rel="canonical" href="https://nic01asfr.github.io/Widgets-Grist/w/atlas/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Widgets Grist">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/w/atlas/">
 <meta property="og:title" content="Atlas — widget Grist">
-<meta property="og:description" content="Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.">
+<meta property="og:description" content="La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.">
 <meta property="og:image" content="https://nic01asfr.github.io/Widgets-Grist/w/atlas/apercu.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Atlas — widget Grist">
-<meta name="twitter:description" content="Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Atlas","description":"Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.","url":"https://nic01asfr.github.io/Widgets-Grist/w/atlas/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/Atlas","dateModified":"2026-08-20"}</script>
+<meta name="twitter:description" content="La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Atlas","description":"La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.","url":"https://nic01asfr.github.io/Widgets-Grist/w/atlas/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/Atlas","dateModified":"2026-08-20"}</script>
 <style>
 :root { --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355; --filet: #E6DFD1; --accent: #C44536; }
 @media (prefers-color-scheme: dark) {
@@ -54,6 +54,7 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size:
 .retour:hover { color: var(--accent); }
 .chapeau { font-size: 1.15rem; line-height: 1.55; color: var(--encre);
   max-width: 40rem; margin: 1rem 0 0; }
+.accroche { max-width: 40rem; margin: .8rem 0 0; font-size: 1rem; }
 .boutons { display: flex; flex-wrap: wrap; gap: .7rem; margin: 2rem 0 3rem; }
 .bouton { display: inline-block; padding: .8rem 1.3rem; border-radius: 10px;
   font-size: .95rem; font-weight: 600; text-decoration: none;
@@ -100,6 +101,49 @@ section { margin: 0 0 3rem; }
   box-shadow: 0 6px 24px rgba(0,0,0,.28); }
 .lancer:hover { filter: brightness(1.08); }
 .mention { font-size: .85rem; margin-top: .7rem; }
+
+.chiffres { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  padding: 1.6rem 0; border-top: 1px solid var(--filet); border-bottom: 1px solid var(--filet); }
+.chiffres b { display: block; font-family: var(--display-f, inherit); font-size: 2rem;
+  line-height: 1; color: var(--accent); font-weight: 500; }
+.chiffres span { font-size: .88rem; color: var(--plume); }
+.contexte { display: grid; gap: 1.4rem; margin-bottom: 2.8rem;
+  grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 52rem) { .contexte { grid-template-columns: 17rem minmax(0, 1fr); gap: 2.2rem; } }
+.contexte h3 { font-size: 1.12rem; margin-bottom: .4rem; }
+.contexte p { font-size: .94rem; margin: 0 0 .7rem; }
+/* Ce que ce contexte apporte que les autres n'apportent pas : c'est la seule
+   raison de montrer une capture de plus. */
+.contexte .pourquoi { font-size: .88rem; padding-left: .85rem;
+  border-left: 2px solid var(--accent); margin-bottom: 0; }
+.contexte figure { margin: 0 0 1rem; }
+.contexte .large img { width: 100%; height: auto; display: block; border-radius: 12px;
+  border: 1px solid var(--filet); }
+.contexte figcaption { font-size: .85rem; color: var(--plume); margin-top: .6rem; }
+.telephones { display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+/* Un cadre : sans lui, une capture verticale se lit comme une image mal recadree. */
+.telephone .ecran { border: 8px solid var(--encre); border-radius: 26px; overflow: hidden;
+  background: var(--encre); box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+/* Le cadre suit l image, au lieu de lui imposer un rapport : une capture prise
+   sur un autre appareil se trouvait rognee, et c est le haut de l ecran — la
+   barre du produit — qui disparaissait. */
+.telephone .ecran img { width: 100%; height: auto; display: block; }
+.telephone figcaption { text-align: center; }
+.sequence ol { list-style: none; counter-reset: pas; padding: 0; margin: 0;
+  display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.sequence li { counter-increment: pas; padding-top: 2.6rem; position: relative; }
+.sequence li::before { content: counter(pas); position: absolute; top: 0; left: 0;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center;
+  font-size: .85rem; font-weight: 600; color: #fff; background: var(--accent); }
+.sequence li b { display: block; margin-bottom: .3rem; }
+.sequence li p { font-size: .93rem; margin: 0; }
+/* La revelation accompagne le defilement ; elle ne le commande pas. */
+.reveler { opacity: 0; transform: translateY(14px);
+  transition: opacity .5s ease, transform .5s ease; }
+.reveler.vu { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveler { opacity: 1; transform: none; transition: none; }
+}
 </style>
 </head>
 <body>
@@ -107,7 +151,8 @@ section { margin: 0 0 3rem; }
   <a class="retour" href="../../">← Tous les widgets</a>
   <p class="eyebrow">Widget Grist</p>
   <h1>Atlas</h1>
-  <p class="chapeau">Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.</p>
+  <p class="chapeau">La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.</p>
+  <p class="accroche">Pas de fichier à exporter, pas de plateforme où recopier, pas de droits à reconfigurer : on partage un document Grist, la carte suit.</p>
   <div class="tags"><span class="tag">Cartographie</span><span class="tag">3D</span><span class="tag">Terrain</span><span class="tag">Récit</span></div>
   <div class="faits">
     <span><b>1</b> widget</span>
@@ -119,13 +164,12 @@ section { margin: 0 0 3rem; }
     <a class="bouton creux" href="https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/Atlas" target="_blank" rel="noopener">Le code</a>
   </div>
   <section class="apercu">
-    <div class="cadre" data-widget="https://nic01asfr.github.io/Widgets-Grist/atlas/?vitrine=1">
+    <div class="cadre" data-widget="https://grist.numerique.gouv.fr/o/docs/cPkapbqG3URa/tests-qgis2grist-and-Atlas/p/5?embed=true&amp;style=singlePage">
       <img src="apercu.jpg" alt="Aperçu du widget Atlas"
            width="1200" height="630" loading="lazy">
       <button type="button" class="lancer">Lancer l’aperçu</button>
     </div>
-    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist :
-       les données y sont fictives.</p>
+    <p class="mention">Une scène réelle, partagée en lecture depuis un document Grist — sans compte, sans installation. C’est ce que voit la personne à qui vous envoyez le lien.</p>
   </section>
   <script>
     // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
@@ -142,6 +186,61 @@ section { margin: 0 0 3rem; }
       });
     });
   </script>
+  <section class="chiffres reveler">
+    <div><b>0</b><span>export à refaire quand la donnée change</span></div>
+    <div><b>0</b><span>système de droits en plus de celui de Grist</span></div>
+    <div><b>3</b><span>usages : concevoir, diffuser, relever sur le terrain</span></div>
+  </section>
+  <section class="contextes reveler">
+    <h2>Où ça tourne</h2>
+    <article class="contexte">
+      <div class="dit">
+        <h3>Dans votre document Grist</h3>
+        <p>Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.</p>
+        <p class="pourquoi">C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.</p>
+      </div>
+      <div class="montre">
+        <figure class="large">
+          <img src="dans-grist.jpg" alt="Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent." loading="lazy">
+          <figcaption>Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.</figcaption>
+        </figure>
+      </div>
+    </article>
+    <article class="contexte">
+      <div class="dit">
+        <h3>Dans un navigateur, pour diffuser</h3>
+        <p>La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.</p>
+        <p class="pourquoi">Personne n’a rien à installer pour regarder : un lien suffit, et les droits restent ceux du document.</p>
+      </div>
+      <div class="montre">
+        <figure class="large">
+          <img src="apercu.jpg" alt="Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi." loading="lazy">
+          <figcaption>Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi.</figcaption>
+        </figure>
+      </div>
+    </article>
+    <article class="contexte">
+      <div class="dit">
+        <h3>Sur le terrain, en application</h3>
+        <p>Une application Android ouvre les scènes de votre compte Grist, sans passer par un document. L’interface se replie : la carte occupe l’écran, les panneaux deviennent des feuilles qu’on écarte d’un geste.</p>
+        <p class="pourquoi">Elle existe parce qu’un navigateur ne peut pas présenter de clé API à l’instance — celle-ci refuse l’en-tête d’authentification au contrôle préalable. L’application émet ses requêtes hors du moteur web, ce qui lève l’obstacle.</p>
+      </div>
+      <div class="montre telephones">
+        <figure class="telephone">
+          <div class="ecran"><img src="mobile-carte.jpg" alt="La carte occupe l’écran ; on relève au pied de l’ouvrage." loading="lazy"></div>
+          <figcaption>La carte occupe l’écran ; on relève au pied de l’ouvrage.</figcaption>
+        </figure>
+        <figure class="telephone">
+          <div class="ecran"><img src="mobile-couches.jpg" alt="Un panneau se tire à mi-hauteur : on garde la carte sous les yeux." loading="lazy"></div>
+          <figcaption>Un panneau se tire à mi-hauteur : on garde la carte sous les yeux.</figcaption>
+        </figure>
+        <figure class="telephone">
+          <div class="ecran"><img src="mobile-menu.jpg" alt="Passer d’une scène à l’autre, sans quitter l’application." loading="lazy"></div>
+          <figcaption>Passer d’une scène à l’autre, sans quitter l’application.</figcaption>
+        </figure>
+      </div>
+    </article>
+  </section>
   <section>
     <h2>Ce qu’il fait</h2>
     <ul class="points">
@@ -152,6 +251,31 @@ section { margin: 0 0 3rem; }
       <li><b>Les droits du document font foi</b> — en lecture seule, l&#39;édition disparaît et le récit reste consultable — les règles d&#39;accès Grist sont respectées.</li>
       <li><b>Import depuis QGIS</b> — un projet QGIS converti par qgis2grist arrive avec ses couches et sa symbologie.</li>
     </ul>
+  </section>
+  <section class="sequence reveler">
+    <h2>Le parcours</h2>
+    <ol>
+      <li>
+        <b>Je charge mes données</b>
+        <p>Une table du document, un GeoJSON, OpenStreetMap, ou un projet QGIS converti par qgis2grist — avec ses couches et sa symbologie.</p>
+      </li>
+      <li>
+        <b>J’édite</b>
+        <p>Attributs, géométries, volumes 3D. Ce que je modifie sur la carte est écrit dans la table : c’est la même donnée, pas une copie.</p>
+      </li>
+      <li>
+        <b>Je compose mon récit</b>
+        <p>Chaque étape retient le cadrage, les couches visibles, les filtres et l’heure. Le récit se rejoue, et il reste juste quand la donnée évolue.</p>
+      </li>
+      <li>
+        <b>Je règle les accès dans Grist</b>
+        <p>Atlas n’a pas son propre système de droits : il applique ceux du document. Un lecteur voit la scène et le récit, sans l’édition.</p>
+      </li>
+      <li>
+        <b>Je partage, et on travaille à plusieurs</b>
+        <p>Le lien d’un document Grist suffit. Chacun voit la même scène, et deux personnes qui éditent voient les modifications de l’autre.</p>
+      </li>
+    </ol>
   </section>
   <section>
     <div class="encart">
@@ -169,6 +293,21 @@ section { margin: 0 0 3rem; }
     </div>
   </section>
 </main>
+<script>
+  (function () {
+    var blocs = document.querySelectorAll('.reveler');
+    if (!('IntersectionObserver' in window)) {
+      blocs.forEach(function (b) { b.classList.add('vu'); });
+      return;
+    }
+    var o = new IntersectionObserver(function (entrees) {
+      entrees.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('vu'); o.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    blocs.forEach(function (b) { o.observe(b); });
+  })();
+</script>
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
      <code>https://nic01asfr.github.io/Widgets-Grist/atlas/</code>, et donnez l’accès

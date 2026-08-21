@@ -371,6 +371,158 @@ ${cartes}
 }
 
 /* ------------------------------------------------------------------ */
+/* Les blocs d'une page produit                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Ces blocs sont facultatifs, et c'est le point.
+ *
+ * Une page produit — accroche, images, sequence d'usage, chiffres — ne merite
+ * pas un gabarit a part : ce serait du code qui ne sert qu'a un projet, et que
+ * le suivant devrait reecrire. Chaque bloc s'affiche quand la fiche le remplit,
+ * et disparait sinon. Atlas les remplit tous ; un widget qui n'a rien de plus a
+ * montrer garde exactement la page qu'il avait.
+ */
+
+/** Les chiffres qui disent l'echelle, quand il y en a de vrais a donner. */
+function blocChiffres(produit) {
+  const l = produit.chiffres || [];
+  if (!l.length) return '';
+  return `  <section class="chiffres reveler">
+${l.map((c) => `    <div><b>${echapper(c.valeur)}</b><span>${echapper(c.libelle)}</span></div>`).join('\n')}
+  </section>`;
+}
+
+/**
+ * Ou le produit tourne, et pourquoi chaque endroit existe.
+ *
+ * Une capture sans son pourquoi ne fait que remplir la page : le lecteur se
+ * demande pourquoi on lui montre trois fois la meme interface. Chaque contexte
+ * dit donc ce qu'il apporte que les autres n'apportent pas.
+ *
+ * Le cadre de telephone n'est pas un ornement — sans lui, une capture verticale
+ * se lit comme une image mal recadree au milieu du texte.
+ */
+function blocContextes(produit) {
+  const l = produit.contextes || [];
+  if (!l.length) return '';
+  const figure = (i, mobile) => (mobile
+    ? `        <figure class="telephone">
+          <div class="ecran"><img src="${echapper(i.image)}" alt="${echapper(i.legende)}" loading="lazy"></div>
+          <figcaption>${echapper(i.legende)}</figcaption>
+        </figure>`
+    : `        <figure class="large">
+          <img src="${echapper(i.image)}" alt="${echapper(i.legende)}" loading="lazy">
+          <figcaption>${echapper(i.legende)}</figcaption>
+        </figure>`);
+  const article = (c) => `    <article class="contexte">
+      <div class="dit">
+        <h3>${echapper(c.titre)}</h3>
+        <p>${echapper(c.texte)}</p>
+        ${c.pourquoi ? `<p class="pourquoi">${echapper(c.pourquoi)}</p>` : ''}
+      </div>
+      <div class="montre${c.format === 'mobile' ? ' telephones' : ''}">
+${(c.images || []).map((i) => figure(i, c.format === 'mobile')).join('\n')}
+      </div>
+    </article>`;
+  return `  <section class="contextes reveler">
+    <h2>${echapper(produit.titreContextes || 'Où ça tourne')}</h2>
+${l.map(article).join('\n')}
+  </section>`;
+}
+
+/**
+ * Comment on s'en sert.
+ *
+ * Numerote, parce que l'ordre porte ici une information : on ne symbolise pas
+ * une couche avant de l'avoir ajoutee. Ailleurs, numeroter serait un ornement.
+ */
+function blocSequence(produit) {
+  const l = produit.sequence || [];
+  if (!l.length) return '';
+  return `  <section class="sequence reveler">
+    <h2>${echapper(produit.titreSequence || 'Comment on s’en sert')}</h2>
+    <ol>
+${l.map((e) => `      <li>
+        <b>${echapper(e.titre)}</b>
+        <p>${echapper(e.texte)}</p>
+      </li>`).join('\n')}
+    </ol>
+  </section>`;
+}
+
+/** Le style des blocs produit, et les revelations au defilement. */
+const CSS_PRODUIT = `
+.chiffres { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  padding: 1.6rem 0; border-top: 1px solid var(--filet); border-bottom: 1px solid var(--filet); }
+.chiffres b { display: block; font-family: var(--display-f, inherit); font-size: 2rem;
+  line-height: 1; color: var(--accent); font-weight: 500; }
+.chiffres span { font-size: .88rem; color: var(--plume); }
+.contexte { display: grid; gap: 1.4rem; margin-bottom: 2.8rem;
+  grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 52rem) { .contexte { grid-template-columns: 17rem minmax(0, 1fr); gap: 2.2rem; } }
+.contexte h3 { font-size: 1.12rem; margin-bottom: .4rem; }
+.contexte p { font-size: .94rem; margin: 0 0 .7rem; }
+/* Ce que ce contexte apporte que les autres n'apportent pas : c'est la seule
+   raison de montrer une capture de plus. */
+.contexte .pourquoi { font-size: .88rem; padding-left: .85rem;
+  border-left: 2px solid var(--accent); margin-bottom: 0; }
+.contexte figure { margin: 0 0 1rem; }
+.contexte .large img { width: 100%; height: auto; display: block; border-radius: 12px;
+  border: 1px solid var(--filet); }
+.contexte figcaption { font-size: .85rem; color: var(--plume); margin-top: .6rem; }
+.telephones { display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+/* Un cadre : sans lui, une capture verticale se lit comme une image mal recadree. */
+.telephone .ecran { border: 8px solid var(--encre); border-radius: 26px; overflow: hidden;
+  background: var(--encre); box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+/* Le cadre suit l image, au lieu de lui imposer un rapport : une capture prise
+   sur un autre appareil se trouvait rognee, et c est le haut de l ecran — la
+   barre du produit — qui disparaissait. */
+.telephone .ecran img { width: 100%; height: auto; display: block; }
+.telephone figcaption { text-align: center; }
+.sequence ol { list-style: none; counter-reset: pas; padding: 0; margin: 0;
+  display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.sequence li { counter-increment: pas; padding-top: 2.6rem; position: relative; }
+.sequence li::before { content: counter(pas); position: absolute; top: 0; left: 0;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center;
+  font-size: .85rem; font-weight: 600; color: #fff; background: var(--accent); }
+.sequence li b { display: block; margin-bottom: .3rem; }
+.sequence li p { font-size: .93rem; margin: 0; }
+/* La revelation accompagne le defilement ; elle ne le commande pas. */
+.reveler { opacity: 0; transform: translateY(14px);
+  transition: opacity .5s ease, transform .5s ease; }
+.reveler.vu { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveler { opacity: 1; transform: none; transition: none; }
+}
+`;
+
+/**
+ * Le script de revelation.
+ *
+ * Sans JavaScript — ou s'il echoue — les blocs doivent rester lisibles : ils
+ * sont donc reveles des le chargement par ce meme script, qui n'a plus qu'a
+ * retarder ceux qu'on n'a pas encore atteints. Une page dont le contenu depend
+ * d'une animation est une page vide pour qui ne l'execute pas.
+ */
+const JS_REVELER = `
+<script>
+  (function () {
+    var blocs = document.querySelectorAll('.reveler');
+    if (!('IntersectionObserver' in window)) {
+      blocs.forEach(function (b) { b.classList.add('vu'); });
+      return;
+    }
+    var o = new IntersectionObserver(function (entrees) {
+      entrees.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('vu'); o.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    blocs.forEach(function (b) { o.observe(b); });
+  })();
+</` + `script>`;
+
+/* ------------------------------------------------------------------ */
 /* La page d'un projet                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -380,6 +532,7 @@ const CSS_PROJET = `
 .retour:hover { color: var(--accent); }
 .chapeau { font-size: 1.15rem; line-height: 1.55; color: var(--encre);
   max-width: 40rem; margin: 1rem 0 0; }
+.accroche { max-width: 40rem; margin: .8rem 0 0; font-size: 1rem; }
 .boutons { display: flex; flex-wrap: wrap; gap: .7rem; margin: 2rem 0 3rem; }
 .bouton { display: inline-block; padding: .8rem 1.3rem; border-radius: 10px;
   font-size: .95rem; font-weight: 600; text-decoration: none;
@@ -463,15 +616,23 @@ function sectionApercu(p, image) {
   // Celui qu'on met en avant, pas le premier venu du manifeste : sur
   // qgis2grist, l'apercu lancait la v1 que la page annonce comme depassee.
   const principal = principalDe(p);
-  const url = `${principal.url}${principal.url.includes('?') ? '&' : '?'}vitrine=1`;
+  // Une scene reelle vaut mieux qu'un widget vide. Grist sait s'integrer
+  // (`embed=true&style=singlePage`) : la fiche peut donc viser un document
+  // partage en lecture, ou le widget tourne avec de vraies donnees et les
+  // droits qu'on lui connait. A defaut, le widget seul.
+  const demo = (p.presentation.produit || {}).apercu;
+  const url = demo && demo.url
+    ? demo.url
+    : `${principal.url}${principal.url.includes('?') ? '&' : '?'}vitrine=1`;
+  const mention = (demo && demo.mention)
+    || 'L’aperçu s’exécute dans votre navigateur, sans document Grist : les données y sont fictives.';
   return `  <section class="apercu">
     <div class="cadre" data-widget="${echapper(url)}">
       <img src="${echapper(image)}" alt="Aperçu du widget ${echapper(p.presentation.nom || p.id)}"
            width="1200" height="630" loading="lazy">
       <button type="button" class="lancer">Lancer l’aperçu</button>
     </div>
-    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist :
-       les données y sont fictives.</p>
+    <p class="mention">${echapper(mention)}</p>
   </section>
   <script>
     // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
@@ -527,10 +688,12 @@ function rendreProjet(p, maintenant, base = '') {
     : principal.accessLevel === 'read table' ? 'lecture seule' : 'aucun accès aux données';
 
   const image = apercuDe(p.id);
+  const produit = v.produit || {};
   const sections = [];
 
   const ap = sectionApercu(p, image);
   if (ap) sections.push(ap);
+  for (const bloc of [blocChiffres(produit), blocContextes(produit)]) if (bloc) sections.push(bloc);
 
   if ((v.points || []).length) {
     sections.push(`  <section>
@@ -549,6 +712,9 @@ ${p.widgets.map((w) => ligneWidget(w, estArchive(p, w))).join('\n')}
     </div>
   </section>`);
   }
+
+  const seq = blocSequence(produit);
+  if (seq) sections.push(seq);
 
   if (v.encart) {
     sections.push(`  <section>
@@ -592,12 +758,13 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
       ...(v.depot ? { codeRepository: v.depot } : {}),
       ...(maj ? { dateModified: maj.slice(0, 10) } : {}),
     }) : '',
-    css: CSS_PROJET,
+    css: CSS_PROJET + (Object.keys(produit).length ? CSS_PRODUIT : ''),
     corps: `<main>
   <a class="retour" href="../../">← Tous les widgets</a>
   <p class="eyebrow">Widget Grist</p>
   <h1>${echapper(nom)}</h1>
   <p class="chapeau">${echapper(v.pitch || principal.description || '')}</p>
+  ${produit.accroche ? `<p class="accroche">${echapper(produit.accroche)}</p>` : ''}
   ${(v.tags || []).length ? `<div class="tags">${v.tags.map((t) => `<span class="tag">${echapper(t)}</span>`).join('')}</div>` : ''}
   <div class="faits">
     <span><b>${p.widgets.length}</b> widget${p.widgets.length > 1 ? 's' : ''}</span>
@@ -609,7 +776,7 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
     ${v.depot ? `<a class="bouton creux" href="${echapper(v.depot)}" target="_blank" rel="noopener">Le code</a>` : ''}
   </div>
 ${sections.join('\n')}
-</main>
+</main>${Object.keys(produit).length ? JS_REVELER : ''}
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
      <code>${echapper(principal.url)}</code>, et donnez l’accès

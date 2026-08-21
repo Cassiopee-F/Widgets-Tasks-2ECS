@@ -1,6 +1,6 @@
 {
   "nom": "Atlas",
-  "pitch": "Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.",
+  "pitch": "La carte n’est pas un export de vos données : c’en est une vue. Les couches, la symbolisation, le relief et le récit vivent dans le document Grist — et quand la table change, la carte a déjà changé.",
   "couleur": "#C44536",
   "tags": [
     "Cartographie",
@@ -56,5 +56,96 @@
       "version": "v1.1.1",
       "texte": "Palette et méthode de graduation atteignent la carte ; le réglage du bâti ne masque plus les couches Atlas."
     }
-  ]
+  ],
+  "produit": {
+    "accroche": "Pas de fichier à exporter, pas de plateforme où recopier, pas de droits à reconfigurer : on partage un document Grist, la carte suit.",
+    "chiffres": [
+      {
+        "valeur": "0",
+        "libelle": "export à refaire quand la donnée change"
+      },
+      {
+        "valeur": "0",
+        "libelle": "système de droits en plus de celui de Grist"
+      },
+      {
+        "valeur": "3",
+        "libelle": "usages : concevoir, diffuser, relever sur le terrain"
+      }
+    ],
+    "titreSequence": "Le parcours",
+    "sequence": [
+      {
+        "titre": "Je charge mes données",
+        "texte": "Une table du document, un GeoJSON, OpenStreetMap, ou un projet QGIS converti par qgis2grist — avec ses couches et sa symbologie."
+      },
+      {
+        "titre": "J’édite",
+        "texte": "Attributs, géométries, volumes 3D. Ce que je modifie sur la carte est écrit dans la table : c’est la même donnée, pas une copie."
+      },
+      {
+        "titre": "Je compose mon récit",
+        "texte": "Chaque étape retient le cadrage, les couches visibles, les filtres et l’heure. Le récit se rejoue, et il reste juste quand la donnée évolue."
+      },
+      {
+        "titre": "Je règle les accès dans Grist",
+        "texte": "Atlas n’a pas son propre système de droits : il applique ceux du document. Un lecteur voit la scène et le récit, sans l’édition."
+      },
+      {
+        "titre": "Je partage, et on travaille à plusieurs",
+        "texte": "Le lien d’un document Grist suffit. Chacun voit la même scène, et deux personnes qui éditent voient les modifications de l’autre."
+      }
+    ],
+    "titreContextes": "Où ça tourne",
+    "contextes": [
+      {
+        "titre": "Dans votre document Grist",
+        "texte": "Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.",
+        "pourquoi": "C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.",
+        "format": "large",
+        "images": [
+          {
+            "image": "dans-grist.jpg",
+            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent."
+          }
+        ]
+      },
+      {
+        "titre": "Dans un navigateur, pour diffuser",
+        "texte": "La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.",
+        "pourquoi": "Personne n’a rien à installer pour regarder : un lien suffit, et les droits restent ceux du document.",
+        "format": "large",
+        "images": [
+          {
+            "image": "apercu.jpg",
+            "legende": "Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi."
+          }
+        ]
+      },
+      {
+        "titre": "Sur le terrain, en application",
+        "texte": "Une application Android ouvre les scènes de votre compte Grist, sans passer par un document. L’interface se replie : la carte occupe l’écran, les panneaux deviennent des feuilles qu’on écarte d’un geste.",
+        "pourquoi": "Elle existe parce qu’un navigateur ne peut pas présenter de clé API à l’instance — celle-ci refuse l’en-tête d’authentification au contrôle préalable. L’application émet ses requêtes hors du moteur web, ce qui lève l’obstacle.",
+        "format": "mobile",
+        "images": [
+          {
+            "image": "mobile-carte.jpg",
+            "legende": "La carte occupe l’écran ; on relève au pied de l’ouvrage."
+          },
+          {
+            "image": "mobile-couches.jpg",
+            "legende": "Un panneau se tire à mi-hauteur : on garde la carte sous les yeux."
+          },
+          {
+            "image": "mobile-menu.jpg",
+            "legende": "Passer d’une scène à l’autre, sans quitter l’application."
+          }
+        ]
+      }
+    ],
+    "apercu": {
+      "url": "https://grist.numerique.gouv.fr/o/docs/cPkapbqG3URa/tests-qgis2grist-and-Atlas/p/5?embed=true&style=singlePage",
+      "mention": "Une scène réelle, partagée en lecture depuis un document Grist — sans compte, sans installation. C’est ce que voit la personne à qui vous envoyez le lien."
+    }
+  }
 }

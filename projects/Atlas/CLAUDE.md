@@ -480,3 +480,44 @@ npm run manifest
 
 URL widget : `https://nic01asfr.github.io/Widgets-Grist/atlas/`  
 Édition : `requiredAccess: 'full'` (défaut). Lecture : `?mode=view` → `read table`.
+
+## Paramètres d'URL — qui pose quoi, et ce qui n'arrive jamais jusqu'à Atlas
+
+Trois couches se superposent, et les confondre coûte cher. Elles ne s'adressent
+pas au même destinataire.
+
+### 1. Ce que Grist met sur l'URL du **document**
+
+`?embed=true&style=singlePage`, `/p/5`… Ces paramètres pilotent l'**interface de
+Grist** : masquer la barre latérale, ouvrir telle page. Ils ne parviennent
+**jamais** à Atlas — le widget vit dans une iframe dont l'URL est celle du
+widget, pas celle du document.
+
+C'est ce qui permet d'intégrer une scène réelle dans une page tierce : on
+embarque le document (`embed=true&style=singlePage`), et Atlas s'y trouve comme
+dans n'importe quel document, avec les données et les droits qui vont avec.
+
+### 2. Ce que Grist met sur l'URL du **widget**
+
+`?access=full&readonly=true&culture=fr-FR…` — posés par Grist sur l'iframe.
+Lus par `lib/view-mode.js`.
+
+> **Piège vérifié** : `access=full&readonly=false` est envoyé **toujours**, y
+> compris à un lecteur. Il décrit le niveau demandé par le widget, pas les
+> droits de la personne. S'y fier ouvrait l'édition à qui n'a pas le droit
+> d'écrire — d'où la sonde d'écriture réelle.
+
+### 3. Ce que l'auteur de la page met sur l'URL du widget
+
+| Paramètre | Lu par | Effet |
+|---|---|---|
+| `?vitrine=1` | `lib/data-client.js` | « la page qui m'encadre est une présentation, pas un document » — sans lui, Atlas encadré croit avoir un document à interroger |
+| `?mode=…` | `lib/view-mode.js` | force le mode lecture, pour tester |
+| `?no3d` | `app_v7.js` | coupe les modèles 3D (appareil modeste) |
+| `?models=…` | `app_v7.js` | source du catalogue 3D |
+| `?nav` | `index_v7.html` | barre de navigation inter-vues |
+
+**La règle qui découle des trois couches** : `vitrine=1` ne se pose que si l'on
+embarque **le widget seul**. Si l'on embarque un **document** Grist, Atlas y est
+réellement dans Grist — le poser lui ferait ignorer le document qu'il a sous la
+main.

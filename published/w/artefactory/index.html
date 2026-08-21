@@ -52,6 +52,7 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size:
 .retour:hover { color: var(--accent); }
 .chapeau { font-size: 1.15rem; line-height: 1.55; color: var(--encre);
   max-width: 40rem; margin: 1rem 0 0; }
+.accroche { max-width: 40rem; margin: .8rem 0 0; font-size: 1rem; }
 .boutons { display: flex; flex-wrap: wrap; gap: .7rem; margin: 2rem 0 3rem; }
 .bouton { display: inline-block; padding: .8rem 1.3rem; border-radius: 10px;
   font-size: .95rem; font-weight: 600; text-decoration: none;
@@ -106,6 +107,7 @@ section { margin: 0 0 3rem; }
   <p class="eyebrow">Widget Grist</p>
   <h1>Artefactory</h1>
   <p class="chapeau">Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.</p>
+  
   <div class="tags"><span class="tag">Atelier</span><span class="tag">No-code</span><span class="tag">Composition</span></div>
   <div class="faits">
     <span><b>1</b> widget</span>
@@ -122,8 +124,7 @@ section { margin: 0 0 3rem; }
            width="1200" height="630" loading="lazy">
       <button type="button" class="lancer">Lancer l’aperçu</button>
     </div>
-    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist :
-       les données y sont fictives.</p>
+    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist : les données y sont fictives.</p>
   </section>
   <script>
     // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
