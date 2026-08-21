@@ -214,6 +214,9 @@ export async function accueillir({ portee = globalThis, document: doc = document
         const pret = await ouvrirScene(conf, portee, boite);
         if (!pret) return;
         ecrireConfig(stockage, conf);
+        // Dire tout de suite quelle scene s'ouvre : le chargement dure, et une
+        // carte vide intitulee « Nouveau projet » se lit comme un echec.
+        try { portee.__atlasAnnoncerOuverture?.(scene.nom); } catch (_) { /* sans importance */ }
         fermer();
         resoudre(true);
       },

@@ -122,11 +122,11 @@ function ignRasterStyle(tiles) {
         layers: [{ id: 'ign-base', type: 'raster', source: 'ign' }] };
 }
 const BASEMAPS = {
-    liberty:  { url: 'https://tiles.openfreemap.org/styles/liberty',  label: 'Liberty 3D', icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.2 5.6L20 10l-5.8 1.4L12 17l-2.2-5.6L4 10l5.8-1.4z"/></svg>' },
-    bright:   { url: 'https://tiles.openfreemap.org/styles/bright',   label: 'Plan',       icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/></svg>' },
+    liberty:  { url: 'https://tiles.openfreemap.org/styles/liberty',  label: 'Liberty 3D', icon: '✨' },
+    bright:   { url: 'https://tiles.openfreemap.org/styles/bright',   label: 'Plan',       icon: '🗺️' },
     positron: { url: 'https://tiles.openfreemap.org/styles/positron', label: 'Clair',      icon: '⬜' },
     'plan-ign':  { style: () => ignRasterStyle(IGN.plan),  label: 'Plan IGN',  icon: '🇫🇷' },
-    'ortho-ign': { style: () => ignRasterStyle(IGN.ortho), label: 'Ortho IGN', icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15 0 18M12 3C9.5 5.7 9.5 18 12 21"/></svg>' },
+    'ortho-ign': { style: () => ignRasterStyle(IGN.ortho), label: 'Ortho IGN', icon: '🛰️' },
 };
 
 // Sources de relief (DEM) : terrarium mondial (sans clé) ou LIDAR HD IGN (France)
@@ -2247,6 +2247,24 @@ function openModule(name) {
 
     renderInspector();
 }
+/**
+ * Annonce la scene qu'on ouvre, avant meme d'avoir ses donnees.
+ *
+ * Le chargement prend quelques secondes ; pendant ce temps l'en-tete affichait
+ * « Nouveau projet » et la legende « Aucune couche visible », sur une carte
+ * vide posee a l'ancrage par defaut. Tout disait que l'ouverture avait echoue,
+ * alors qu'elle etait en cours.
+ */
+function annoncerOuverture(nom) {
+    const t = document.getElementById('project-name');
+    if (t && nom) t.textContent = nom;
+    const l = document.getElementById('legend');
+    const corps = document.getElementById('legend-body');
+    if (corps && !corps.textContent.trim()) corps.textContent = 'Chargement…';
+    if (l) l.dataset.ouverture = '1';
+}
+if (typeof window !== 'undefined') window.__atlasAnnoncerOuverture = annoncerOuverture;
+
 function closeModulePanel() {
     if (Feuille) poserFeuille('fermee');
     $('module-panel').classList.remove('open');
@@ -2262,6 +2280,10 @@ function renderLieu() {
     $('module-title').textContent = 'Lieu';
     const L = STATE.location;
     $('module-body').innerHTML = `
+        <div class="section">
+            <div class="section-title">Nom du projet</div>
+            <input class="input" id="proj-name" placeholder="Ma maquette…" value="${STATE.projectName}" onchange="A.setProjectName(this.value)">
+        </div>
         <div class="loc-badge">
             <span class="ic">${icTrait(IC.epingle)}</span>
             <div>
@@ -2287,10 +2309,7 @@ function renderLieu() {
             </div>
             <button class="btn btn-soft btn-full" style="margin-top:10px" onclick="A.applyManualCoords()">Aller</button>
         </div>
-        <div class="section">
-            <div class="section-title">Nom du projet</div>
-            <input class="input" id="proj-name" placeholder="Ma maquette…" value="${STATE.projectName}" onchange="A.setProjectName(this.value)">
-        </div>`;
+`;
 }
 
 // ---- Couches ----
@@ -2324,6 +2343,15 @@ function availableTablesSection() {
         </div>`).join('')}</div></div>`;
 }
 
+    const actions = () => `
+        <div class="section layer-actions">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">${icTrait(IC.globe)} OSM</button>
+                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">${icTrait(IC.fichier)} Fichier</button>
+                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">${icTrait(IC.lien)} Table</button>` : ''}
+            </div>
+        </div>`;
+
 function renderLayersPanel(mode) {
     if (CONFIG.viewMode) {
         renderLayersPanelLecture();
@@ -2335,11 +2363,8 @@ function renderLayersPanel(mode) {
         body.innerHTML = `
             <div class="empty"><div class="ic">${icTrait(IC.dossier, 40)}</div><div class="t">Aucune couche affichée</div><div class="h">Affiche une table ci-dessous, ou importe</div></div>
             ${availableTablesSection()}
-            <div class="section"><div class="section-title">OpenStreetMap</div><button class="btn btn-primary btn-full" onclick="A.openOSM()">Importer depuis OSM</button></div>
-            <div class="section"><div class="section-title">Fichier</div>
-                <div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">${icTrait(IC.fichier, 40)}</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div>
-            </div>
-            ${CONFIG.grist.ready ? `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openLinkTable()">${icTrait(IC.lien)} Lier une table Grist</button></div>` : ''}`;
+            <div class="section"><div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">${icTrait(IC.fichier, 40)}</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div></div>
+            ${actions()}`;
         wireDrop();
         return;
     }
@@ -2383,13 +2408,7 @@ function renderLayersPanel(mode) {
             }).join('')}
         </div>
         ${availableTablesSection()}
-        <div class="section">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">${icTrait(IC.globe)} OSM</button>
-                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">${icTrait(IC.fichier)} Fichier</button>
-                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">${icTrait(IC.lien)} Table</button>` : ''}
-            </div>
-        </div>`;
+        ${actions()}`;
     wireLayerReorder(body);
 }
 
@@ -2553,17 +2572,17 @@ function listDockPills() {
     const edit = !CONFIG.viewMode;
 
     if (edit || getViewerControl(vcs, 'sun')?.exposed) {
-        pills.push({ id: 'sun', kind: 'sun', icon: icTrait('<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>'), label: 'Soleil' });
+        pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
     }
     // Icônes du dock : s'en tenir aux emoji, avec leur sélecteur de variante
     // (U+FE0F). Un glyphe symbolique rare — ici `▦` U+25A6 — n'existe pas dans
     // les polices système courantes, et un emoji sans sélecteur bascule en
     // rendu texte : dans les deux cas la pastille s'affiche vide, sans erreur.
     if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
-        pills.push({ id: 'view3d', kind: 'env', icon: icTrait('<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'), label: '2D / 3D' });
+        pills.push({ id: 'view3d', kind: 'env', icon: '🏙️', label: '2D / 3D' });
     }
     if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
-        pills.push({ id: 'basemap', kind: 'env', icon: icTrait('<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/>'), label: 'Fonds' });
+        pills.push({ id: 'basemap', kind: 'env', icon: '🗺️', label: 'Fonds' });
     }
     for (const { layer, c } of collectPublishedControls()) {
         pills.push({
@@ -3032,10 +3051,10 @@ function renderSoleil() {
         <div class="section">
             <div class="section-title">Moment de la journée</div>
             <div class="option-cards grid2">
-                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon">${icTrait('<path d="M3 18h18M6 18a6 6 0 0 1 12 0"/><path d="M12 5v2M5.6 8.6l1.4 1.4m11.4-1.4-1.4 1.4"/><path d="M2 21h20"/>', 26)}</div><div class="oc-label">Aube</div></div>
-                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon">${icTrait(IC.soleil, 26)}</div><div class="oc-label">Midi</div></div>
-                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon">${icTrait('<path d="M3 18h18M8 18a4 4 0 0 1 8 0"/><path d="M12 21v-1"/><path d="M2 14h4m12 0h4"/>', 26)}</div><div class="oc-label">Soir</div></div>
-                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon">${icTrait('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', 26)}</div><div class="oc-label">Nuit</div></div>
+                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon" style="color:#D98C3F">${icTrait('<path d="M3 18h18M6 18a6 6 0 0 1 12 0"/><path d="M12 5v2M5.6 8.6l1.4 1.4m11.4-1.4-1.4 1.4"/><path d="M2 21h20"/>', 26)}</div><div class="oc-label">Aube</div></div>
+                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon" style="color:#E0A526">${icTrait(IC.soleil, 26)}</div><div class="oc-label">Midi</div></div>
+                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon" style="color:#B4593A">${icTrait('<path d="M3 18h18M8 18a4 4 0 0 1 8 0"/><path d="M12 21v-1"/><path d="M2 14h4m12 0h4"/>', 26)}</div><div class="oc-label">Soir</div></div>
+                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon" style="color:#5B6B8C">${icTrait('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', 26)}</div><div class="oc-label">Nuit</div></div>
             </div>
         </div>
         <div class="section">
@@ -3064,8 +3083,8 @@ function renderVues() {
             <div class="section-title">Points de vue</div>
             <div class="option-cards">
                 <div class="option-card" onclick="A.viewPreset('top')"><div class="oc-icon">⬇️</div><div class="oc-label">Dessus</div></div>
-                <div class="option-card" onclick="A.viewPreset('3d')"><div class="oc-icon">${icTrait(IC.cube, 26)}</div><div class="oc-label">3D</div></div>
-                <div class="option-card" onclick="A.viewPreset('street')"><div class="oc-icon">${icTrait(IC.pieton, 26)}</div><div class="oc-label">Piéton</div></div>
+                <div class="option-card" onclick="A.viewPreset('3d')"><div class="oc-icon">🎯</div><div class="oc-label">3D</div></div>
+                <div class="option-card" onclick="A.viewPreset('street')"><div class="oc-icon">🚶</div><div class="oc-label">Piéton</div></div>
             </div>
         </div>
         <div class="section">
@@ -3077,8 +3096,8 @@ function renderVues() {
         <div class="section">
             <div class="section-title">Projection</div>
             <div class="seg">
-                <button class="${s.projection === 'globe' ? 'active' : ''}" onclick="A.setProjection('globe')">${icTrait(IC.globe)} Globe</button>
-                <button class="${s.projection === 'mercator' ? 'active' : ''}" onclick="A.setProjection('mercator')">${icTrait(IC.carte)} Plan</button>
+                <button class="${s.projection === 'globe' ? 'active' : ''}" onclick="A.setProjection('globe')">🌍 Globe</button>
+                <button class="${s.projection === 'mercator' ? 'active' : ''}" onclick="A.setProjection('mercator')">🗺️ Plan</button>
             </div>
             <div class="hint" style="margin-top:8px">Le globe (façon Google Earth) bascule automatiquement en plan une fois zoomé sur la zone.</div>
         </div>
@@ -3090,18 +3109,18 @@ function renderVues() {
         </div>
         <div class="section">
             <div class="section-title">Rendu 3D</div>
-            <div class="toggle-row"><span class="tlabel">Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')" role="switch" tabindex="0" aria-checked="${!!s.buildings3D}" aria-label="Bâti du fond de carte"></div></div>
-            <div class="toggle-row"><span class="tlabel">Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')" role="switch" tabindex="0" aria-checked="${!!s.terrain3D}" aria-label="Terrain 3D"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏢 Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')" role="switch" tabindex="0" aria-checked="${!!s.buildings3D}" aria-label="Bâti du fond de carte"></div></div>
+            <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')" role="switch" tabindex="0" aria-checked="${!!s.terrain3D}" aria-label="Terrain 3D"></div></div>
             <label class="input-label" style="margin-top:6px">Source du relief</label>
             <select class="input" onchange="A.setTerrainSource(this.value)">
                 ${Object.entries(TERRAIN_SOURCES).map(([k, t]) => `<option value="${k}" ${s.terrainSource === k ? 'selected' : ''}>${t.label}</option>`).join('')}
             </select>
             <div class="slider-head" style="margin-top:8px"><span class="lbl">Exagération relief</span><span class="val" id="v-exag">${s.terrainExaggeration}×</span></div>
             <input type="range" class="rng" min="1" max="3" step="0.1" value="${s.terrainExaggeration}" oninput="A.setExag(this.value)">
-            <div class="toggle-row"><span class="tlabel">Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')" role="switch" tabindex="0" aria-checked="${!!s.labels}" aria-label="Libellés du fond"></div></div>
-            <div class="toggle-row"><span class="tlabel">Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')" role="switch" tabindex="0" aria-checked="${!!s.sky}" aria-label="Ciel et atmosphère"></div></div>
+            <div class="toggle-row"><span class="tlabel">🏷️ Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')" role="switch" tabindex="0" aria-checked="${!!s.labels}" aria-label="Libellés du fond"></div></div>
+            <div class="toggle-row"><span class="tlabel">🌫️ Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')" role="switch" tabindex="0" aria-checked="${!!s.sky}" aria-label="Ciel et atmosphère"></div></div>
         </div>
-        <button class="btn btn-soft btn-full" onclick="A.resetView()">${icTrait(IC.rafraichir)} Réinitialiser la vue</button>`;
+        <button class="btn btn-soft btn-full" onclick="A.resetView()">🔄 Réinitialiser la vue</button>`;
 }
 
 // ============================================================
@@ -4427,6 +4446,17 @@ function ouvrirFeuilleModules() {
     f.querySelector('.mp-fond').onclick = fermer;
     f.querySelectorAll('[data-module-plus]').forEach((b) => {
         b.onclick = () => { fermer(); openModule(b.dataset.modulePlus); };
+    });
+    // Enregistrer, charger, exporter : dans l'en-tete sur un ecran large, nulle
+    // part sur un telephone. On pouvait donc tout modifier sans jamais rien
+    // enregistrer — le pire endroit ou manquer un bouton.
+    const actions = {
+        enregistrer: () => saveProject(),
+        charger: () => $('file-input')?.click(),
+        exporter: () => exportProject(),
+    };
+    f.querySelectorAll('[data-action-plus]').forEach((b) => {
+        b.onclick = () => { fermer(); actions[b.dataset.actionPlus]?.(); };
     });
 }
 
@@ -5829,6 +5859,9 @@ function wireEvents() {
 
     // legend collapse
     $('legend-head').addEventListener('click', () => $('legend').classList.toggle('collapsed'));
+    // Sur un telephone, la legende depliee mangeait le quart de l'ecran et
+    // masquait ce qu'elle decrit. Elle s'ouvre d'un doigt quand on en a besoin.
+    if (document.body.classList.contains('mobile-layout')) $('legend')?.classList.add('collapsed');
 
     // selection bar
     $('sel-prev').addEventListener('click', () => A.selPrev());
