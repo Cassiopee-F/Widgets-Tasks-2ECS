@@ -256,6 +256,24 @@ Et les deux tâches alimentent **deux natures de champ différentes** :
 l'extension « section répétable » à porter au contrat FormDef : les deux besoins
 n'en font qu'un. Un rectangle annoté et un constat répété sont la même structure.
 
+### Ce qui sépare vraiment les démonstrateurs du produit
+
+**Leurs formulaires sont codés en dur.** Vérifié dans `app/index.html` :
+`f-type_observation`, `f-materiaux_concernes`, `f-surface_estimee`,
+`f-localisation_precise`, `f-actions_requises`… et **zéro occurrence de
+FormDef**. Le parcours en quatre étapes, les champs, la table `Visites_terrain` :
+tout est figé pour un métier — l'inspection de voirie.
+
+C'est exactement ce qui sépare *« une application de saisie pour la voirie »* de
+*« un socle générique de saisie de terrain »*. Le reste — la voix, la caméra,
+l'entraînement, la position — est déjà générique par nature : ce sont des
+capteurs, ils ne connaissent aucun métier. **Le seul verrou est le formulaire.**
+
+Terrain ne consiste donc pas à réécrire ces interfaces, mais à **remplacer leurs
+champs en dur par un FormDef reçu du document**. Le jour où l'app voix affiche
+les champs que la table déclare au lieu des siens, elle cesse d'être SCOUT et
+devient Terrain.
+
 Trois enseignements de plus :
 
 - **Le catalogue ne liste que deux applications.** `ml-lite` et `ml-pro` n'y
@@ -267,10 +285,12 @@ Trois enseignements de plus :
 - **Le parcours en étapes numérotées est le motif commun** aux quatre. C'est ce
   qu'un hôte Terrain doit savoir rendre, une fois, pour tous les modules.
 
-> **Précaution mesurée** : `app-video` demande la caméra dès l'ouverture, sans
-> écran intermédiaire. En test au navigateur, la webcam s'active immédiatement.
-> Préférer `take_snapshot` (arbre d'accessibilité) à une capture d'écran quand on
-> inspecte ces interfaces.
+> **Précaution de test** : `app-video` ouvre le flux caméra dès le chargement
+> quand la permission a déjà été accordée à l'origine — comportement normal et
+> même souhaitable sur le terrain, où l'on ne veut pas d'écran entre l'agent et
+> ce qu'il doit photographier. Mais en test au navigateur, la webcam s'allume
+> aussitôt : préférer `take_snapshot` (arbre d'accessibilité) à une capture
+> d'écran pour inspecter ces interfaces.
 
 ### Ce qu'ils n'ont pas prouvé
 
