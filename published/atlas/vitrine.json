@@ -139,10 +139,15 @@
     }
   },
   "forum": {
-    "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
-    "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte",
-    "titreSujet": "Atlas — un support cartographique complet pour Grist",
-    "cibleARenseigner": "Le sujet dédié n’existe pas encore. Y noter l’identifiant de son premier message sous `postId` une fois créé — surtout pas celui du fil Mapbox (5054), que le workflow écraserait."
+    "url": "https://forum.grist.libre.sh/t/atlas-un-widget-carte-pour-grist-lignes-polygones-3d-edition-et-partage-en-lecture/4205",
+    "titre": "Le fil d’Atlas sur le forum Grist francophone — questions, retours et annonces de version",
+    "postId": 9082,
+    "titreSujet": "Atlas - un widget carte pour Grist : lignes, polygones, 3D, édition et partage en lecture",
+    "ancien": {
+      "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
+      "postId": 5054,
+      "aFaire": "Poster une réponse dans ce fil pour renvoyer vers le nouveau sujet."
+    }
   },
   "statut": {
     "niveau": "En service",
