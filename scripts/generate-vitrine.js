@@ -806,7 +806,7 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
     ${v.depot ? `<a class="bouton creux" href="${echapper(v.depot)}" target="_blank" rel="noopener">Le code</a>` : ''}
   </div>
 ${sections.join('\n')}
-</main>${Object.keys(produit).length ? JS_REVELER : ''}
+</main>${sections.some((x) => x.includes('class="cadre"')) ? JS_CADRES : ''}${Object.keys(produit).length ? JS_REVELER : ''}
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
      <code>${echapper(principal.url)}</code>, et donnez l’accès

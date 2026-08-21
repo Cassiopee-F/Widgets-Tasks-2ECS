@@ -278,6 +278,22 @@ section { margin: 0 0 3rem; }
   </section>
 </main>
 <script>
+  document.querySelectorAll('.cadre').forEach(function (cadre) {
+    var bouton = cadre.querySelector('.lancer');
+    if (!bouton) return;
+    bouton.addEventListener('click', function () {
+      var f = document.createElement('iframe');
+      f.src = cadre.dataset.widget;
+      f.title = 'Aperçu';
+      f.loading = 'lazy';
+      f.allow = 'fullscreen';
+      cadre.innerHTML = '';
+      cadre.appendChild(f);
+      cadre.classList.add('vivant');
+    });
+  });
+</script>
+<script>
   (function () {
     var blocs = document.querySelectorAll('.reveler');
     if (!('IntersectionObserver' in window)) {

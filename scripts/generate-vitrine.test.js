@@ -329,3 +329,20 @@ test('la balise de verification n’apparait que si un code est depose', () => {
     assert.doesNotMatch(html, /google-site-verification/, 'balise posee sans code');
   }
 });
+
+test('un bouton d’aperçu a toujours un script qui l’écoute', () => {
+  // Le script des cadres a ete sorti de la section d'apercu pour qu'une
+  // demonstration placee ailleurs puisse en profiter — et il a cesse d'etre
+  // injecte du tout. Les boutons ne faisaient plus rien, sans la moindre erreur
+  // en console : c'est le genre de panne qu'aucune verification de generation
+  // ne voit, seulement un clic.
+  const { projets } = V.generer();
+  for (const p of projets) {
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', 'published', 'w', p.id, 'index.html'), 'utf8');
+    if (!html.includes('class="cadre"')) continue;
+    assert.match(html, /querySelectorAll\('\.cadre'\)/,
+      `${p.id} : un cadre sans le script qui l’anime`);
+    assert.match(html, /addEventListener\('click'/, `${p.id} : aucun écouteur de clic`);
+  }
+});

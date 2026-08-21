@@ -150,6 +150,22 @@ section { margin: 0 0 3rem; }
     </div>
   </section>
 </main>
+<script>
+  document.querySelectorAll('.cadre').forEach(function (cadre) {
+    var bouton = cadre.querySelector('.lancer');
+    if (!bouton) return;
+    bouton.addEventListener('click', function () {
+      var f = document.createElement('iframe');
+      f.src = cadre.dataset.widget;
+      f.title = 'Aperçu';
+      f.loading = 'lazy';
+      f.allow = 'fullscreen';
+      cadre.innerHTML = '';
+      cadre.appendChild(f);
+      cadre.classList.add('vivant');
+    });
+  });
+</script>
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
      <code>https://nic01asfr.github.io/Widgets-Grist/qgis2grist/v2/</code>, et donnez l’accès
