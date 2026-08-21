@@ -45,13 +45,15 @@
       "nom": "GristCoder",
       "role": "Construire dans le document",
       "texte": "Un serveur MCP qui relie un assistant à un document Grist, accompagné d’un widget d’édition et d’aperçu. Ce qui est produit — HTML, React — est enregistré dans le document lui-même : aucun hébergement externe, et l’artefact suit le document qui le porte.",
-      "url": "https://github.com/nic01asFr/GristCoder"
+      "url": "https://github.com/nic01asFr/GristCoder",
+      "forum": "https://forum.grist.libre.sh/t/beta-gristcodermcp/3435"
     },
     {
       "nom": "mcp-server-grist",
       "role": "Donner l’API, sans interface",
       "texte": "L’implémentation MCP de l’API Grist : lire des tables, en écrire, décrire un schéma. C’est la brique qu’on branche quand l’assistant doit manipuler la donnée sans qu’on ait besoin d’un atelier autour.",
-      "url": "https://github.com/nic01asFr/mcp-server-grist"
+      "url": "https://github.com/nic01asFr/mcp-server-grist",
+      "forum": "https://forum.grist.libre.sh/t/acceder-aux-donnees-grist-via-llm-mcp-server/1211"
     }
   ],
   "chaineTitre": "Une chaîne, pas des outils épars",
@@ -118,6 +120,11 @@
         "nom": "grist.incubateur.anct.gouv.fr",
         "url": "https://grist.incubateur.anct.gouv.fr",
         "texte": "l’instance de l’incubateur des territoires (ANCT)"
+      },
+      {
+        "nom": "forum.grist.libre.sh",
+        "url": "https://forum.grist.libre.sh",
+        "texte": "le forum francophone — c’est là que ces widgets sont annoncés, discutés et corrigés"
       }
     ]
   }

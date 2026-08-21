@@ -31,5 +31,9 @@
       "filet": "#E2E8F0"
     },
     "display": "system-ui, -apple-system, 'Segoe UI', sans-serif"
+  },
+  "forum": {
+    "url": "https://forum.grist.libre.sh/t/artefactory-un-mini-ide-pour-creer-ses-widgets-grist-depuis-un-doc-grist/3712",
+    "titre": "Artefactory : un mini-IDE pour créer ses widgets Grist depuis un doc Grist"
   }
 }

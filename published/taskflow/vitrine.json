@@ -65,5 +65,9 @@
     },
     "accentSombre": "#7B8CFF",
     "display": "system-ui, -apple-system, 'Segoe UI', sans-serif"
+  },
+  "forum": {
+    "url": "https://forum.grist.libre.sh/t/kanban-gantt-calendar-suite-de-widgets-pour-la-gestion-de-taches/2337",
+    "titre": "Kanban, Gantt, Calendar : suite de widgets pour la gestion de tâches"
   }
 }

@@ -39,5 +39,9 @@
       "filet": "#E2E8F0"
     },
     "display": "system-ui, -apple-system, 'Segoe UI', sans-serif"
+  },
+  "forum": {
+    "url": "https://forum.grist.libre.sh/t/de-qgis-a-grist-en-2-clics/3065",
+    "titre": "De QGIS à Grist en 2 clics"
   }
 }

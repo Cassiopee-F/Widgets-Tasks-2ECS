@@ -496,7 +496,7 @@ ${e.chaine.map((m) => `      <div class="maillon"><b>${echapper(m.etape)}</b><sp
 ${e.fabrique.map((o) => `      <div class="pave">
         <p class="role">${echapper(o.role)}</p>
         <h3><a href="${echapper(o.url)}">${echapper(o.nom)}</a></h3>
-        <p>${echapper(o.texte)}</p>
+        <p>${echapper(o.texte)}${o.forum ? ` <a href="${echapper(o.forum)}">En discuter sur le forum</a>.` : ''}</p>
       </div>`).join('\n')}
     </div>
   </section>`;
@@ -976,6 +976,8 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
   <div class="boutons">
     <a class="bouton" href="${echapper(principal.url)}" target="_blank" rel="noopener">Ouvrir le widget</a>
     ${v.depot ? `<a class="bouton creux" href="${echapper(v.depot)}" target="_blank" rel="noopener">Le code</a>` : ''}
+    ${v.forum ? `<a class="bouton creux" href="${echapper(v.forum.url)}" target="_blank" rel="noopener"
+       title="${echapper(v.forum.titre || '')}">En discuter</a>` : ''}
   </div>
 ${sections.join('\n')}
 </main>${sections.some((x) => x.includes('class="cadre"')) ? JS_CADRES : ''}${Object.keys(produit).length ? JS_REVELER : ''}
