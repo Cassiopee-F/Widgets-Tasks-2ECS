@@ -1,0 +1,67 @@
+{
+  "nom": "Terrain Observations",
+  "pitch": "Ce qui a été dit sur le terrain devient une ligne de table. Le widget reprend les visites saisies au téléphone — parole transcrite, photo, position — et donne de quoi les trier, les corriger et les clore.",
+  "couleur": "#085041",
+  "tags": [
+    "Terrain",
+    "Inspection",
+    "Voirie",
+    "Saisie mobile"
+  ],
+  "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/published/terrain-observations",
+  "points": [
+    {
+      "titre": "La visite arrive déjà structurée",
+      "texte": "transcription brute d’un côté, commentaire mis en forme de l’autre — type d’observation, urgence, actions requises, matériaux, surface estimée."
+    },
+    {
+      "titre": "Trier avant de traiter",
+      "texte": "compteurs de tête, filtres par type et par urgence, tri de colonnes : la file du jour se dégage sans quitter la table."
+    },
+    {
+      "titre": "Clore d’un geste",
+      "texte": "le statut se change depuis la liste, sans ouvrir la fiche. Le panneau de détail sert quand il faut corriger le fond."
+    },
+    {
+      "titre": "La position telle qu’elle a été relevée",
+      "texte": "coordonnées GPS et précision, conservées avec l’observation plutôt que ressaisies."
+    },
+    {
+      "titre": "Les droits du document font foi",
+      "texte": "en lecture seule un bandeau le dit et l’enregistrement est refusé proprement ; un refus au niveau d’une ligne est distingué d’une panne."
+    }
+  ],
+  "encart": {
+    "titre": "La saisie se fait au téléphone",
+    "texte": "Ce widget est la vue de gestion d’une application de terrain : on parle, on photographie, la table se remplit. Le widget prend le relais au bureau.",
+    "lien": {
+      "libelle": "L’application Terrain Voix",
+      "url": "https://github.com/nic01asFr/Grist-AppStore"
+    }
+  },
+  "journal": [
+    {
+      "version": "Version 1.0.0",
+      "texte": "Première publication : liste triable, filtres, panneau de détail éditable, changement de statut depuis la liste, mode démonstration hors Grist."
+    }
+  ],
+  "statut": {
+    "niveau": "Nouveau",
+    "texte": "Publié pour la première fois. Il tourne sur la table qui l’a vu naître ; vos retours diront ce qu’il fait des autres."
+  },
+  "constat": "Une visite de terrain finit rarement dans un tableur. Elle est notée sur un carnet, dictée dans un téléphone, photographiée — puis ressaisie le soir, en perdant la moitié du contexte.\n\nQuand la saisie arrive directement dans une table Grist, il reste à faire ce que le mobile fait mal : trier, comparer, corriger, décider. C’est ce que fait ce widget.",
+  "usages": [
+    {
+      "titre": "Voirie et ouvrages",
+      "texte": "relever une dégradation sur place, la retrouver au bureau avec sa position et son degré d’urgence."
+    },
+    {
+      "titre": "Suivi de chantier",
+      "texte": "une visite par ligne, un statut qui avance, et l’historique du document pour trace."
+    },
+    {
+      "titre": "Inspection périodique",
+      "texte": "filtrer ce qui reste à traiter sans construire de vue supplémentaire."
+    }
+  ]
+}

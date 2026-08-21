@@ -1,0 +1,17 @@
+{
+  "name": "terrain-detections",
+  "version": "1.0.0",
+  "description": "Terrain Détections — consultation du flux de détections d'objets géolocalisées capturées depuis mobile",
+  "authors": [
+    {
+      "name": "nic01asfr",
+      "url": "https://github.com/nic01asfr"
+    }
+  ],
+  "grist": {
+    "widgetId": "terrain-detections",
+    "name": "Terrain Détections",
+    "accessLevel": "read table",
+    "description": "Parcourir les détections d'objets géolocalisées : classe, confiance, horodatage, position"
+  }
+}

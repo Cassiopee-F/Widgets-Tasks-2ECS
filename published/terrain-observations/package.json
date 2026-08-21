@@ -1,0 +1,17 @@
+{
+  "name": "terrain-observations",
+  "version": "1.0.0",
+  "description": "Terrain Observations — gestion des visites de terrain saisies depuis mobile (voix, photo, GPS)",
+  "authors": [
+    {
+      "name": "nic01asfr",
+      "url": "https://github.com/nic01asfr"
+    }
+  ],
+  "grist": {
+    "widgetId": "terrain-observations",
+    "name": "Terrain Observations",
+    "accessLevel": "full",
+    "description": "Trier, filtrer et valider les observations de terrain : transcription, urgence, actions requises, statut"
+  }
+}

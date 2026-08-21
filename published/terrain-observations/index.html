@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terrain Observations</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+
+    <div class="top-bar">
+      <span class="top-title">Terrain Observations</span>
+      <div class="chips" id="statsChips"></div>
+    </div>
+
+    <div class="filters-bar" id="filtersBar"></div>
+
+    <div class="list-wrap">
+      <table>
+        <thead id="listHeader"></thead>
+        <tbody id="listBody"></tbody>
+      </table>
+
+      <aside class="detail-panel" id="detailPanel">
+        <div class="detail-hdr">
+          <h3 id="detailTitle">Observation</h3>
+          <button class="detail-close" id="btnDetailClose" title="Fermer">✕</button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </aside>
+
+      <div class="save-bar" id="saveBar">
+        <span id="saveBarMsg">Modifications non sauvegardées</span>
+        <div class="save-bar-actions">
+          <button class="btn btn-ghost" id="btnDetailCancel">Annuler</button>
+          <button class="btn btn-primary" id="btnDetailSave">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./lib/grist-adapter.js"></script>
+  <script src="./lib/data-model.js"></script>
+  <script src="./lib/ui-stats.js"></script>
+  <script src="./lib/ui-filters.js"></script>
+  <script src="./lib/ui-list.js"></script>
+  <script src="./lib/ui-detail.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

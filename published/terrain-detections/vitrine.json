@@ -1,0 +1,55 @@
+{
+  "nom": "Terrain Détections",
+  "pitch": "Une caméra a reconnu des objets en roulant ; chaque détection est une ligne avec sa classe, sa confiance et sa position. Le widget donne à les parcourir sans quitter le document.",
+  "couleur": "#1F6FEB",
+  "tags": [
+    "Terrain",
+    "Détection",
+    "Vision",
+    "Saisie mobile"
+  ],
+  "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/published/terrain-detections",
+  "points": [
+    {
+      "titre": "Le flux tel qu’il a été capté",
+      "texte": "classe détectée, indice de confiance, horodatage et position — dans l’ordre où la caméra les a produits."
+    },
+    {
+      "titre": "Faire le tri dans le bruit",
+      "texte": "filtres et compteurs pour écarter les détections faibles et ne garder que ce qui mérite un regard."
+    },
+    {
+      "titre": "Consultation seule, et c’est voulu",
+      "texte": "le widget ne demande que la lecture de sa table. Il ne modifie rien, donc il ne peut rien abîmer."
+    }
+  ],
+  "encart": {
+    "titre": "La capture se fait au téléphone",
+    "texte": "Les détections viennent d’une application embarquant son modèle de reconnaissance : elle écrit dans la table, ce widget la donne à lire.",
+    "lien": {
+      "libelle": "L’application Terrain Vision",
+      "url": "https://github.com/nic01asFr/Grist-AppStore"
+    }
+  },
+  "journal": [
+    {
+      "version": "Version 1.0.0",
+      "texte": "Première publication : liste triable, filtres par classe et par confiance, panneau de détail, mode démonstration hors Grist."
+    }
+  ],
+  "statut": {
+    "niveau": "Nouveau",
+    "texte": "Publié pour la première fois, en lecture seule sur sa table."
+  },
+  "constat": "Un modèle de détection produit vite plus de lignes qu’on n’en peut lire : quelques centaines par trajet, dont beaucoup de faux positifs.\n\nLes garder dans une table Grist permet de les recouper avec le reste du document. Encore faut-il pouvoir les parcourir autrement que ligne à ligne.",
+  "usages": [
+    {
+      "titre": "Inventaire de mobilier",
+      "texte": "recenser ce qui borde une voie à partir d’un simple passage en voiture."
+    },
+    {
+      "titre": "Contrôle de terrain",
+      "texte": "confronter ce que le modèle a vu à ce qu’on sait déjà, dans le même document."
+    }
+  ]
+}
