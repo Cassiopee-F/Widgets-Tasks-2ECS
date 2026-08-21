@@ -44,7 +44,7 @@ jobs:
         run: node scripts/generate-post.js "${{ inputs.projet }}"
 
       - name: Ce qui serait envoyé
-        run: cat "published/w/${{ inputs.projet }}/post-forum.md"
+        run: cat ".forum/${{ inputs.projet }}.md"
 
       - name: Mettre à jour le forum
         env:

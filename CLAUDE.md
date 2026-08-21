@@ -47,7 +47,31 @@ projects/mon-widget/     ──promote──►  published/mon-widget/
 1. Créer `published/nom-widget/package.json` avec la section `grist`
 2. Copier les fichiers finaux vers `published/nom-widget/`
 3. Exécuter `npm run manifest` pour régénérer le catalogue
-4. Commit avec message descriptif
+4. Exécuter `node scripts/generate-vitrine.js` (la page publique du widget)
+5. Commit avec message descriptif
+
+### La vitrine et le forum
+
+Chaque widget publié a une **fiche unique**, `published/<widget>/vitrine.json`. Elle
+est la source de deux choses, jamais recopiées à la main :
+
+| Commande | Produit | Versionné |
+|----------|---------|-----------|
+| `node scripts/generate-vitrine.js` | `published/index.html` et `published/w/<widget>/` | oui, c'est le site |
+| `node scripts/generate-post.js <widget>` | `.forum/<widget>.md`, le message d'annonce | **non** |
+| `node scripts/publish-post.js <widget>` | réécrit le message sur le forum | — |
+
+Trois règles :
+
+1. **Ne jamais éditer un fichier généré** — corriger `vitrine.json` (ou
+   `published/accueil.json` pour la page d'accueil) et relancer. Une retouche
+   directe est écrasée à la régénération suivante.
+2. **Le brouillon de post n'est ni publié ni commité.** Il se refait en une
+   commande ; le publier ferait un troisième exemplaire indexable du même texte,
+   au détriment du fil de forum qu'on veut voir remonter.
+3. **Rien ne part sur le forum sans accord explicite de l'utilisateur.**
+   `publish-post.js` simule par défaut et ne sait que réécrire un message
+   existant — jamais en créer un. Ouvrir un fil est un geste qu'on pose soi-même.
 
 ### Conventions de code
 

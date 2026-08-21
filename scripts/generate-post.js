@@ -14,6 +14,10 @@
  * IL NE PUBLIE RIEN. Il ecrit un fichier a relire, puis a coller. Un message
  * sur un forum public sous le nom de quelqu'un ne se rattrape pas.
  *
+ * Le brouillon sort dans `.forum/`, hors de la zone publiee et hors de git. Ce
+ * qui se transmet d'un agent au suivant, c'est ce script et la fiche qu'il lit —
+ * pas leur sortie, qui se refait en une commande.
+ *
  * Usage : node scripts/generate-post.js atlas
  */
 
@@ -22,6 +26,13 @@ const path = require('path');
 
 const RACINE = path.join(__dirname, '..');
 const PUBLIE = path.join(RACINE, 'published');
+// Hors de `published/`, et ignore par git : le rendu se refait par une commande,
+// il ne se conserve pas. Publie sur Pages il ferait un troisieme exemplaire
+// indexable du meme texte — apres la page et apres le forum — au detriment du
+// fil qu'on veut justement voir remonter. Versionne, il produirait un diff a
+// chaque regeneration sans jamais porter de decision : celles-ci sont dans
+// `vitrine.json`, et c'est ce diff-la qu'on relit.
+const BROUILLONS = path.join(RACINE, '.forum');
 const SEPARATEUR = '\n---\n';
 
 /** L'adresse publique, deduite du manifeste comme le fait la vitrine. */
@@ -183,7 +194,7 @@ if (require.main === module) {
       .filter((d) => fs.existsSync(path.join(PUBLIE, d, 'vitrine.json'))).join(', '));
     process.exit(1);
   }
-  const sortie = path.join(PUBLIE, 'w', id, 'post-forum.md');
+  const sortie = path.join(BROUILLONS, id + '.md');
   const md = rendre(id);
   fs.mkdirSync(path.dirname(sortie), { recursive: true });
   fs.writeFileSync(sortie, md);

@@ -55,3 +55,7 @@ backups/
 output.txt
 UUID
 *.zip
+
+# Les brouillons de posts de forum : rendus par scripts/generate-post.js depuis
+# la fiche du projet, jamais publies ni versionnes.
+.forum/
