@@ -119,6 +119,42 @@ Bénéfice direct : Atlas lit déjà du Scene Manifest écrit par qgis2grist san
 savoir de QGIS. Si Terrain produit le même contrat, la restitution est acquise
 sans une ligne de code cartographique de plus.
 
+### FormDef a déjà plusieurs producteurs — l'extension ne sert pas qu'à Terrain
+
+Vérifié dans le dépôt :
+
+| | Rôle vis-à-vis de FormDef |
+|---|---|
+| `grist_forms` | le producteur de référence — on y conçoit le formulaire |
+| `qgis2grist` (`lib/qgis-form-to-formdef.js`) | **producteur** : convertit une couche QGIS/QField en FormDef |
+| `qgis2grist` (`lib/terrain-provision.js`) | provisionne la table `Formulaires` après import QField ; importe déjà `grist_forms/shared/formulaires-table.js` |
+| **Atlas** | **futur consommateur** : reprendra la partie formulaire au format FormDef, adaptée à son interface, pour associer un formulaire à la saisie cartographique |
+| **Terrain** | consommateur |
+
+Deux conséquences :
+
+- **Porter le répétable au contrat sert à tout le monde.** Le pont QField gère
+  les `Ref` (`inferVisibleCol`) mais **rien pour les relations 1-N**, alors que
+  QField les pratique. Le manque est donc partagé par `grist_forms`, `qgis2grist`
+  et SURFAC²E — trois contournements possibles, ou une extension.
+- **Un précédent existe pour les sources d'entrée.** `qgis-form-to-formdef.js`
+  reconnaît et écarte les colonnes que QField remplit tout seul —
+  `QFIELD_GPS` : `x`, `y`, `z`, `horizontal_accuracy`, `nr_used_satellites`,
+  `fix_status`, `pdop`… Autrement dit, la notion de « champ rempli par un
+  capteur » est **déjà pratiquée**, mais en dur et par exclusion. L'extension
+  consisterait à la déclarer plutôt qu'à la deviner.
+
+### Atlas n'est pas seulement un widget
+
+Atlas a aussi pour visée d'être une **brique web réutilisable pour bâtir de la
+cartographie web**. Terrain en reprend donc les **primitives**, pas seulement le
+Scene Manifest : c'est le même principe qu'avec SURFAC²E pour le hors-ligne — on
+ne réécrit pas ce qui existe et qui a été éprouvé.
+
+Terrain se tient ainsi à l'intersection de deux conventions établies : les
+**formulaires** (FormDef, partagé avec `grist_forms` et `qgis2grist`) et la
+**cartographie** (Atlas, primitives et Scene Manifest).
+
 ---
 
 ## L'architecture : hôte, modules, services
