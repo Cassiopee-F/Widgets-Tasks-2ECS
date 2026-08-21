@@ -274,6 +274,44 @@ champs en dur par un FormDef reçu du document**. Le jour où l'app voix affiche
 les champs que la table déclare au lieu des siens, elle cesse d'être SCOUT et
 devient Terrain.
 
+### Les entrées ne sont pas des modes de saisie : elles remplissent des champs
+
+C'est le point qui unifie tout. **Un FormDef est une description complète de
+champs Grist typés** — vérifié dans le schéma :
+
+| Propriété d'un champ | Ce qu'elle porte |
+|---|---|
+| `type` | le **type Grist** : `Text`, `Int`, `Bool`, `Date`, `Choice`, `Ref:Table`… |
+| `widget` | le rendu, séparé du type |
+| `options` | `refTable`, `visibleCol`, `step`, `placeholder` |
+| `cascade` | Ref→Ref (`parentField`, `parentRefCol`) |
+| `dynamicFilter` | filtre dynamique sur un champ parent |
+| `condition` | affichage conditionnel |
+
+La voix, la vision, les capteurs ne sont donc pas des « façons d'utiliser
+l'application » posées à côté du formulaire : ce sont des **fonctions qui
+produisent des valeurs typées pour ses champs**.
+
+```
+capteur  →  valeurs conformes au FormDef  →  arbitrage humain  →  écriture Grist
+```
+
+Et le mécanisme existe déjà, écrit pour les documents dans SURFAC²E :
+`champs_attendus` → `extraction.versSchema()` → JSON Schema → contrainte de la
+réponse du service → normalisation → arbitrage. **La voix n'est qu'un autre cas
+du même mécanisme** : le document devient l'audio, la lecture devient la
+transcription puis la structuration, et tout le reste est identique. La vision
+également : une classe alimente un `Choice`, une détection alimente une liste.
+
+Puisque le type Grist est déjà dans le FormDef, la valeur produite **arrive
+typée et directement écrivable**. Il n'y a pas de conversion à inventer entre ce
+qu'un modèle rend et ce qu'une table attend.
+
+> **Limite à connaître pour l'extension** : `type` est déclaré comme une *chaîne
+> libre* avec une description en prose, pas un `enum`. Suffisant pour un humain,
+> insuffisant pour contraindre un agent. À traiter avec les deux extensions —
+> c'est le même sujet que le blocker sur l'accessibilité des schémas.
+
 Trois enseignements de plus :
 
 - **Le catalogue ne liste que deux applications.** `ml-lite` et `ml-pro` n'y
