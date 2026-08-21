@@ -89,28 +89,5 @@
       "texte": "l'application relève sur place, et écrit dans les mêmes tables"
     }
   ],
-  "ecosystemeTitre": "Autour",
-  "ecosysteme": [
-    {
-      "nom": "StoryMaps",
-      "texte": "gabarits de récits cartographiques au Système de design de l'État",
-      "url": "https://github.com/nic01asFr/StoryMaps"
-    },
-    {
-      "nom": "geocontext",
-      "texte": "serveur MCP expérimental de contexte spatial pour un modèle de langage",
-      "url": "https://github.com/nic01asFr/geocontext"
-    },
-    {
-      "nom": "grist-widgets",
-      "texte": "widgets antérieurs — carte géospatiale, recherche sémantique",
-      "url": "https://github.com/nic01asFr/grist-widgets"
-    },
-    {
-      "nom": "Girabase",
-      "texte": "dimensionnement de la capacité des carrefours giratoires",
-      "url": "https://github.com/nic01asFr/Girabase"
-    }
-  ],
   "statut": "Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d'aucune organisation et n'engagent qu'eux-mêmes."
 }
