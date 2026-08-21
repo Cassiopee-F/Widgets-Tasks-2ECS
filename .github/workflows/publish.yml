@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # la vitrine date les projets d'apres l'historique
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,6 +43,9 @@ jobs:
           GITHUB_USER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: node scripts/generate-manifest.js
+
+      - name: Generate vitrine
+        run: node scripts/generate-vitrine.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

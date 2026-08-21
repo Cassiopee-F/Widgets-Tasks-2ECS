@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QGIS → Grist — Widgets Grist</title>
+<meta name="description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.">
+<style>
+:root {
+  --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355;
+  --filet: #E6DFD1; --accent: #3A6EA5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papier: #14120F; --surface: #1D1A16; --encre: #F2EDE3; --plume: #9A9184;
+    --filet: #2E2A23;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--papier); color: var(--encre);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+main { max-width: 60rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 500;
+  line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.01em; }
+h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+p { margin: 0 0 1rem; color: var(--plume); }
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--plume); margin-bottom: 1.4rem; }
+.tags { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+.tag { font-size: .78rem; padding: .2rem .6rem; border-radius: 999px;
+  border: 1px solid var(--filet); color: var(--plume); }
+.faits { display: flex; flex-wrap: wrap; gap: 1.4rem; align-items: baseline;
+  font-size: .88rem; color: var(--plume); margin: 1.4rem 0 2rem; }
+.faits b { color: var(--encre); font-weight: 600; }
+.vif { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #4E9A5B; margin-right: .4rem; vertical-align: middle; }
+.pied { max-width: 60rem; margin: 0 auto; padding: 2rem 1.5rem 4rem;
+  border-top: 1px solid var(--filet); font-size: .85rem; color: var(--plume); }
+code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .85em;
+  background: var(--surface); border: 1px solid var(--filet); border-radius: 4px;
+  padding: .1rem .35rem; }
+
+.retour { display: inline-block; font-size: .88rem; color: var(--plume);
+  text-decoration: none; margin-bottom: 2rem; }
+.retour:hover { color: var(--accent); }
+.chapeau { font-size: 1.15rem; line-height: 1.55; color: var(--encre);
+  max-width: 40rem; margin: 1rem 0 0; }
+.boutons { display: flex; flex-wrap: wrap; gap: .7rem; margin: 2rem 0 3rem; }
+.bouton { display: inline-block; padding: .8rem 1.3rem; border-radius: 10px;
+  font-size: .95rem; font-weight: 600; text-decoration: none;
+  background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+.bouton.creux { background: none; color: var(--encre); border-color: var(--filet);
+  font-weight: 500; }
+.bouton.creux:hover { border-color: var(--accent); }
+section { margin: 0 0 3rem; }
+.liste { display: flex; flex-direction: column; gap: .6rem; }
+.vue { display: flex; gap: 1rem; align-items: baseline; padding: .9rem 1.1rem;
+  background: var(--surface); border: 1px solid var(--filet); border-radius: 10px; }
+.vue b { font-weight: 600; min-width: 8.5rem; }
+.vue span { color: var(--plume); font-size: .9rem; flex: 1; }
+.vue a { font-size: .82rem; color: var(--accent); text-decoration: none;
+  white-space: nowrap; }
+.points { list-style: none; padding: 0; margin: 0; display: grid; gap: .8rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.points li { padding-left: 1.1rem; position: relative; color: var(--plume);
+  line-height: 1.55; }
+.points li::before { content: ''; position: absolute; left: 0; top: .55em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.points li b { color: var(--encre); font-weight: 600; }
+.journal { border-left: 2px solid var(--filet); padding-left: 1.2rem; }
+.journal div { margin-bottom: 1.1rem; }
+.journal b { font-family: ui-monospace, Menlo, monospace; font-size: .85rem; }
+.journal p { margin: .2rem 0 0; font-size: .92rem; }
+.encart { background: var(--surface); border: 1px solid var(--filet);
+  border-left: 3px solid var(--accent); border-radius: 10px; padding: 1.3rem 1.4rem; }
+.encart h2 { font-size: 1.2rem; margin-bottom: .5rem; }
+</style>
+</head>
+<body>
+<main>
+  <a class="retour" href="../../">← Tous les widgets</a>
+  <p class="eyebrow">Widget Grist</p>
+  <h1>QGIS → Grist</h1>
+  <p class="chapeau">Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.</p>
+  <div class="tags"><span class="tag">Import</span><span class="tag">QGIS</span><span class="tag">Géomatique</span></div>
+  <div class="faits">
+    <span><b>2</b> widgets</span>
+    <span>Accès <b>lecture et écriture</b></span>
+    <span>Mis à jour il y a 16 j</span>
+  </div>
+  <div class="boutons">
+    <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/" target="_blank" rel="noopener">Ouvrir le widget</a>
+    <a class="bouton creux" href="https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/qgis2grist" target="_blank" rel="noopener">Le code</a>
+  </div>
+  <section>
+    <h2>Ce qu’il fait</h2>
+    <ul class="points">
+      <li><b>Plusieurs formats d&#39;entrée</b> — export qgis2web, projet QGZ, paquet QField, GeoPackage — le contenu est reconnu et déplié.</li>
+      <li><b>Schéma déduit</b> — les tables et leurs colonnes sont créées d&#39;après les champs rencontrés, sans les décrire à la main.</li>
+      <li><b>La symbologie suit</b> — les règles de couleur et de classification du projet QGIS sont converties, pas perdues à l&#39;import.</li>
+      <li><b>Deux versions</b> — la v1 rend en Leaflet ; la v2 en MapLibre, avec Scene Manifest et contrôles — ce qu&#39;Atlas sait relire.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Les vues</h2>
+    <div class="liste">
+      <div class="vue">
+        <b>QGIS → Grist Importer</b>
+        <span>v1 Leaflet — importez qgis2web / QGZ / QField / GPKG dans Grist (schéma auto)</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+      <div class="vue">
+        <b>QGIS → Grist Importer v2</b>
+        <span>v2 MapLibre + Scene Manifest + contrôles + pack terrain (interop Atlas)</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/v2/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="pied">
+  <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
+     <code>https://nic01asfr.github.io/Widgets-Grist/qgis2grist/</code>, et donnez l’accès
+     <b>lecture et écriture</b>.</p>
+</footer>
+</body>
+</html>

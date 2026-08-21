@@ -1,0 +1,20 @@
+{
+  "nom": "TaskFlow",
+  "pitch": "Une suite de gestion de projet qui travaille sur vos propres tables : les mêmes tâches vues en tableau, en planning, en calendrier, en charge par personne. Changez de vue, pas de données.",
+  "couleur": "#2F6F5E",
+  "tags": ["Gestion de projet", "Planification", "Temps"],
+  "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/tasks_app",
+  "points": [
+    { "titre": "Huit vues, une seule donnée", "texte": "Kanban, Gantt, Calendrier, Tableau de bord, Plan de charge, Feuille de temps, Organigramme, Whiteboard — toutes sur les mêmes tables." },
+    { "titre": "Plan de charge", "texte": "capacité et charge par personne, prévu / réalisé / reste / disponible, absences et temps partiels datés." },
+    { "titre": "Feuille de temps", "texte": "saisie hebdomadaire du temps passé par tâche, validée par le responsable hiérarchique." },
+    { "titre": "Statuts configurables", "texte": "les colonnes du Kanban suivent les statuts de votre document, pas une liste figée." },
+    { "titre": "Droits respectés", "texte": "en lecture seule, l'écriture est refusée proprement — les règles d'accès du document s'appliquent aux huit vues." },
+    { "titre": "Empreinte choisie", "texte": "seul le Plan crée les tables dont il a besoin ; un document sans lui reste inchangé." }
+  ],
+  "journal": [
+    { "version": "v1.1.2", "texte": "Whiteboard harmonisé : thème sombre automatique, notes lisibles, initialisation silencieuse." },
+    { "version": "v1.1.1", "texte": "Liste à cocher éditable, navigation d'une sous-tâche vers sa tâche parente." },
+    { "version": "v1.1.0", "texte": "Plan de charge — cinquième vue : allocation éditable, capacité datée, réalisé daté." }
+  ]
+}

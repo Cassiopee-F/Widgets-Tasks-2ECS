@@ -1,0 +1,12 @@
+{
+  "nom": "Artefactory",
+  "pitch": "Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l'artefact vit dans le document.",
+  "couleur": "#B0743A",
+  "tags": ["Atelier", "No-code", "Composition"],
+  "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/widget_app",
+  "points": [
+    { "titre": "Plusieurs écritures", "texte": "React, HTML, SVG, Mermaid ou Markdown — selon ce qu'on a à montrer." },
+    { "titre": "Composition", "texte": "un artefact peut en inclure un autre : les briques se réutilisent au lieu d'être recopiées." },
+    { "titre": "Assistant optionnel", "texte": "une aide à la rédaction est disponible, mais rien n'oblige à s'en servir." }
+  ]
+}

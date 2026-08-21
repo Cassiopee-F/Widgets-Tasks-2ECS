@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Widgets Grist</title>
+<meta name="description" content="Widgets personnalisés pour Grist : cartographie 3D, gestion de projet, formulaires, import QGIS.">
+<style>
+:root {
+  --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355;
+  --filet: #E6DFD1; --accent: #8B5E3C;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papier: #14120F; --surface: #1D1A16; --encre: #F2EDE3; --plume: #9A9184;
+    --filet: #2E2A23;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--papier); color: var(--encre);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+main { max-width: 60rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 500;
+  line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.01em; }
+h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+p { margin: 0 0 1rem; color: var(--plume); }
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--plume); margin-bottom: 1.4rem; }
+.tags { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+.tag { font-size: .78rem; padding: .2rem .6rem; border-radius: 999px;
+  border: 1px solid var(--filet); color: var(--plume); }
+.faits { display: flex; flex-wrap: wrap; gap: 1.4rem; align-items: baseline;
+  font-size: .88rem; color: var(--plume); margin: 1.4rem 0 2rem; }
+.faits b { color: var(--encre); font-weight: 600; }
+.vif { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #4E9A5B; margin-right: .4rem; vertical-align: middle; }
+.pied { max-width: 60rem; margin: 0 auto; padding: 2rem 1.5rem 4rem;
+  border-top: 1px solid var(--filet); font-size: .85rem; color: var(--plume); }
+code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .85em;
+  background: var(--surface); border: 1px solid var(--filet); border-radius: 4px;
+  padding: .1rem .35rem; }
+
+.grille { display: grid; gap: 1.1rem; margin-top: 2.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+.carte { display: block; text-decoration: none; background: var(--surface);
+  border: 1px solid var(--filet); border-radius: 14px; overflow: hidden;
+  transition: border-color .15s, transform .15s; }
+.carte:hover { border-color: var(--teinte); transform: translateY(-2px); }
+.carte .filet { height: 3px; background: var(--teinte); }
+.carte .dedans { padding: 1.3rem 1.4rem 1.5rem; }
+.carte h2 { font-size: 1.22rem; margin: 0 0 .4rem; }
+.carte p { font-size: .92rem; margin: 0 0 .9rem; }
+.carte .bas { display: flex; justify-content: space-between; align-items: center;
+  font-size: .8rem; color: var(--plume); padding-top: .9rem;
+  border-top: 1px solid var(--filet); }
+.intro { max-width: 34rem; }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Widgets pour Grist</p>
+  <h1>Des outils qui vivent dans vos documents</h1>
+  <p class="intro">Chacun de ces widgets s’ajoute à un document Grist et travaille
+     sur ses tables — la donnée ne bouge pas, elle change de forme.</p>
+  <div class="grille">
+      <a class="carte" href="w/artefactory/" style="--teinte:#B0743A">
+        <div class="filet"></div>
+        <div class="dedans">
+          <h2>Artefactory</h2>
+          <p>Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.</p>
+          <div class="tags"><span class="tag">Atelier</span><span class="tag">No-code</span><span class="tag">Composition</span></div>
+          <div class="bas">
+            <span>1 widget</span>
+            <span>il y a 3 mois</span>
+          </div>
+        </div>
+      </a>
+      <a class="carte" href="w/atlas/" style="--teinte:#C44536">
+        <div class="filet"></div>
+        <div class="dedans">
+          <h2>Atlas</h2>
+          <p>Une maquette territoriale en trois dimensions, construite depuis vos tables Grist. Les couches, leur symbolisation, le relief et le récit vivent dans le document — pas dans un fichier à côté.</p>
+          <div class="tags"><span class="tag">Cartographie</span><span class="tag">3D</span><span class="tag">Terrain</span></div>
+          <div class="bas">
+            <span>1 widget</span>
+            <span><span class="vif"></span>aujourd&#39;hui</span>
+          </div>
+        </div>
+      </a>
+      <a class="carte" href="w/grist_forms/" style="--teinte:#7A4E9B">
+        <div class="filet"></div>
+        <div class="dedans">
+          <h2>Form Builder</h2>
+          <p>Des questionnaires branchés sur vos tables : ce qui est répondu atterrit directement dans le document, et le formulaire s&#39;adapte à qui le remplit.</p>
+          <div class="tags"><span class="tag">Formulaires</span><span class="tag">Collecte</span><span class="tag">Publication</span></div>
+          <div class="bas">
+            <span>1 widget</span>
+            <span>il y a 15 j</span>
+          </div>
+        </div>
+      </a>
+      <a class="carte" href="w/qgis2grist/" style="--teinte:#3A6EA5">
+        <div class="filet"></div>
+        <div class="dedans">
+          <h2>QGIS → Grist</h2>
+          <p>Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.</p>
+          <div class="tags"><span class="tag">Import</span><span class="tag">QGIS</span><span class="tag">Géomatique</span></div>
+          <div class="bas">
+            <span>2 widgets</span>
+            <span>il y a 16 j</span>
+          </div>
+        </div>
+      </a>
+      <a class="carte" href="w/taskflow/" style="--teinte:#2F6F5E">
+        <div class="filet"></div>
+        <div class="dedans">
+          <h2>TaskFlow</h2>
+          <p>Une suite de gestion de projet qui travaille sur vos propres tables : les mêmes tâches vues en tableau, en planning, en calendrier, en charge par personne. Changez de vue, pas de données.</p>
+          <div class="tags"><span class="tag">Gestion de projet</span><span class="tag">Planification</span><span class="tag">Temps</span></div>
+          <div class="bas">
+            <span>8 widgets</span>
+            <span><span class="vif"></span>il y a 2 j</span>
+          </div>
+        </div>
+      </a>
+  </div>
+</main>
+<footer class="pied">
+  <p>Pour ajouter ces widgets à une instance auto-hébergée, pointez
+     <code>GRIST_WIDGET_LIST_URL</code> vers <a href="manifest.json">manifest.json</a>.</p>
+</footer>
+</body>
+</html>
