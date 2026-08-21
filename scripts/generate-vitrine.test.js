@@ -346,3 +346,20 @@ test('un bouton d’aperçu a toujours un script qui l’écoute', () => {
     assert.match(html, /addEventListener\('click'/, `${p.id} : aucun écouteur de clic`);
   }
 });
+
+/* ---------- ce que la page doit aux autres ---------- */
+
+test('l’accueil cite l’ecosysteme, et renvoie chaque equipe a son propre fil', () => {
+  // La section existait dans le generateur mais n'etait renseignee nulle part :
+  // la page ne parlait donc que d'elle-meme. Un lecteur pouvait en conclure
+  // qu'aucun autre widget Grist francophone n'existe, ce qui est faux et
+  // desservirait justement ceux qu'on veut voir trouves.
+  const html = V.rendreAccueil([], new Date('2026-08-21T12:00:00Z'));
+  assert.match(html, /betagouv\/grist-custom-widgets-fr-admin/,
+    'les widgets de l’equipe Grist.gouv doivent etre cites');
+  assert.match(html, /gristlabs\/grist-widget/, 'le depot officiel doit etre cite');
+  assert.match(html, /maplibre\.org/, 'la brique de rendu doit etre creditee');
+  // Les presenter a leur place serait deplace : on renvoie a ce qu'ils ont ecrit.
+  assert.match(html, /les-widgets-proposes-par-lequipe-grist-gouv[^"]*"[^>]*>Leur fil sur le forum/,
+    'l’equipe doit etre renvoyee a sa propre presentation');
+});

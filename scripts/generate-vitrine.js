@@ -509,10 +509,17 @@ ${e.conventions.map((c) => `      <div class="pave"><h3>${echapper(c.nom)}</h3><
     </div>
   </section>`;
 
+  // Une page qui ne parle que de soi laisse croire qu'elle est seule. Cette
+  // section cite ce sur quoi le depot s'appuie et ce qui l'entoure — d'autres
+  // equipes, et les briques libres dont les vues sont faites. `forum` renvoie
+  // vers le fil ou l'equipe presente son travail elle-meme, ce qui vaut mieux
+  // que de le presenter a sa place.
   const ecosysteme = !(e.ecosysteme || []).length ? '' : `  <section class="section">
-    <p class="soustitre">${echapper(e.ecosystemeTitre || 'Autour')}</p>
+    <h2>${echapper(e.ecosystemeTitre || 'Autour')}</h2>
+    ${e.ecosystemeTexte ? `<p>${echapper(e.ecosystemeTexte)}</p>` : ''}
     <div class="liens">
-${e.ecosysteme.map((x) => `      <span><a href="${echapper(x.url)}">${echapper(x.nom)}</a> — ${echapper(x.texte)}</span>`).join('\n')}
+${e.ecosysteme.map((x) => `      <span><a href="${echapper(x.url)}">${echapper(x.nom)}</a> — ${echapper(x.texte)}${
+  x.forum ? ` <a href="${echapper(x.forum)}">Leur fil sur le forum</a>.` : ''}</span>`).join('\n')}
     </div>
   </section>`;
 

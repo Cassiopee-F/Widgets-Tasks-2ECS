@@ -127,5 +127,35 @@
         "texte": "le forum francophone — c’est là que ces widgets sont annoncés, discutés et corrigés"
       }
     ]
-  }
+  },
+  "ecosystemeTitre": "Ce dépôt n’est pas seul",
+  "ecosystemeTexte": "Les widgets rassemblés ici couvrent la vue métier — carte, planning, formulaire, plan de charge. D’autres équipes en couvrent d’autres, et leurs widgets s’installent exactement de la même façon : c’est le même écosystème, pas une offre concurrente. Viennent ensuite les briques libres dont ces vues sont faites — sans elles, rien de tout cela ne s’afficherait.",
+  "ecosysteme": [
+    {
+      "nom": "Widgets Grist.gouv — Données & Territoires",
+      "url": "https://github.com/betagouv/grist-custom-widgets-fr-admin",
+      "texte": "codeInsee, codeSiren, geocode, omFiller : enrichir et nettoyer des données d’administration française — codes INSEE et SIREN, géocodage d’adresses, remplissage d’ordres de mission",
+      "forum": "https://forum.grist.libre.sh/t/les-widgets-proposes-par-lequipe-grist-gouv-donnees-territoires/1144"
+    },
+    {
+      "nom": "grist-widget",
+      "url": "https://github.com/gristlabs/grist-widget",
+      "texte": "le dépôt officiel de Grist Labs, et le modèle dont la structure de celui-ci s’inspire"
+    },
+    {
+      "nom": "MapLibre GL JS",
+      "url": "https://maplibre.org",
+      "texte": "le moteur de rendu cartographique d’Atlas, libre et communautaire"
+    },
+    {
+      "nom": "OpenStreetMap et OpenFreeMap",
+      "url": "https://www.openstreetmap.org",
+      "texte": "le fond de carte et ses tuiles — Atlas les affiche et les crédite, il ne les remplace pas"
+    },
+    {
+      "nom": "three.js",
+      "url": "https://threejs.org",
+      "texte": "les volumes, les modèles 3D et les ombres portées"
+    }
+  ]
 }
