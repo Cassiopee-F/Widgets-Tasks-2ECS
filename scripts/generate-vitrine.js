@@ -452,6 +452,18 @@ function rendreAccueil(projets, maintenant, base = '') {
 
   const bloc = (contenu) => (contenu ? contenu : '');
 
+  // Grist d'abord : la page parle de widgets pour un logiciel que le lecteur ne
+  // connait pas forcement, et on doit a ses auteurs d'y renvoyer plutot que de
+  // s'installer devant.
+  const surGrist = !e.grist ? '' : `  <section class="section">
+    <h2>${echapper(e.grist.titre)}</h2>
+    <p>${echapper(e.grist.texte)}</p>
+    ${e.grist.public ? `<p>${echapper(e.grist.public)}</p>` : ''}
+    <div class="liens">
+${(e.grist.liens || []).map((l) => `      <span><a href="${echapper(l.url)}">${echapper(l.nom)}</a> — ${echapper(l.texte)}</span>`).join('\n')}
+    </div>
+  </section>`;
+
   const principes = !(e.principes || []).length ? '' : `  <section class="section">
     <p class="soustitre">Ce qui les rend différents</p>
     <div class="paves">
@@ -489,6 +501,14 @@ ${e.fabrique.map((o) => `      <div class="pave">
     </div>
   </section>`;
 
+  const conventions = !(e.conventions || []).length ? '' : `  <section class="section">
+    <h2>${echapper(e.conventionsTitre || 'Ce qui tient les projets ensemble')}</h2>
+    <p>${echapper(e.conventionsTexte || '')}</p>
+    <div class="paves">
+${e.conventions.map((c) => `      <div class="pave"><h3>${echapper(c.nom)}</h3><p>${echapper(c.texte)}</p></div>`).join('\n')}
+    </div>
+  </section>`;
+
   const ecosysteme = !(e.ecosysteme || []).length ? '' : `  <section class="section">
     <p class="soustitre">${echapper(e.ecosystemeTitre || 'Autour')}</p>
     <div class="liens">
@@ -521,6 +541,7 @@ ${e.ecosysteme.map((x) => `      <span><a href="${echapper(x.url)}">${echapper(x
     <p class="chapeau">${echapper(description)}</p>
   </div>
 
+${surGrist}
   <section class="section">
     <h2>Les widgets</h2>
     <div class="grille">
@@ -528,7 +549,7 @@ ${projets.map((p) => carteProjet(p, p.presentation, maintenant)).join('\n')}
     </div>
   </section>
 
-${[principes, declinaisons, chaine, fabrique, ecosysteme].filter(Boolean).join('\n')}
+${[principes, declinaisons, chaine, fabrique, conventions, ecosysteme].filter(Boolean).join('\n')}
 </main>
 <footer class="pied">
   <p>Pour ajouter ces widgets à une instance auto-hébergée, pointez

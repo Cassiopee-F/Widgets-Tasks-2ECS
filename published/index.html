@@ -140,6 +140,17 @@ a:hover { text-decoration: underline; }
   </div>
 
   <section class="section">
+    <h2>Grist, en deux mots</h2>
+    <p>Grist est un tableur relationnel collaboratif, libre et auto-hébergeable : des tables liées entre elles, des formules en Python, des règles d’accès fines, et une API sur laquelle des vues peuvent se greffer. C’est ce dernier point qui rend ce dépôt possible — un widget personnalisé est une page web à qui le document ouvre ses données.</p>
+    <p>Pour les administrations françaises, deux instances publiques existent déjà, gérées par des opérateurs de l’État : rien à héberger pour commencer, et les données restent sur le territoire. C’est le cadre dans lequel ces widgets sont pensés — souverain, libre, sans service tiers intercalé.</p>
+    <div class="liens">
+      <span><a href="https://www.getgrist.com">getgrist.com</a> — le produit, sa documentation et son offre hébergée</span>
+      <span><a href="https://github.com/gristlabs/grist-core">grist-core</a> — le code source, sous licence Apache 2.0</span>
+      <span><a href="https://grist.numerique.gouv.fr">grist.numerique.gouv.fr</a> — l’instance de La Suite numérique (DINUM), pour les agents publics</span>
+      <span><a href="https://grist.incubateur.anct.gouv.fr">grist.incubateur.anct.gouv.fr</a> — l’instance de l’incubateur des territoires (ANCT)</span>
+    </div>
+  </section>
+  <section class="section">
     <h2>Les widgets</h2>
     <div class="grille">
       <a class="carte" href="w/artefactory/">
@@ -237,29 +248,28 @@ a:hover { text-decoration: underline; }
     </div>
   </section>
   <section class="section">
-    <h2>Ce qui fabrique ces solutions</h2>
-    <p>Un widget utile suppose des données déjà en forme et un moyen de le produire. Ces outils vivent dans d&#39;autres dépôts et complètent la chaîne.</p>
+    <h2>Outiller les agents plutôt que les remplacer</h2>
+    <p>Construire une application métier demande d’aller chercher la donnée, de la mettre en forme, d’écrire un widget, de le déployer. Plutôt que d’automatiser ces gestes un par un, on donne à un assistant les outils pour les faire — via le protocole MCP, qui expose un logiciel comme un jeu d’actions qu’un modèle peut appeler. L’assistant travaille alors dans vos outils, avec vos droits, sur vos données.</p>
     <div class="paves">
       <div class="pave">
-        <p class="role">Construire depuis une conversation</p>
+        <p class="role">Construire dans le document</p>
         <h3><a href="https://github.com/nic01asFr/GristCoder">GristCoder</a></h3>
-        <p>Un serveur MCP qui relie un assistant à un document Grist, avec un widget d&#39;édition et d&#39;aperçu. Les artefacts produits sont stockés dans le document — rien à héberger ailleurs.</p>
+        <p>Un serveur MCP qui relie un assistant à un document Grist, accompagné d’un widget d’édition et d’aperçu. Ce qui est produit — HTML, React — est enregistré dans le document lui-même : aucun hébergement externe, et l’artefact suit le document qui le porte.</p>
       </div>
       <div class="pave">
-        <p class="role">Donner l&#39;API à un agent</p>
+        <p class="role">Donner l’API, sans interface</p>
         <h3><a href="https://github.com/nic01asFr/mcp-server-grist">mcp-server-grist</a></h3>
-        <p>L&#39;implémentation MCP de l&#39;API Grist : lire, écrire, décrire un document depuis un assistant, sans interface.</p>
+        <p>L’implémentation MCP de l’API Grist : lire des tables, en écrire, décrire un schéma. C’est la brique qu’on branche quand l’assistant doit manipuler la donnée sans qu’on ait besoin d’un atelier autour.</p>
       </div>
-      <div class="pave">
-        <p class="role">Préparer la donnée géographique</p>
-        <h3><a href="https://github.com/nic01asFr/QgisStreamMCP">QgisStreamMCP</a></h3>
-        <p>QGIS Desktop piloté comme serveur MCP — interface complète, PyQGIS, plus de mille algorithmes de traitement et les jeux de données nationaux.</p>
-      </div>
-      <div class="pave">
-        <p class="role">Composer sans quitter Grist</p>
-        <h3><a href="w/artefactory/">Artefactory</a></h3>
-        <p>Un atelier de widgets dans le document lui-même : on écrit, on prévisualise, on enregistre. Publié ici, comme les autres.</p>
-      </div>
+    </div>
+  </section>
+  <section class="section">
+    <h2>Ce qui tient les projets ensemble</h2>
+    <p>Ces widgets ne partagent pas de code — ils partagent des contrats. Un même document peut donc passer d’un outil à l’autre sans conversion, et un projet peut évoluer sans casser les autres.</p>
+    <div class="paves">
+      <div class="pave"><h3>Scene Manifest</h3><p>Le contrat de scène cartographique : qgis2grist l’écrit à l’import, Atlas le lit pour dresser la carte — couches, symbolisation déclarative, contrôles. Ni l’un ni l’autre n’a besoin de connaître l’autre, seulement le contrat.</p></div>
+      <div class="pave"><h3>Les tables d’un widget lui appartiennent</h3><p>Chacun crée les tables dont il a besoin, préfixées à son nom, et seulement s’il en a besoin. Un document où l’on n’ouvre pas le plan de charge n’en porte pas les tables.</p></div>
+      <div class="pave"><h3>Les droits ne sont jamais réinventés</h3><p>Aucun widget ne tient sa propre liste d’accès. Tous appliquent ceux du document, et vérifient par une écriture réelle plutôt que de croire ce que l’hôte annonce.</p></div>
     </div>
   </section>
 </main>

@@ -38,32 +38,20 @@
       "acces": "Compte complet, hors du moteur web"
     }
   ],
-  "fabriqueTitre": "Ce qui fabrique ces solutions",
-  "fabriqueTexte": "Un widget utile suppose des données déjà en forme et un moyen de le produire. Ces outils vivent dans d'autres dépôts et complètent la chaîne.",
+  "fabriqueTitre": "Outiller les agents plutôt que les remplacer",
+  "fabriqueTexte": "Construire une application métier demande d’aller chercher la donnée, de la mettre en forme, d’écrire un widget, de le déployer. Plutôt que d’automatiser ces gestes un par un, on donne à un assistant les outils pour les faire — via le protocole MCP, qui expose un logiciel comme un jeu d’actions qu’un modèle peut appeler. L’assistant travaille alors dans vos outils, avec vos droits, sur vos données.",
   "fabrique": [
     {
       "nom": "GristCoder",
-      "role": "Construire depuis une conversation",
-      "texte": "Un serveur MCP qui relie un assistant à un document Grist, avec un widget d'édition et d'aperçu. Les artefacts produits sont stockés dans le document — rien à héberger ailleurs.",
+      "role": "Construire dans le document",
+      "texte": "Un serveur MCP qui relie un assistant à un document Grist, accompagné d’un widget d’édition et d’aperçu. Ce qui est produit — HTML, React — est enregistré dans le document lui-même : aucun hébergement externe, et l’artefact suit le document qui le porte.",
       "url": "https://github.com/nic01asFr/GristCoder"
     },
     {
       "nom": "mcp-server-grist",
-      "role": "Donner l'API à un agent",
-      "texte": "L'implémentation MCP de l'API Grist : lire, écrire, décrire un document depuis un assistant, sans interface.",
+      "role": "Donner l’API, sans interface",
+      "texte": "L’implémentation MCP de l’API Grist : lire des tables, en écrire, décrire un schéma. C’est la brique qu’on branche quand l’assistant doit manipuler la donnée sans qu’on ait besoin d’un atelier autour.",
       "url": "https://github.com/nic01asFr/mcp-server-grist"
-    },
-    {
-      "nom": "QgisStreamMCP",
-      "role": "Préparer la donnée géographique",
-      "texte": "QGIS Desktop piloté comme serveur MCP — interface complète, PyQGIS, plus de mille algorithmes de traitement et les jeux de données nationaux.",
-      "url": "https://github.com/nic01asFr/QgisStreamMCP"
-    },
-    {
-      "nom": "Artefactory",
-      "role": "Composer sans quitter Grist",
-      "texte": "Un atelier de widgets dans le document lui-même : on écrit, on prévisualise, on enregistre. Publié ici, comme les autres.",
-      "url": "w/artefactory/"
     }
   ],
   "chaineTitre": "Une chaîne, pas des outils épars",
@@ -89,5 +77,48 @@
       "texte": "l'application relève sur place, et écrit dans les mêmes tables"
     }
   ],
-  "statut": "Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d'aucune organisation et n'engagent qu'eux-mêmes."
+  "statut": "Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d'aucune organisation et n'engagent qu'eux-mêmes.",
+  "conventionsTitre": "Ce qui tient les projets ensemble",
+  "conventionsTexte": "Ces widgets ne partagent pas de code — ils partagent des contrats. Un même document peut donc passer d’un outil à l’autre sans conversion, et un projet peut évoluer sans casser les autres.",
+  "conventions": [
+    {
+      "nom": "Scene Manifest",
+      "texte": "Le contrat de scène cartographique : qgis2grist l’écrit à l’import, Atlas le lit pour dresser la carte — couches, symbolisation déclarative, contrôles. Ni l’un ni l’autre n’a besoin de connaître l’autre, seulement le contrat."
+    },
+    {
+      "nom": "Les tables d’un widget lui appartiennent",
+      "texte": "Chacun crée les tables dont il a besoin, préfixées à son nom, et seulement s’il en a besoin. Un document où l’on n’ouvre pas le plan de charge n’en porte pas les tables."
+    },
+    {
+      "nom": "Les droits ne sont jamais réinventés",
+      "texte": "Aucun widget ne tient sa propre liste d’accès. Tous appliquent ceux du document, et vérifient par une écriture réelle plutôt que de croire ce que l’hôte annonce."
+    }
+  ],
+  "grist": {
+    "titre": "Grist, en deux mots",
+    "texte": "Grist est un tableur relationnel collaboratif, libre et auto-hébergeable : des tables liées entre elles, des formules en Python, des règles d’accès fines, et une API sur laquelle des vues peuvent se greffer. C’est ce dernier point qui rend ce dépôt possible — un widget personnalisé est une page web à qui le document ouvre ses données.",
+    "public": "Pour les administrations françaises, deux instances publiques existent déjà, gérées par des opérateurs de l’État : rien à héberger pour commencer, et les données restent sur le territoire. C’est le cadre dans lequel ces widgets sont pensés — souverain, libre, sans service tiers intercalé.",
+    "liens": [
+      {
+        "nom": "getgrist.com",
+        "url": "https://www.getgrist.com",
+        "texte": "le produit, sa documentation et son offre hébergée"
+      },
+      {
+        "nom": "grist-core",
+        "url": "https://github.com/gristlabs/grist-core",
+        "texte": "le code source, sous licence Apache 2.0"
+      },
+      {
+        "nom": "grist.numerique.gouv.fr",
+        "url": "https://grist.numerique.gouv.fr",
+        "texte": "l’instance de La Suite numérique (DINUM), pour les agents publics"
+      },
+      {
+        "nom": "grist.incubateur.anct.gouv.fr",
+        "url": "https://grist.incubateur.anct.gouv.fr",
+        "texte": "l’instance de l’incubateur des territoires (ANCT)"
+      }
+    ]
+  }
 }
