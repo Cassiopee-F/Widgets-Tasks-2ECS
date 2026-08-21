@@ -301,3 +301,17 @@ test('l’animation ne conditionne pas la lecture', () => {
   assert.match(html, /prefers-reduced-motion: reduce/);
   assert.match(html, /IntersectionObserver' in window/, 'repli si l’API manque');
 });
+
+test('un paquet prive ne figure ni au catalogue ni a la vitrine', () => {
+  // Il a suffi de regenerer le manifeste pour un autre widget : un outil de
+  // finances personnelles est entre au catalogue public, et la vitrine lui a
+  // fait une page. Ce qui n'est pas destine au public doit le dire.
+  const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'published', 'manifest.json'), 'utf8'));
+  const widgets = Array.isArray(m) ? m : (m.widgets || []);
+  assert.ok(!widgets.some((w) => /budget/i.test(w.widgetId || '')), 'budget est au catalogue');
+
+  const { projets } = V.generer();
+  assert.ok(!projets.some((p) => p.id === 'budget'), 'budget a une page de vitrine');
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'published', 'w', 'budget')),
+    'la page de budget subsiste sur le disque');
+});

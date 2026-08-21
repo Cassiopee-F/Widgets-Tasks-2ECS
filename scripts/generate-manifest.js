@@ -81,10 +81,20 @@ for (const entry of entries) {
             continue;
         }
 
+        // Ce qui n'est pas destiné au public doit le dire, plutôt que de
+        // dépendre d'une URL vide qu'une régénération corrigera sans le savoir :
+        // c'est ainsi qu'un outil de finances personnelles s'est retrouvé au
+        // catalogue, en régénérant le manifeste pour un autre widget.
+        if (pkg.prive === true) {
+            console.log(`  Ignoré ${entry.name}/ (paquet privé)`);
+            continue;
+        }
+
         // Supporter à la fois un objet unique ou un tableau de widgets
         const gristConfigs = Array.isArray(pkg.grist) ? pkg.grist : [pkg.grist];
 
         for (const config of gristConfigs) {
+            if (config.prive === true) continue;   // un widget privé dans un paquet publié
             // Construire l'URL complète
             // Si config.url est relative (pas http), la préfixer avec BASE_URL/entry.name/
             let widgetUrl;
