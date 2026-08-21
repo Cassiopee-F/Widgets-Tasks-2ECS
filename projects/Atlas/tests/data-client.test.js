@@ -171,3 +171,10 @@ test('sans le parametre, un widget encadre reste un widget', () => {
   assert.equal(estVitrine(portee), false);
   assert.equal(estVitrine({}), false, 'une portee sans location ne fait pas echouer');
 });
+
+test('les capacites disent aussi si l’on est dans une vitrine', () => {
+  // C'est `ecranInitial` qui en a besoin, et il ne connait pas la page.
+  const enVitrine = { grist: { docApi: {} }, self: {}, top: {}, location: { search: '?vitrine=1' } };
+  assert.equal(capacites(enVitrine).vitrine, true);
+  assert.equal(capacites(widget()).vitrine, false);
+});

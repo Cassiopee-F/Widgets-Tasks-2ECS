@@ -600,55 +600,66 @@ function apercuDe(id) {
 }
 
 /**
- * L'apercu, et le widget lui-meme si on le demande.
+ * Un cadre : une image, et le widget derriere si on le demande.
  *
- * L'iframe n'est pas posee d'emblee : un widget de cartographie charge une
- * bibliotheque, des tuiles et un rendu 3D, et l'imposer a qui passe lire une
- * page serait le faire payer pour rien. L'image tient lieu d'aperçu, le clic
- * lance le widget — a cet instant seulement.
+ * Le widget n'est pas charge d'emblee — une carte tire une bibliotheque, des
+ * tuiles et un rendu 3D, et l'imposer a qui passe lire une page serait le faire
+ * payer pour rien. L'image tient lieu d'apercu, le clic lance, a cet instant
+ * seulement.
+ */
+function cadre({ url, image, alt, libelle = 'Lancer l’aperçu' }) {
+  return `    <div class="cadre" data-widget="${echapper(url)}">
+      <img src="${echapper(image)}" alt="${echapper(alt)}" loading="lazy">
+      <button type="button" class="lancer">${echapper(libelle)}</button>
+    </div>`;
+}
+
+/**
+ * Le script qui anime les cadres, pose une fois par page.
  *
- * Le parametre `vitrine=1` previent le widget qu'il est encadre par une page de
- * presentation, et non par Grist : sans lui, un widget qui detecte son
- * encadrement croirait avoir un document a interroger.
+ * Il vivait dans la section d'apercu ; une demonstration placee ailleurs — dans
+ * un contexte, plus bas — se serait donc retrouvee sans lui le jour ou la page
+ * n'a pas d'apercu en tete.
+ */
+const JS_CADRES = `
+<script>
+  document.querySelectorAll('.cadre').forEach(function (cadre) {
+    var bouton = cadre.querySelector('.lancer');
+    if (!bouton) return;
+    bouton.addEventListener('click', function () {
+      var f = document.createElement('iframe');
+      f.src = cadre.dataset.widget;
+      f.title = 'Aperçu';
+      f.loading = 'lazy';
+      f.allow = 'fullscreen';
+      cadre.innerHTML = '';
+      cadre.appendChild(f);
+      cadre.classList.add('vivant');
+    });
+  });
+</` + `script>`;
+
+/**
+ * L'apercu en tete de page.
+ *
+ * Il montre le widget seul, et c'est deliberé : une page publique ne doit pas
+ * dependre d'un document de travail, dont les droits, le contenu ou l'existence
+ * peuvent changer sans qu'elle le sache. Une fiche peut viser une autre adresse
+ * si elle en a une qui lui appartient.
  */
 function sectionApercu(p, image) {
   if (!image) return '';
   // Celui qu'on met en avant, pas le premier venu du manifeste : sur
   // qgis2grist, l'apercu lancait la v1 que la page annonce comme depassee.
   const principal = principalDe(p);
-  // Une scene reelle vaut mieux qu'un widget vide. Grist sait s'integrer
-  // (`embed=true&style=singlePage`) : la fiche peut donc viser un document
-  // partage en lecture, ou le widget tourne avec de vraies donnees et les
-  // droits qu'on lui connait. A defaut, le widget seul.
-  const demo = (p.presentation.produit || {}).apercu;
-  const url = demo && demo.url
-    ? demo.url
-    : `${principal.url}${principal.url.includes('?') ? '&' : '?'}vitrine=1`;
-  const mention = (demo && demo.mention)
+  const demo = (p.presentation.produit || {}).apercu || {};
+  const url = demo.url || `${principal.url}${principal.url.includes('?') ? '&' : '?'}vitrine=1`;
+  const mention = demo.mention
     || 'L’aperçu s’exécute dans votre navigateur, sans document Grist : les données y sont fictives.';
   return `  <section class="apercu">
-    <div class="cadre" data-widget="${echapper(url)}">
-      <img src="${echapper(image)}" alt="Aperçu du widget ${echapper(p.presentation.nom || p.id)}"
-           width="1200" height="630" loading="lazy">
-      <button type="button" class="lancer">Lancer l’aperçu</button>
-    </div>
+${cadre({ url, image, alt: `Aperçu du widget ${p.presentation.nom || p.id}` })}
     <p class="mention">${echapper(mention)}</p>
-  </section>
-  <script>
-    // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
-    document.querySelectorAll('.cadre').forEach(function (cadre) {
-      cadre.querySelector('.lancer').addEventListener('click', function () {
-        var f = document.createElement('iframe');
-        f.src = cadre.dataset.widget;
-        f.title = 'Aperçu du widget';
-        f.loading = 'lazy';
-        f.allow = 'fullscreen';
-        cadre.innerHTML = '';
-        cadre.appendChild(f);
-        cadre.classList.add('vivant');
-      });
-    });
-  </` + `script>`;
+  </section>`;
 }
 
 /**

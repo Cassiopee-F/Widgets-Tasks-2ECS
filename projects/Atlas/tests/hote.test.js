@@ -297,3 +297,11 @@ test('tant que rien n est valide, l ancienne connexion tient', () => {
   assert.equal(lireConfig(st).jeton, 'K');
   assert.equal(estConfigComplete(lireConfig(st)), true);
 });
+
+test('une page de presentation ne declenche pas l’accueil', () => {
+  // L'apercu d'une vitrine s'ouvrait sur « vos scenes sont hors de portee ici » :
+  // une demonstration qui commence par annoncer ce qu'elle ne fera pas.
+  assert.equal(ecranInitial(caps({ vitrine: true, decouverte: false }), null), ECRANS.WIDGET);
+  assert.equal(ecranInitial(caps({ vitrine: true, decouverte: true }), null), ECRANS.WIDGET,
+    'meme dans l’application, une vitrine reste une vitrine');
+});

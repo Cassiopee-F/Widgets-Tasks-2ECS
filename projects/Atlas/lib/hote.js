@@ -38,6 +38,11 @@ export const ECRANS = Object.freeze({
  */
 export function ecranInitial(caps, config) {
   if (caps.mode === 'grist') return ECRANS.WIDGET;
+  // Une page de presentation montre le produit ; elle ne demande pas a s'y
+  // connecter. Sans cette regle, l'apercu d'une vitrine s'ouvrait sur « vos
+  // scenes sont hors de portee ici » — une demonstration qui commence par
+  // annoncer ce qu'elle ne fera pas.
+  if (caps.vitrine) return ECRANS.WIDGET;
   // Sans decouverte possible, on n'offre pas une connexion qui echouerait — mais
   // on ne barre pas la route : Atlas hors Grist sait deja travailler en local,
   // fichiers et OSM. L'ecran explique, il ne bloque pas.

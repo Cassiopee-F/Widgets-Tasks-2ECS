@@ -4409,7 +4409,7 @@ async function cablerMenuPrincipal() {
     try { hote = await import('./lib/hote-ui.js?v=20260821a'); } catch (_) { return; }
     let caps;
     try {
-        const dc = await import('./lib/data-client.js?v=20260821a');
+        const dc = await import('./lib/data-client.js?v=20260821b');
         caps = dc.capacites();
     } catch (_) { return; }
     // Widget : rien au-dessus de la scene. Navigateur sans compte : le menu
@@ -5945,7 +5945,7 @@ async function init() {
  */
 async function demarrer() {
     try {
-        const { capacites } = await import('./lib/data-client.js?v=20260821a');
+        const { capacites } = await import('./lib/data-client.js?v=20260821b');
         if (capacites().mode === 'grist') return init();
         const { accueillir } = await import('./lib/hote-ui.js?v=20260821a');
         const pret = await accueillir();

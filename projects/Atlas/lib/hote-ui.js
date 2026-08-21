@@ -11,14 +11,14 @@
  * retire et `init()` prend le relais.
  */
 
-import { capacites, creerClient } from './data-client.js?v=20260821a';
+import { capacites, creerClient } from './data-client.js?v=20260821b';
 import { installerAdaptateur } from './grist-adapter.js?v=20260820a';
 import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {
   ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, changerConnexion,
   depuis, situer, peutChangerDeScene, quitterScene,
   memoriserScenes, lireScenesMemorisees, offreApplication,
-} from './hote.js?v=20260820f';
+} from './hote.js?v=20260821a';
 
 export const VERSION = '1.0.0';
 

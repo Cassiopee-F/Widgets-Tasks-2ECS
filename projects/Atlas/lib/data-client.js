@@ -82,14 +82,15 @@ export function peutSAuthentifier(portee = globalThis) {
 /** Capacites du mode courant, pour que l'interface n'offre pas l'impossible. */
 export function capacites(portee = globalThis) {
   const mode = detecterMode(portee);
+  const vitrine = estVitrine(portee);
   if (mode === 'grist') {
-    return { mode, lecture: true, ecriture: true, decouverte: false, raison: null };
+    return { mode, vitrine, lecture: true, ecriture: true, decouverte: false, raison: null };
   }
   if (peutSAuthentifier(portee)) {
-    return { mode, lecture: true, ecriture: true, decouverte: true, raison: null };
+    return { mode, vitrine, lecture: true, ecriture: true, decouverte: true, raison: null };
   }
   return {
-    mode, lecture: true, ecriture: false, decouverte: false,
+    mode, vitrine, lecture: true, ecriture: false, decouverte: false,
     raison: "Sans application installée, l'instance refuse les requêtes signées : "
           + 'seules les scènes partagées en lecture sont accessibles.',
   };
