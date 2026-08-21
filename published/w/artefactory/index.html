@@ -12,7 +12,8 @@
 <meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/w/artefactory/">
 <meta property="og:title" content="Artefactory — widget Grist">
 <meta property="og:description" content="Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://nic01asfr.github.io/Widgets-Grist/w/artefactory/apercu.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Artefactory — widget Grist">
 <meta name="twitter:description" content="Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Artefactory","description":"Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l'artefact vit dans le document.","url":"https://nic01asfr.github.io/Widgets-Grist/w/artefactory/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/widget_app","dateModified":"2026-05-09"}</script>
@@ -88,6 +89,18 @@ section { margin: 0 0 3rem; }
 .encart { background: var(--surface); border: 1px solid var(--filet);
   border-left: 3px solid var(--accent); border-radius: 10px; padding: 1.3rem 1.4rem; }
 .encart h2 { font-size: 1.2rem; margin-bottom: .5rem; }
+.apercu { margin-top: 0; }
+.cadre { position: relative; border: 1px solid var(--filet); border-radius: 12px;
+  overflow: hidden; background: var(--surface); aspect-ratio: 1200 / 630; }
+.cadre img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cadre iframe { display: block; width: 100%; height: 100%; border: 0; }
+.cadre.vivant { aspect-ratio: auto; height: 70vh; min-height: 26rem; }
+.lancer { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
+  padding: .8rem 1.4rem; border-radius: 999px; border: 0; cursor: pointer;
+  font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+  box-shadow: 0 6px 24px rgba(0,0,0,.28); }
+.lancer:hover { filter: brightness(1.08); }
+.mention { font-size: .85rem; margin-top: .7rem; }
 </style>
 </head>
 <body>
@@ -106,6 +119,30 @@ section { margin: 0 0 3rem; }
     <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/artefactory/" target="_blank" rel="noopener">Ouvrir le widget</a>
     <a class="bouton creux" href="https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/widget_app" target="_blank" rel="noopener">Le code</a>
   </div>
+  <section class="apercu">
+    <div class="cadre" data-widget="https://nic01asfr.github.io/Widgets-Grist/artefactory/?vitrine=1">
+      <img src="apercu.png" alt="Aperçu du widget Artefactory"
+           width="1200" height="630" loading="lazy">
+      <button type="button" class="lancer">Lancer l’aperçu</button>
+    </div>
+    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist :
+       les données y sont fictives.</p>
+  </section>
+  <script>
+    // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
+    document.querySelectorAll('.cadre').forEach(function (cadre) {
+      cadre.querySelector('.lancer').addEventListener('click', function () {
+        var f = document.createElement('iframe');
+        f.src = cadre.dataset.widget;
+        f.title = 'Aperçu du widget';
+        f.loading = 'lazy';
+        f.allow = 'fullscreen';
+        cadre.innerHTML = '';
+        cadre.appendChild(f);
+        cadre.classList.add('vivant');
+      });
+    });
+  </script>
   <section>
     <h2>Ce qu’il fait</h2>
     <ul class="points">

@@ -384,7 +384,78 @@ section { margin: 0 0 3rem; }
 .encart { background: var(--surface); border: 1px solid var(--filet);
   border-left: 3px solid var(--accent); border-radius: 10px; padding: 1.3rem 1.4rem; }
 .encart h2 { font-size: 1.2rem; margin-bottom: .5rem; }
+.apercu { margin-top: 0; }
+.cadre { position: relative; border: 1px solid var(--filet); border-radius: 12px;
+  overflow: hidden; background: var(--surface); aspect-ratio: 1200 / 630; }
+.cadre img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cadre iframe { display: block; width: 100%; height: 100%; border: 0; }
+.cadre.vivant { aspect-ratio: auto; height: 70vh; min-height: 26rem; }
+.lancer { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
+  padding: .8rem 1.4rem; border-radius: 999px; border: 0; cursor: pointer;
+  font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+  box-shadow: 0 6px 24px rgba(0,0,0,.28); }
+.lancer:hover { filter: brightness(1.08); }
+.mention { font-size: .85rem; margin-top: .7rem; }
 `;
+
+/**
+ * L'image d'apercu d'un projet, si elle existe.
+ *
+ * Une capture du widget en fonctionnement : elle sert deux fois — en tete de la
+ * page, et comme vignette quand le lien est partage. Sans elle, un lien colle
+ * sur un forum n'affiche qu'un titre.
+ *
+ * PNG pour les interfaces (aplats, texte net), JPEG quand la capture est une
+ * carte : le meme rendu 3D pesait 1,3 Mo en PNG contre 350 Ko en JPEG, pour une
+ * difference invisible a l'oeil.
+ */
+function apercuDe(id) {
+  for (const ext of ['png', 'jpg']) {
+    if (fs.existsSync(path.join(PUBLIE, 'w', id, `apercu.${ext}`))) return `apercu.${ext}`;
+  }
+  return '';
+}
+
+/**
+ * L'apercu, et le widget lui-meme si on le demande.
+ *
+ * L'iframe n'est pas posee d'emblee : un widget de cartographie charge une
+ * bibliotheque, des tuiles et un rendu 3D, et l'imposer a qui passe lire une
+ * page serait le faire payer pour rien. L'image tient lieu d'aperçu, le clic
+ * lance le widget — a cet instant seulement.
+ *
+ * Le parametre `vitrine=1` previent le widget qu'il est encadre par une page de
+ * presentation, et non par Grist : sans lui, un widget qui detecte son
+ * encadrement croirait avoir un document a interroger.
+ */
+function sectionApercu(p, image) {
+  if (!image) return '';
+  const url = `${p.widgets[0].url}${p.widgets[0].url.includes('?') ? '&' : '?'}vitrine=1`;
+  return `  <section class="apercu">
+    <div class="cadre" data-widget="${echapper(url)}">
+      <img src="${echapper(image)}" alt="Aperçu du widget ${echapper(p.presentation.nom || p.id)}"
+           width="1200" height="630" loading="lazy">
+      <button type="button" class="lancer">Lancer l’aperçu</button>
+    </div>
+    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist :
+       les données y sont fictives.</p>
+  </section>
+  <script>
+    // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
+    document.querySelectorAll('.cadre').forEach(function (cadre) {
+      cadre.querySelector('.lancer').addEventListener('click', function () {
+        var f = document.createElement('iframe');
+        f.src = cadre.dataset.widget;
+        f.title = 'Aperçu du widget';
+        f.loading = 'lazy';
+        f.allow = 'fullscreen';
+        cadre.innerHTML = '';
+        cadre.appendChild(f);
+        cadre.classList.add('vivant');
+      });
+    });
+  </` + `script>`;
+}
 
 /** Une vue du projet, avec l'adresse a coller dans Grist. */
 function ligneWidget(w) {
@@ -403,7 +474,11 @@ function rendreProjet(p, maintenant, base = '') {
   const acces = principal.accessLevel === 'full' ? 'lecture et écriture'
     : principal.accessLevel === 'read table' ? 'lecture seule' : 'aucun accès aux données';
 
+  const image = apercuDe(p.id);
   const sections = [];
+
+  const ap = sectionApercu(p, image);
+  if (ap) sections.push(ap);
 
   if ((v.points || []).length) {
     sections.push(`  <section>
@@ -449,7 +524,7 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
     titre,
     description,
     accent: v.couleur,
-    meta: url ? entete({ url, titre, description }) : '',
+    meta: url ? entete({ url, titre, description, image }) : '',
     ld: url ? donneesStructurees({
       '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',

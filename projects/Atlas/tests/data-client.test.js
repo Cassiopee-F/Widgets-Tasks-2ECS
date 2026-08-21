@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  detecterMode, peutSAuthentifier, capacites, recordsVersColonnes, creerClient, estEncadre,
+  estVitrine, detecterMode, peutSAuthentifier, capacites, recordsVersColonnes, creerClient, estEncadre,
 } from '../lib/data-client.js';
 
 /** Une fenetre de widget : encadree, avec l'API plugin. */
@@ -150,4 +150,24 @@ test('le mode widget delegue a l API plugin', async () => {
   await c.fetchTable('Atlas_Story');
   await c.applyUserActions([['AddRecord', 'T', null, {}]]);
   assert.deepEqual(appels, ['listTables', 'fetch:Atlas_Story', 'apply:1']);
+});
+
+test('une vitrine qui encadre le widget n’est pas un document', () => {
+  // La page de presentation charge le widget dans une iframe, comme Grist. Le
+  // widget n'a aucun moyen de les distinguer — meme encadrement, meme script de
+  // plugin charge — et partirait interroger un document inexistant.
+  const portee = {
+    grist: { docApi: {} },
+    self: {}, top: {},                      // encadre
+    location: { search: '?vitrine=1' },
+  };
+  assert.equal(detecterMode(portee), 'rest');
+  assert.equal(estVitrine(portee), true);
+});
+
+test('sans le parametre, un widget encadre reste un widget', () => {
+  const portee = { grist: { docApi: {} }, self: {}, top: {}, location: { search: '' } };
+  assert.equal(detecterMode(portee), 'grist');
+  assert.equal(estVitrine(portee), false);
+  assert.equal(estVitrine({}), false, 'une portee sans location ne fait pas echouer');
 });

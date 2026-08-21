@@ -11,7 +11,7 @@
  * retire et `init()` prend le relais.
  */
 
-import { capacites, creerClient } from './data-client.js?v=20260820b';
+import { capacites, creerClient } from './data-client.js?v=20260821a';
 import { installerAdaptateur } from './grist-adapter.js?v=20260820a';
 import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {

@@ -39,9 +39,21 @@ export const VERSION = '1.0.0';
  * d'origine ; si elle echouait tout de meme, on se sait encadre.
  */
 export function detecterMode(portee = globalThis) {
+  // Une page de presentation encadre aussi le widget, et le widget n'a aucun
+  // moyen de la distinguer d'un document : meme iframe, meme script de plugin
+  // charge. Sans ce parametre, l'apercu de la vitrine partirait interroger un
+  // document qui n'existe pas.
+  if (estVitrine(portee)) return 'rest';
   const g = portee?.grist;
   if (!g || !g.docApi) return 'rest';
   return estEncadre(portee) ? 'grist' : 'rest';
+}
+
+/** La page qui nous encadre est-elle une vitrine, et non un document ? */
+export function estVitrine(portee = globalThis) {
+  try {
+    return new URLSearchParams(portee.location?.search || '').get('vitrine') === '1';
+  } catch (_) { return false; }
 }
 
 /** Sommes-nous dans une iframe ? En cas de doute, oui. */
