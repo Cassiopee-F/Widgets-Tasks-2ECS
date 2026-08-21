@@ -110,8 +110,7 @@
         "images": [
           {
             "image": "dans-grist.jpg",
-            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.",
-            "prive": true
+            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent."
           }
         ]
       },
@@ -155,13 +154,14 @@
   "forum": {
     "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
     "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte",
-    "postId": 5054
+    "postId": 5054,
+    "titreSujet": "Atlas — un support cartographique complet pour Grist"
   },
   "statut": {
     "niveau": "En service",
     "texte": "Version 1.2.0. Le widget est utilisé sur des scènes réelles ; l’application Android reste une version de test, non signée."
   },
-  "constat": "Une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, la carte se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe. Grist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.",
+  "constat": "Grist embarque un widget de carte : il place des marqueurs à partir de colonnes de latitude et de longitude. C’est utile, et cela s’arrête là — pas de lignes, pas de polygones, pas de symbolisation par la donnée, pas de relief.\n\nOr une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, elle se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe.\n\nGrist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.",
   "usages": [
     {
       "titre": "Risques et prévention",

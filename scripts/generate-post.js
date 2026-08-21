@@ -113,6 +113,9 @@ function rendre(id) {
         if (i.prive) continue;
         bloc.push('', image(base, id, i.image, i.legende));
       }
+      // Sans cette ligne vide, l'intertitre suivant colle au paragraphe
+      // precedent et Markdown cesse de le voir comme un titre.
+      bloc.push('');
     }
   } else {
     const ap = ['apercu.png', 'apercu.jpg'].find((f) => fs.existsSync(path.join(PUBLIE, 'w', id, f)));
@@ -141,8 +144,16 @@ function rendre(id) {
   bloc.push(`et donner l’accès **${acces(principal.accessLevel)}**.`);
   bloc.push('');
   bloc.push('Le widget est un fichier HTML autonome : il fonctionne sur n’importe quelle instance Grist, y compris auto-hébergée.');
+  // L'encart de la page redisait l'application mot pour mot, alors qu'un
+  // contexte venait de l'expliquer. Sur la page il est seul et se suffit ; ici
+  // il faisait doublon. Quand le propos est deja tenu, on ne garde que
+  // l'adresse — c'est la seule chose qui manquait.
   if (fiche.encart && fiche.encart.lien) {
-    bloc.push(`\n${fiche.encart.titre} — ${fiche.encart.texte}\n\n:arrow_down: ${fiche.encart.lien.url}`);
+    const ditAilleurs = (produit.contextes || []).some((c) => /application/i.test(c.titre));
+    bloc.push('');
+    bloc.push(ditAilleurs
+      ? `:arrow_down: **${fiche.encart.lien.libelle}** — ${fiche.encart.lien.url}`
+      : `${fiche.encart.titre} — ${fiche.encart.texte}\n\n:arrow_down: ${fiche.encart.lien.url}`);
   }
 
   /* ---- le journal ------------------------------------------------------ */

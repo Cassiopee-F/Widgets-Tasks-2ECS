@@ -12,7 +12,11 @@ La carte n’est pas un export de vos données : c’en est une vue. Les couches
 
 ## Le constat
 
-Une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, la carte se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe. Grist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.
+Grist embarque un widget de carte : il place des marqueurs à partir de colonnes de latitude et de longitude. C’est utile, et cela s’arrête là — pas de lignes, pas de polygones, pas de symbolisation par la donnée, pas de relief.
+
+Or une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, elle se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe.
+
+Grist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.
 
 ---
 
@@ -34,6 +38,10 @@ Une carte faite pour un dossier finit presque toujours au même endroit : un PDF
 Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.
 
 > C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.
+
+![Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.](https://nic01asfr.github.io/Widgets-Grist/w/atlas/dans-grist.jpg)
+*Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.*
+
 ### Dans un navigateur, pour diffuser
 
 La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.
@@ -42,6 +50,7 @@ La même adresse s’ouvre seule, sans document. On y charge un fichier, on impo
 
 ![Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi.](https://nic01asfr.github.io/Widgets-Grist/w/atlas/apercu.jpg)
 *Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi.*
+
 ### Sur le terrain, en application
 
 Une application Android ouvre les scènes de votre compte Grist, sans passer par un document. L’interface se replie : la carte occupe l’écran, les panneaux deviennent des feuilles qu’on écarte d’un geste.
@@ -56,6 +65,7 @@ Une application Android ouvre les scènes de votre compte Grist, sans passer par
 
 ![Passer d’une scène à l’autre, sans quitter l’application.](https://nic01asfr.github.io/Widgets-Grist/w/atlas/mobile-menu.jpg)
 *Passer d’une scène à l’autre, sans quitter l’application.*
+
 
 ---
 
@@ -79,9 +89,7 @@ et donner l’accès **lecture et écriture**.
 
 Le widget est un fichier HTML autonome : il fonctionne sur n’importe quelle instance Grist, y compris auto-hébergée.
 
-Sur le terrain, sans navigateur — Une application Android ouvre vos scènes depuis votre compte Grist. Elle existe parce qu'un navigateur ne peut pas présenter de clé API à l'instance : celle-ci refuse l'en-tête d'authentification au contrôle préalable, et cela ne se change pas côté serveur. L'application émet ses requêtes hors du moteur web, ce qui lève l'obstacle.
-
-:arrow_down: https://github.com/nic01asFr/Widgets-Grist/releases/latest/download/atlas.apk
+:arrow_down: **Télécharger l'application** — https://github.com/nic01asFr/Widgets-Grist/releases/latest/download/atlas.apk
 
 ---
 
