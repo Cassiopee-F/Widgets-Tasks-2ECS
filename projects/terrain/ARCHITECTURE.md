@@ -24,6 +24,27 @@ dépendance partagée, aucune exigence qu'il repose un jour sur Terrain.
 Terrain n'est donc **pas un nouveau produit à inventer** : ses pièces existent
 déjà, réparties en trois endroits dont aucun ne les possède toutes.
 
+### La définition courte
+
+**Terrain fait le lien entre trois choses qu'il ne connaît pas** :
+
+| Il reçoit | D'où | Il n'en sait rien |
+|---|---|---|
+| **un formulaire** | `grist_forms`, `qgis2grist` depuis QField, ou un agent | il ignore le métier |
+| **un contexte de terrain** | l'appareil : position, caméra, micro, absence de réseau | il ignore le lieu |
+| **des services** | déclarés : une adresse, une clé, un modèle | il ignore le fournisseur |
+
+Et il produit des lignes dans des tables Grist.
+
+Les trois arrivent par **déclaration**, jamais par du code : le formulaire est un
+FormDef, les services sont trois valeurs de configuration, les modèles viennent
+d'un catalogue. C'est ce qui le rend générique — non pas parce qu'il aurait été
+écrit pour tous les métiers, mais parce qu'il n'en connaît aucun.
+
+**Corollaire pour l'agent de terrain : il ne configure rien, il reçoit.** Toute
+la configuration se tient au bureau, dans le document. Ce qui a un coût, traité
+en question ouverte n° 4.
+
 ---
 
 ## Le principe : une chaîne, N façons de la remplir
@@ -504,7 +525,18 @@ le référentiel.
 4. **Le coût du modèle déclaratif.** Il déplace la complexité vers le bureau au
    lieu de la supprimer : quelqu'un doit tenir les tables de configuration. Gain
    net pour une équipe qui a un référent Grist ; pour un agent seul, il faut des
-   valeurs par défaut qui marchent sans rien configurer.
+   valeurs par défaut qui marchent sans rien configurer. Piste, cohérente avec
+   l'intention sur les agents : **faire générer la configuration** — « décris ton
+   métier, je fabrique le formulaire » plutôt qu'un jeu de tables à remplir.
+
+6. **Quel contrat de formulaire fait foi ?** `projects/grist_forms/runtime/`
+   contient **deux** schémas aux propriétés presque identiques —
+   `formdef.schema.json` et `survey-manifest.schema.json` (`manifest_version`,
+   `id`, `title`, `description`, `classification`, `sections`, `choices`), ce
+   dernier ayant même son canal `#survey-manifest`. Ancêtre, niveau au-dessus
+   regroupant plusieurs formulaires, ou variante qui a divergé ? **À clarifier
+   avant d'écrire la moindre ligne** : Terrain doit consommer l'un des deux, et
+   se tromper de contrat annulerait tout le bénéfice de n'en inventer aucun.
 5. **Le sort des démonstrateurs.** Un démonstrateur qui a fait sa preuve n'a pas
    besoin de devenir un produit : il doit céder sa brique et disparaître.
    Chercher à rendre chacun pertinent en tant qu'application produirait quatre
