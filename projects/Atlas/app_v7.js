@@ -2220,6 +2220,19 @@ function openModule(name) {
     $('module-title').textContent = (MODULE_TITLES[name] || name).replace(/^[^ ]+ /, (m) => m);
     $('module-panel').classList.add('open');
     $('module-foot').style.display = 'none';
+    if (document.body.classList.contains('mobile-layout')) {
+        // L'onglet suit le module, d'ou qu'il vienne — palette de commandes,
+        // feuille « Plus », clic sur une couche. Sans cela, retoucher l'onglet
+        // ne refermait pas : la barre ignorait ce qui etait ouvert.
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
+            b.classList.toggle('active', b.dataset.mobileTab === name);
+        });
+        // A mi-hauteur : la carte reste visible sous le panneau, c'est elle le
+        // sujet. Une feuille deja deployee garde la hauteur qu'on lui a donnee.
+        installerFeuilleMobile().then(() => {
+            if (feuillePosition === 'fermee') poserFeuille('demi');
+        });
+    }
 
     if (name === 'lieu') renderLieu();
     // Le scan des tables géo ne sert qu'à la liste « à afficher » de ce
@@ -2235,6 +2248,7 @@ function openModule(name) {
     renderInspector();
 }
 function closeModulePanel() {
+    if (Feuille) poserFeuille('fermee');
     $('module-panel').classList.remove('open');
     document.querySelectorAll('.rail-item').forEach((b) => b.classList.remove('active'));
     STATE.currentModule = null;
@@ -4248,6 +4262,106 @@ function refreshViewerControlsHud() {
     el.innerHTML = '';
 }
 
+/* ------------------------------------------------------------------ */
+/* La feuille mobile                                                    */
+/* ------------------------------------------------------------------ */
+
+let Feuille = null;              // charge a la demande : le bureau n'en a pas besoin
+let feuillePosition = 'fermee';  // 'fermee' | 'demi' | 'pleine'
+
+async function chargerFeuille() {
+    if (!Feuille) Feuille = await import('./lib/feuille-mobile.js?v=20260821a');
+    return Feuille;
+}
+
+/**
+ * Pose la feuille a une position.
+ *
+ * La fraction pilote une translation, pas une hauteur : le contenu ne se
+ * redispose pas a chaque geste, et le glissement reste franc meme sur une
+ * longue liste de couches.
+ */
+function poserFeuille(nom, anime = true) {
+    const p = $('module-panel');
+    if (!p || !Feuille) return;
+    feuillePosition = nom;
+    p.classList.toggle('feuille-glisse', !anime);
+    p.style.setProperty('--feuille-frac', String(Feuille.ANCRAGES[nom] ?? 0));
+    if (nom === 'fermee') {
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => b.classList.remove('active'));
+    }
+}
+
+/**
+ * Le glissement, qui remplace l'ancien onglet « Carte ».
+ *
+ * On n'allait pas « a la carte » : elle est dessous, en permanence. On ecarte
+ * ce qui la masque — et pendant l'edition d'un recit, c'etait le seul moyen de
+ * cadrer la vue, sauf que le bouton se trouvait sous la feuille a ecarter.
+ */
+async function installerFeuilleMobile() {
+    const p = $('module-panel');
+    if (!p) return;
+    const F = await chargerFeuille();
+    if (p.dataset.feuille) return;
+    p.dataset.feuille = '1';
+
+    if (!p.querySelector('.feuille-poignee')) {
+        const poignee = document.createElement('div');
+        poignee.className = 'feuille-poignee';
+        poignee.setAttribute('aria-hidden', 'true');
+        p.prepend(poignee);
+    }
+
+    const corps = () => p.querySelector('#module-body');
+    let geste = null;
+
+    p.addEventListener('pointerdown', (e) => {
+        if (!document.body.classList.contains('mobile-layout')) return;
+        geste = {
+            y0: e.clientY, t0: e.timeStamp, y: e.clientY, t: e.timeStamp,
+            depart: feuillePosition,
+            surPoignee: !!e.target.closest('.feuille-poignee, .module-head'),
+            defilement: corps()?.scrollTop ?? 0,
+            pris: false, id: e.pointerId,
+        };
+    });
+
+    p.addEventListener('pointermove', (e) => {
+        if (!geste || e.pointerId !== geste.id) return;
+        const dy = e.clientY - geste.y0;
+        if (!geste.pris) {
+            if (Math.abs(dy) < 6) return;    // laisser passer les taps
+            if (!F.gestePourLaFeuille({
+                surPoignee: geste.surPoignee, defilement: geste.defilement, versLeBas: dy > 0,
+            })) { geste = null; return; }
+            geste.pris = true;
+            p.classList.add('feuille-glisse');
+        }
+        geste.y = e.clientY;
+        geste.t = e.timeStamp;
+        p.style.setProperty('--feuille-frac',
+            String(F.fractionPendantGeste(geste.depart, dy, window.innerHeight)));
+        e.preventDefault();
+    }, { passive: false });
+
+    const finir = (e) => {
+        if (!geste || (e && e.pointerId !== geste.id)) return;
+        const g = geste; geste = null;
+        p.classList.remove('feuille-glisse');
+        if (!g.pris) return;
+        const dt = Math.max(0.016, (g.t - g.t0) / 1000);
+        const vitesse = -((g.y - g.y0) / window.innerHeight) / dt;   // positif = vers le haut
+        poserFeuille(F.ancrageApresGeste({
+            depart: g.depart,
+            fraction: F.fractionPendantGeste(g.depart, g.y - g.y0, window.innerHeight),
+            vitesse,
+        }));
+    };
+    p.addEventListener('pointerup', finir);
+    p.addEventListener('pointercancel', finir);
+}
+
 function updateMobileLayout() {
     const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
     document.body.classList.toggle('mobile-layout', narrow);
@@ -4307,7 +4421,7 @@ function ouvrirFeuilleModules() {
         f.hidden = true;
         // L'onglet « Plus » ne reste pas actif : il ouvre, il ne selectionne pas.
         document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
-            b.classList.toggle('active', b.dataset.mobileTab === 'map');
+            b.classList.toggle('active', b.dataset.mobileTab === STATE.currentModule);
         });
     };
     f.querySelector('.mp-fond').onclick = fermer;
@@ -4318,15 +4432,24 @@ function ouvrirFeuilleModules() {
 
 function wireMobileNav() {
     document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const tab = btn.dataset.mobileTab;
+            // Toucher l'onglet deja ouvert referme la feuille : c'est ce qui
+            // remplace l'ancien onglet « Carte », sous le doigt plutot qu'a
+            // l'autre bout de la barre — et sous la feuille qu'il fallait ecarter.
+            const F = await chargerFeuille();
+            const actif = document.querySelector('#mobile-nav [data-mobile-tab].active')?.dataset.mobileTab;
+            if (tab !== 'plus' && F.ancrageApresOnglet({
+                ongletActif: actif, onglet: tab, position: feuillePosition,
+            }) === 'fermee') {
+                closeModulePanel();
+                A.closeInspector?.();
+                return;
+            }
             document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
                 b.classList.toggle('active', b === btn);
             });
-            if (tab === 'map') {
-                closeModulePanel();
-                A.closeInspector?.();
-            } else if (tab === 'couches') {
+            if (tab === 'couches') {
                 if (CONFIG.viewMode) return;
                 openModule('couches');
             } else if (tab === 'plus') {

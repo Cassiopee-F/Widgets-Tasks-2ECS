@@ -175,6 +175,9 @@
             display: none; flex-direction: column; flex-shrink: 0; overflow: hidden; z-index: 15;
         }
         .module-panel.open { display: flex; }
+        /* La poignee n'a de sens que sur la feuille mobile ; le panneau du
+           bureau est ancre, rien n'y glisse. */
+        .feuille-poignee { display: none; }
         .panel-head {
             padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between;
             flex-shrink: 0;
@@ -947,11 +950,29 @@
                 margin-left: auto;
             }
             body.view-mode.mobile-layout .app-header .cmdk > span { display: none; }
+            /* Une feuille, pas un panneau : la carte reste dessous et c'est le
+               geste qui decide de ce qu'on en voit. `--feuille-frac` est la part
+               de hauteur visible ; on la traduit en translation pour que le
+               contenu ne se redispose pas a chaque pixel du glissement. */
             body.mobile-layout .module-panel {
                 position: fixed; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-                top: auto; max-height: 48vh; width: 100%; z-index: 35;
+                top: auto; height: 92dvh; max-height: none; width: 100%; z-index: 35;
                 border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,0.18);
                 border: 1px solid var(--hairline); border-bottom: none;
+                transform: translateY(calc((0.92 - var(--feuille-frac, 0)) * 100dvh));
+                transition: transform .26s cubic-bezier(.22,.61,.36,1);
+                touch-action: none;
+            }
+            body.mobile-layout .module-panel.feuille-glisse { transition: none; }
+            body.mobile-layout .module-panel #module-body { touch-action: pan-y; }
+            /* La poignee dit que ca se tire, et donne une prise au pouce. */
+            body.mobile-layout .feuille-poignee {
+                flex: 0 0 auto; height: 22px; display: flex; align-items: center; justify-content: center;
+                cursor: grab;
+            }
+            body.mobile-layout .feuille-poignee::before {
+                content: ''; width: 38px; height: 4px; border-radius: 2px;
+                background: var(--hairline-strong, #C9C0A8);
             }
             body.mobile-layout .inspector {
                 position: fixed; left: 0; right: 0; bottom: calc(56px + env(safe-area-inset-bottom, 0px));
@@ -1155,10 +1176,6 @@
     </div>
 
     <nav id="mobile-nav" aria-label="Navigation mobile">
-        <button type="button" data-mobile-tab="map" class="active" aria-label="Carte">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
-            Carte
-        </button>
         <button type="button" data-mobile-tab="couches" aria-label="Couches">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             Couches
@@ -1207,6 +1224,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260821g"></script>
+    <script type="module" src="./app_v7.js?v=20260821j"></script>
 </body>
 </html>
