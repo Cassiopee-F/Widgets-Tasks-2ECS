@@ -68,6 +68,48 @@ produite par Terrain doit s'ouvrir dans Atlas **sans conversion**. Le jour où i
 faut écrire un adaptateur entre les deux, le contrat a été contourné — pas
 dépassé.
 
+### Les contrats sont la surface d'écriture des agents
+
+Ce n'est pas seulement une convention entre outils. L'intention est qu'un agent —
+ou une solution d'IA — puisse **produire, interpréter et configurer** du contenu
+conforme, et donc opérable par les solutions, sans intégration deux à deux. C'est
+déjà l'esprit de `qgis-sspcloud` et de QGIS Stream MCP.
+
+Cela déplace le rôle du schéma : **ce n'est plus de la documentation, c'est la
+contrainte de génération** — ce qu'on met dans un `response_format` pour qu'un
+modèle ne puisse produire que du valide. Le pattern est déjà appliqué à
+l'intérieur de SURFAC²E, où `champs_attendus` devient un JSON Schema via
+`extraction.versSchema()` pour contraindre la réponse du service de lecture.
+
+**Constat au 21/08/2026 : il n'est pas appliqué aux contrats eux-mêmes.**
+
+| | État |
+|---|---|
+| `$id` de `formdef.schema.json` | `https://widgets-grist.local/…` — domaine fictif, non résolvable |
+| schéma servi publiquement | 404 sur les emplacements plausibles |
+| Scene Manifest | Markdown v0.2.2 + implémentation JS, **aucun JSON Schema** |
+
+Les deux contrats sont donc respectés par des humains qui lisent la doc, et
+inatteignables par un agent : une prose Markdown ne se met pas dans un
+`response_format`, et un `$id` qui pointe dans le vide interdit toute résolution
+de référence.
+
+Trois gestes, peu coûteux puisqu'il s'agit de fichiers statiques et que
+`published/` est déjà un site :
+
+1. donner à FormDef un `$id` réel, et le servir ;
+2. écrire le JSON Schema du Scene Manifest, à partir de
+   `projects/qgis2grist/docs/SCENE-MANIFEST-v0.2.2.md` et de
+   `projects/qgis2grist/lib/scene-manifest.js`, qui en portent déjà la
+   définition ;
+3. les publier à une adresse **stable et versionnée**, pour qu'un agent puisse
+   cibler une version précise plutôt que « la dernière ».
+
+Conséquence directe pour Terrain : les deux extensions à porter au contrat
+(section répétable, sources d'entrée) doivent être écrites pour être
+**générables** — donc exprimables en JSON Schema, sans convention implicite qu'un
+modèle ne pourrait pas deviner.
+
 Bénéfice direct : Atlas lit déjà du Scene Manifest écrit par qgis2grist sans rien
 savoir de QGIS. Si Terrain produit le même contrat, la restitution est acquise
 sans une ligne de code cartographique de plus.
