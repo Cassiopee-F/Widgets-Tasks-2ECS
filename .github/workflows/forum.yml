@@ -1,0 +1,57 @@
+# Met à jour, sur le forum, le message d'annonce d'un widget.
+#
+# Déclenchement manuel uniquement. Une annonce n'est pas un déploiement :
+# vingt commits dans l'après-midi ne doivent pas produire vingt éditions sur
+# un forum communautaire.
+#
+# Le script appelé ne sait que RÉÉCRIRE un message existant, jamais en créer :
+# ouvrir un fil reste un geste qu'on pose soi-même, une fois.
+
+name: Mettre à jour un post du forum
+
+on:
+  workflow_dispatch:
+    inputs:
+      projet:
+        description: Quel widget mettre à jour
+        required: true
+        type: choice
+        options: [atlas, taskflow, qgis2grist, grist_forms, artefactory]
+      raison:
+        description: Pourquoi (visible dans l'historique du message)
+        required: true
+        default: Mise à jour depuis la fiche du dépôt
+        type: string
+      simulation:
+        description: Simuler sans rien envoyer
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  mettre-a-jour:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Le brouillon est rendu ici, depuis la fiche : ce qui part sur le forum
+      # est exactement ce que la page publie dit, sans copie intermédiaire.
+      - name: Rendre le message
+        run: node scripts/generate-post.js "${{ inputs.projet }}"
+
+      - name: Ce qui serait envoyé
+        run: cat "published/w/${{ inputs.projet }}/post-forum.md"
+
+      - name: Mettre à jour le forum
+        env:
+          DISCOURSE_URL: https://forum.grist.libre.sh
+          DISCOURSE_API_KEY: ${{ secrets.DISCOURSE_API_KEY }}
+          DISCOURSE_API_USERNAME: ${{ secrets.DISCOURSE_API_USERNAME }}
+        run: |
+          node scripts/publish-post.js "${{ inputs.projet }}" \
+            --raison="${{ inputs.raison }}" \
+            ${{ inputs.simulation == false && '--publier' || '' }}

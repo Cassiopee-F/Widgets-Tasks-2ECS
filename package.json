@@ -16,7 +16,8 @@
     "serve:dev": "node scripts/serve-dev.js",
     "serve": "npx serve published -p 3000 --cors",
     "promote:qgis2grist": "node scripts/promote-qgis2grist.js",
-    "vitrine": "node scripts/generate-vitrine.js"
+    "vitrine": "node scripts/generate-vitrine.js",
+    "post": "node scripts/generate-post.js"
   },
   "repository": {
     "type": "git",

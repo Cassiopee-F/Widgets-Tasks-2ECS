@@ -153,7 +153,8 @@
   },
   "forum": {
     "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
-    "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte"
+    "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte",
+    "postId": 5054
   },
   "statut": {
     "niveau": "En service",
