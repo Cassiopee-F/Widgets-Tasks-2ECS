@@ -13,5 +13,7 @@
     "name": "Terrain Observations",
     "accessLevel": "full",
     "description": "Trier, filtrer et valider les observations de terrain : transcription, urgence, actions requises, statut"
-  }
+  },
+  "prive": true,
+  "aValider": "Jamais ouvert dans un document Grist réel. Retirer `prive` après validation."
 }

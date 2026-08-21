@@ -13,5 +13,7 @@
     "name": "Terrain Détections",
     "accessLevel": "read table",
     "description": "Parcourir les détections d'objets géolocalisées : classe, confiance, horodatage, position"
-  }
+  },
+  "prive": true,
+  "aValider": "Jamais ouvert dans un document Grist réel. Retirer `prive` après validation."
 }
