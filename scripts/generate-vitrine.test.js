@@ -315,3 +315,17 @@ test('un paquet prive ne figure ni au catalogue ni a la vitrine', () => {
   assert.ok(!fs.existsSync(path.join(__dirname, '..', 'published', 'w', 'budget')),
     'la page de budget subsiste sur le disque');
 });
+
+test('la balise de verification n’apparait que si un code est depose', () => {
+  // Sur une « project page », le domaine appartient a GitHub : on ne peut
+  // declarer qu'un prefixe d'URL, et le prouver par cette balise sur sa page
+  // d'accueil.
+  const f = path.join(__dirname, '..', 'published', 'verification.json');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'published', 'index.html'), 'utf8');
+  if (fs.existsSync(f)) {
+    const code = JSON.parse(fs.readFileSync(f, 'utf8')).google;
+    if (code) assert.ok(html.includes(`content="${code}"`), 'code depose mais balise absente');
+  } else {
+    assert.doesNotMatch(html, /google-site-verification/, 'balise posee sans code');
+  }
+});

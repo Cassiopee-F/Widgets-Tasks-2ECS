@@ -138,6 +138,25 @@ function estRecent(iso, maintenant = Date.now()) {
  * deja, et la CI les construit a partir du depot. La coder en dur ici la ferait
  * mentir le jour ou le depot est renomme ou publie sous un autre compte.
  */
+/**
+ * Le code que Google demande pour prouver qu'on tient ce site.
+ *
+ * Sur une « project page », le domaine appartient a GitHub : on ne peut donc
+ * declarer qu'un prefixe d'URL, et le prouver par une balise posee sur sa page
+ * d'accueil. Ce code n'est pas un secret — c'est un identifiant de propriete —
+ * d'ou le fichier versionne plutot qu'une variable d'environnement que la CI
+ * devrait porter.
+ */
+function verification() {
+  const f = path.join(PUBLIE, 'verification.json');
+  if (!fs.existsSync(f)) return '';
+  try {
+    const code = JSON.parse(fs.readFileSync(f, 'utf8')).google;
+    return code ? `
+<meta name="google-site-verification" content="${echapper(code)}">` : '';
+  } catch (_) { return ''; }
+}
+
 function baseDe(widgets) {
   for (const w of widgets) {
     try {
@@ -335,7 +354,7 @@ function rendreAccueil(projets, maintenant, base = '') {
   return page({
     titre,
     description,
-    meta: base ? entete({ url: base, titre, description }) : '',
+    meta: verification() + (base ? entete({ url: base, titre, description }) : ''),
     // Une liste, decrite comme une liste : c'est ce qui relie l'accueil aux
     // pages qu'il annonce, au lieu de laisser un moteur les decouvrir une a une.
     ld: base ? donneesStructurees({
