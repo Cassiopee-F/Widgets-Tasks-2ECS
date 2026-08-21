@@ -5,7 +5,7 @@ import {
   validerConfig, lireConfig, ecrireConfig, oublier, depuis, situer,
   peutChangerDeScene, quitterScene,
   memoriserScenes, lireScenesMemorisees, oublierScenes, CLE_SCENES, PEREMPTION_MS,
-  offreApplication, estAndroid,
+  offreApplication, estAndroid, changerConnexion,
 } from '../lib/hote.js';
 
 const stockageFactice = () => {
@@ -265,4 +265,35 @@ test('dans l application, ou dans Grist, on ne propose rien', () => {
 test('un agent absent ne fait pas passer pour Android', () => {
   assert.equal(estAndroid(undefined), false);
   assert.equal(estAndroid(ANDROID), true);
+});
+
+/* ---------- changer d instance ou de cle ---------- */
+
+test('corriger sa cle ne fait pas perdre la scene ouverte', () => {
+  // Meme instance, meme projet : seule la cle change.
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'ANCIENNE', docId: 'D1' });
+  changerConnexion(st, lireConfig(st), { baseUrl: 'x.fr', jeton: 'NOUVELLE' });
+  const c = lireConfig(st);
+  assert.equal(c.jeton, 'NOUVELLE');
+  assert.equal(c.docId, 'D1');
+});
+
+test('changer d instance oublie la scene, qui n existe pas ailleurs', () => {
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'K', docId: 'D1' });
+  changerConnexion(st, lireConfig(st), { baseUrl: 'autre.fr', jeton: 'K2' });
+  const c = lireConfig(st);
+  assert.equal(c.baseUrl, 'https://autre.fr');
+  assert.equal(c.docId, '', 'la scene precedente n existe pas sur la nouvelle instance');
+});
+
+test('tant que rien n est valide, l ancienne connexion tient', () => {
+  // C est tout l interet : ouvrir l ecran ne doit rien detruire. Un doigt qui
+  // glisse sur « Instance et cle » faisait perdre une cle a rechercher dans son
+  // profil Grist, et rendait meme l adresse.
+  const st = stockageFactice();
+  ecrireConfig(st, { baseUrl: 'x.fr', jeton: 'K', docId: 'D1' });
+  assert.equal(lireConfig(st).jeton, 'K');
+  assert.equal(estConfigComplete(lireConfig(st)), true);
 });

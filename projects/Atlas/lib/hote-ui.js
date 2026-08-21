@@ -15,10 +15,10 @@ import { capacites, creerClient } from './data-client.js?v=20260820b';
 import { installerAdaptateur } from './grist-adapter.js?v=20260820a';
 import { listerScenesAtlas } from './decouverte.js?v=20260820a';
 import {
-  ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, oublier,
+  ECRANS, ecranInitial, validerConfig, lireConfig, ecrireConfig, changerConnexion,
   depuis, situer, peutChangerDeScene, quitterScene,
   memoriserScenes, lireScenesMemorisees, offreApplication,
-} from './hote.js?v=20260820e';
+} from './hote.js?v=20260820f';
 
 export const VERSION = '1.0.0';
 
@@ -75,6 +75,7 @@ const CSS = `
   text-align: left; cursor: pointer; }
 .hote-menu button:active { background: var(--surface-muted, #FAF6EB); }
 .hote-menu button small { display: block; font-size: .78rem; color: var(--muted, #7A6F5E); }
+.hote-ic { flex: 0 0 auto; color: var(--muted, #7A6F5E); }
 `;
 
 /**
@@ -119,6 +120,24 @@ function expliquer(e, caps) {
 
 const echapper = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/**
+ * Les icones du menu, au trait comme partout ailleurs dans Atlas.
+ *
+ * C'etaient des emoji. Sur Android ils sortent en Noto couleur, a une taille
+ * que la page ne controle pas : trois pastilles bariolees dans une interface
+ * qui n'en a aucune. Un trait de 1,6 px suit la couleur du texte et se comporte
+ * en toute densite.
+ */
+const trait = (d) => `<svg class="hote-ic" width="20" height="20" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+  aria-hidden="true">${d}</svg>`;
+
+const IC = {
+  scenes: trait('<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/>'),
+  cle: trait('<circle cx="8" cy="16" r="4.5"/><path d="M11.2 12.8 20 4m-2.5 2.5 2.5 2.5m-5-5 2.5 2.5"/>'),
+  retour: trait('<path d="M19 12H5m6-7-7 7 7 7"/>'),
+};
 
 const MARQUE = `<div class="hote-marque">
   <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -184,7 +203,9 @@ export async function accueillir({ portee = globalThis, document: doc = document
         fermer();
         resoudre(true);
       },
-      onChanger: () => { oublier(stockage); versConnexion(); },
+      // Rien n'est efface : l'ancienne connexion tient jusqu'a ce qu'une
+      // nouvelle la remplace, et l'ecran s'ouvre pre-rempli.
+      onChanger: () => versConnexion(),
     });
 
     if (ecran === ECRANS.CONNEXION) versConnexion();
@@ -397,12 +418,12 @@ export function ouvrirMenuPrincipal({
       ${situation ? `<span>${echapper(situation)}</span>` : ''}
     </div>` : ''}
     <div class="hote-menu">
-      ${changeable ? `<button id="m-scenes">🗺️<span>Changer de scène<small>${
+      ${changeable ? `<button id="m-scenes">${IC.scenes}<span>Changer de scène<small>${
         modifie ? 'Des modifications ne sont pas enregistrées' : 'Revenir à la liste de vos projets'
       }</small></span></button>` : ''}
-      ${changeable ? `<button id="m-connexion">🔑<span>Instance et clé<small>${
+      ${changeable ? `<button id="m-connexion">${IC.cle}<span>Instance et clé<small>${
         echapper(config?.baseUrl || '')}</small></span></button>` : ''}
-      <button id="m-fermer">↩<span>Revenir à la carte</span></button>
+      <button id="m-fermer">${IC.retour}<span>Revenir à la carte</span></button>
     </div>`;
 
   boite.querySelector('#m-fermer').onclick = fermer;
@@ -425,8 +446,15 @@ export function ouvrirMenuPrincipal({
   const cx = boite.querySelector('#m-connexion');
   if (cx) cx.onclick = () => {
     if (modifie && !portee.confirm('Des modifications ne sont pas enregistrées. Continuer ?')) return;
-    oublier(stockage);
-    portee.location.reload();
+    // Pre-rempli, et rien n'est efface avant validation : ouvrir cet ecran par
+    // megarde ne doit pas couter une cle a retrouver dans son profil Grist.
+    montrerConnexion(boite, config, null, (c) => {
+      if (!changerConnexion(stockage, config, c)) {
+        poserAvis(boite, 'Impossible d’enregistrer : le stockage de l’appareil est indisponible.');
+        return;
+      }
+      portee.location.reload();
+    });
   };
 
   return fermer;

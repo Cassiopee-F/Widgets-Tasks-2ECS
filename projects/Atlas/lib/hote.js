@@ -171,6 +171,24 @@ export function quitterScene(stockage, config) {
   return ecrireConfig(stockage, { ...(config || {}), docId: '' });
 }
 
+/**
+ * Remplacer l'instance ou la cle, sans rien effacer d'abord.
+ *
+ * Effacer puis redemander paraissait plus simple. Mais sur un telephone, un
+ * doigt qui glisse sur « Instance et cle » suffisait alors a perdre une cle
+ * qu'il faut ensuite retrouver dans son profil Grist — et l'ecran de connexion
+ * revenait vide, sans meme l'adresse. L'ancienne configuration tient donc
+ * jusqu'a ce qu'une nouvelle la remplace.
+ *
+ * La scene ouverte survit a un changement de cle, pas a un changement
+ * d'instance : elle n'existe pas sur l'autre.
+ */
+export function changerConnexion(stockage, ancienne, nouvelle) {
+  const a = normaliserConfig(ancienne || {});
+  const n = normaliserConfig(nouvelle || {});
+  return ecrireConfig(stockage, { ...n, docId: n.baseUrl === a.baseUrl ? a.docId : '' });
+}
+
 /* ------------------------------------------------------------------ */
 /* La liste des scenes, retrouvee au retour                            */
 /* ------------------------------------------------------------------ */
