@@ -2196,8 +2196,8 @@ function applyStoryState(s) {
 // MODULES — chrome contextuel
 // ============================================================
 const MODULE_TITLES = {
-    lieu: '📍 Lieu', couches: 'Couches', controles: '🎛️ Contrôles', recit: '📖 Récit',
-    symbo: 'Symboliser', soleil: '☀️ Soleil', vues: 'Vue & rendu', reglages: '⚙️ Catalogue 3D',
+    lieu: 'Lieu', couches: 'Couches', controles: 'Contrôles', recit: 'Récit',
+    symbo: 'Symboliser', soleil: 'Soleil', vues: 'Vue & rendu', reglages: 'Catalogue 3D',
 };
 
 const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'symbo', 'couches']);
@@ -2245,11 +2245,11 @@ function closeModulePanel() {
 let searchTimer = null;
 let locationPickMode = false;
 function renderLieu() {
-    $('module-title').textContent = '📍 Lieu';
+    $('module-title').textContent = 'Lieu';
     const L = STATE.location;
     $('module-body').innerHTML = `
         <div class="loc-badge">
-            <span class="ic">📌</span>
+            <span class="ic">${icTrait(IC.epingle)}</span>
             <div>
                 <div class="nm">${L.name || 'Non défini'}</div>
                 <div class="co">${(L.lat ?? 0).toFixed(5)}°N · ${(L.lng ?? 0).toFixed(5)}°E</div>
@@ -2258,12 +2258,12 @@ function renderLieu() {
         </div>
         <div class="section">
             <div class="section-title">Rechercher un lieu</div>
-            <input class="input" id="loc-search" placeholder="🔍 Adresse, ville, monument…" oninput="A.searchLocation(this.value)">
+            <input class="input" id="loc-search" placeholder="Adresse, ville, monument…" oninput="A.searchLocation(this.value)">
             <div class="search-results" id="loc-results"></div>
         </div>
         <div class="section">
-            <button class="btn btn-soft btn-full" onclick="A.useGeolocation()">📍 Ma position actuelle</button>
-            <button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.pickOnMap()">🗺️ Pointer sur la carte</button>
+            <button class="btn btn-soft btn-full" onclick="A.useGeolocation()">${icTrait(IC.epingle)} Ma position actuelle</button>
+            <button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.pickOnMap()">${icTrait(IC.carte)} Pointer sur la carte</button>
         </div>
         <div class="section">
             <div class="section-title">Coordonnées manuelles</div>
@@ -2306,7 +2306,7 @@ function availableTablesSection() {
         <div class="layer-item" onclick="A.showGeoTable('${String(g.table).replace(/'/g, "\\'")}')">
             <span class="layer-vis" title="Afficher comme couche">＋</span>
             <div class="layer-info"><div class="layer-name">${g.table}</div><div class="layer-meta">${geoTableMeta(g)}</div></div>
-            <button class="layer-act" title="Afficher">👁</button>
+            <button class="layer-act" title="Afficher">${icTrait(IC.oeil)}</button>
         </div>`).join('')}</div></div>`;
 }
 
@@ -2319,13 +2319,13 @@ function renderLayersPanel(mode) {
     const body = $('module-body');
     if (STATE.layers.length === 0) {
         body.innerHTML = `
-            <div class="empty"><div class="ic">📂</div><div class="t">Aucune couche affichée</div><div class="h">Affiche une table ci-dessous, ou importe</div></div>
+            <div class="empty"><div class="ic">${icTrait(IC.dossier, 40)}</div><div class="t">Aucune couche affichée</div><div class="h">Affiche une table ci-dessous, ou importe</div></div>
             ${availableTablesSection()}
-            <div class="section"><div class="section-title">🌍 OpenStreetMap</div><button class="btn btn-primary btn-full" onclick="A.openOSM()">Importer depuis OSM</button></div>
-            <div class="section"><div class="section-title">📄 Fichier</div>
-                <div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">📄</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div>
+            <div class="section"><div class="section-title">OpenStreetMap</div><button class="btn btn-primary btn-full" onclick="A.openOSM()">Importer depuis OSM</button></div>
+            <div class="section"><div class="section-title">Fichier</div>
+                <div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">${icTrait(IC.fichier, 40)}</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div>
             </div>
-            ${CONFIG.grist.ready ? `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openLinkTable()">🔗 Lier une table Grist</button></div>` : ''}`;
+            ${CONFIG.grist.ready ? `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openLinkTable()">${icTrait(IC.lien)} Lier une table Grist</button></div>` : ''}`;
         wireDrop();
         return;
     }
@@ -2333,7 +2333,7 @@ function renderLayersPanel(mode) {
     body.innerHTML = `
         <div class="section" style="margin-top:0">
             <div style="display:flex;gap:8px">
-                <button class="btn ${allVis ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(true)">👁 Tout</button>
+                <button class="btn ${allVis ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(true)">${icTrait(IC.oeil)} Tout</button>
                 <button class="btn ${!STATE.layers.some((l) => l.visible !== false) ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(false)">Masquer</button>
             </div>
         </div>
@@ -2356,24 +2356,24 @@ function renderLayersPanel(mode) {
                         title="Glisser pour réordonner (ou ↑ ↓ au clavier)">⠿</span>`;
                 return `<div class="layer-item ${sel ? 'active' : ''}" data-layer="${l.id}" onclick="A.selectLayer('${l.id}')">
                     ${poignee}
-                    <span class="layer-vis ${visible ? 'on' : ''}" onclick="A.toggleLayer('${l.id}', event)">${visible ? '👁' : '🚫'}</span>
+                    <span class="layer-vis ${visible ? 'on' : ''}" onclick="A.toggleLayer('${l.id}', event)">${icTrait(visible ? IC.oeil : IC.oeilBarre)}</span>
                     <span class="layer-swatch" style="background:${l.color}"></span>
                     <div class="layer-info">
                         <div class="layer-name">${l.name}</div>
                         <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
                     </div>
-                    ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">🔄</button>` : ''}
-                    <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">🎯</button>
-                    <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">🗑️</button>
+                    ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">${icTrait(IC.rafraichir)}</button>` : ''}
+                    <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">${icTrait(IC.cible)}</button>
+                    <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">${icTrait(IC.corbeille)}</button>
                 </div>`;
             }).join('')}
         </div>
         ${availableTablesSection()}
         <div class="section">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">🌍 OSM</button>
-                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">📄 Fichier</button>
-                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">🔗 Table</button>` : ''}
+                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">${icTrait(IC.globe)} OSM</button>
+                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">${icTrait(IC.fichier)} Fichier</button>
+                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">${icTrait(IC.lien)} Table</button>` : ''}
             </div>
         </div>`;
     wireLayerReorder(body);
@@ -2386,7 +2386,7 @@ function renderLayersPanelLecture() {
     // Même sens de lecture que le panneau d'édition : le dessus en premier.
     const visible = displayOrder(STATE.layers).filter((l) => l.visible !== false);
     if (!visible.length) {
-        body.innerHTML = `<div class="empty"><div class="ic">🗺️</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
+        body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.carte, 40)}</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
         return;
     }
     body.innerHTML = `
@@ -2399,7 +2399,7 @@ function renderLayersPanelLecture() {
                     <div class="layer-name">${l.name}</div>
                     <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
                 </div>
-                <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">🎯</button>
+                <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">${icTrait(IC.cible)}</button>
             </div>`;
         }).join('')}</div>`;
 }
@@ -2413,16 +2413,57 @@ function renderLayersPanelLecture() {
  * controle pas, et pique des pastilles bariolees dans une interface qui n'en a
  * aucune. Un trace inline ne depend d'aucune police et suit la couleur du texte.
  */
-function icTrait(d) {
-    return `<svg class="ic-trait" width="19" height="19" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+function icTrait(d, taille = 19) {
+    // L'epaisseur se reduit quand l'icone grandit, sinon une illustration d'etat
+    // vide parait grossiere a cote d'un bouton de 19 px.
+    const trait = taille > 32 ? 1.3 : 1.7;
+    return `<svg class="ic-trait" width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="${trait}" stroke-linecap="round" stroke-linejoin="round"
       aria-hidden="true">${d}</svg>`;
 }
 
+/**
+ * Le vocabulaire d'icones des panneaux.
+ *
+ * Un seul endroit ou les tracer : la meme corbeille doit etre la meme partout,
+ * et une icone qui change de dessin d'un panneau a l'autre se lit comme deux
+ * actions differentes.
+ */
+const IC = {
+    oeil:      '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+    oeilBarre: '<path d="M10.6 6.2A9.9 9.9 0 0 1 12 6c6.4 0 10 6 10 6a18 18 0 0 1-3.1 3.9M6.6 6.7A17.9 17.9 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 4.2-.9"/><path d="M3 3l18 18"/>',
+    cible:     '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
+    corbeille: '<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7"/><path d="M10 11v6m4-6v6"/>',
+    rafraichir:'<path d="M20 11a8 8 0 1 0-2.3 6.2"/><path d="M20 5v6h-6"/>',
+    lien:      '<path d="M10 13a5 5 0 0 0 7.1.1l2.9-2.9a5 5 0 0 0-7.1-7.1L11 4.9"/><path d="M14 11a5 5 0 0 0-7.1-.1L4 13.8a5 5 0 0 0 7.1 7.1l1.8-1.8"/>',
+    fichier:   '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    dossier:   '<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/>',
+    globe:     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15 0 18M12 3C9.5 5.7 9.5 18 12 21"/>',
+    carte:     '<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/>',
+    epingle:   '<path d="M12 22s7-7 7-12a7 7 0 0 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/>',
+    loupe:     '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>',
+    soleil:    '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
+    recit:     '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M9 7h7M9 11h5"/>',
+    controles: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    reglages:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    camera:    '<path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="3.2"/>',
+    palette:   '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-1-.8-1.5-.8-2.4 0-.9.7-1.5 1.6-1.5H16a5 5 0 0 0 5-5c0-4-4-7.5-9-7.5z"/><circle cx="7.5" cy="11" r="1.1" fill="currentColor"/><circle cx="10.5" cy="7.5" r="1.1" fill="currentColor"/><circle cx="15" cy="8.5" r="1.1" fill="currentColor"/>',
+    cube:      '<path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/>',
+    enregistrer:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    exporter:  '<path d="M12 3v13M7 8l5-5 5 5M5 21h14"/>',
+    piste:     '<path d="M4 20V7a3 3 0 0 1 6 0v10a3 3 0 0 0 6 0V4"/><path d="M17 7h4M17 4h4"/>',
+    pieton:    '<circle cx="12" cy="4" r="2"/><path d="M12 7v6m0 0-3 8m3-8 3 8M8 10l4-2 4 2"/>',
+};
+
+
+
 function controlTypeIcon(type) {
-    if (type === 'time') return icTrait('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>');
-    if (type === 'range') return icTrait('<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>');
-    return icTrait('<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>');
+    // Les filtres gardent leurs emoji : ils nomment une donnee, pas une commande
+    // de la carte, et l'utilisateur les repere mieux ainsi dans une rangee de
+    // pastilles. Le sujet est le choix de l'auteur de la scene, pas la charte.
+    if (type === 'time') return '🕑';
+    if (type === 'range') return '📊';
+    return '🏷️';
 }
 
 function controlTypeLabel(type) {
@@ -2801,7 +2842,7 @@ function renderControles() {
         closeModulePanel();
         return;
     }
-    $('module-title').textContent = '🎛️ Contrôles';
+    $('module-title').textContent = 'Contrôles';
     const body = $('module-body');
     const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer) || STATE.layers[0];
 
@@ -2810,7 +2851,7 @@ function renderControles() {
     html += `<div class="section"><div class="section-title">Environnement</div>${renderEnvControlsSection()}</div>`;
 
     if (!layer) {
-        body.innerHTML = html + `<div class="empty" style="margin-top:12px"><div class="ic">🎛️</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
+        body.innerHTML = html + `<div class="empty" style="margin-top:12px"><div class="ic">${icTrait(IC.controles, 40)}</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
         return;
     }
 
@@ -2849,12 +2890,12 @@ function renderControles() {
 }
 
 function renderRecit() {
-    $('module-title').textContent = '📖 Récit';
+    $('module-title').textContent = 'Récit';
     const body = $('module-body');
     const steps = STATE.story || [];
     if (CONFIG.viewMode) {
         if (!steps.length) {
-            body.innerHTML = `<div class="empty"><div class="ic">📖</div><div class="t">Pas de récit</div><div class="h">L’éditeur n’a pas publié d’étapes</div></div>`;
+            body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.recit, 40)}</div><div class="t">Pas de récit</div><div class="h">L’éditeur n’a pas publié d’étapes</div></div>`;
             return;
         }
         body.innerHTML = `
@@ -2872,11 +2913,11 @@ function renderRecit() {
     }
     let html = `<div class="hint">Capture des <strong>étapes</strong> (caméra + couches + filtres + heure) et rejoue-les en présentation.</div>
         <div class="section" style="display:flex;gap:8px">
-            <button class="btn btn-primary" style="flex:2" onclick="A.storyCapture()">📸 Capturer l'étape</button>
+            <button class="btn btn-primary" style="flex:2" onclick="A.storyCapture()">${icTrait(IC.camera)} Capturer l'étape</button>
             ${steps.length ? `<button class="btn btn-dark" style="flex:1" onclick="A.storyPlay(0)">▶ Lecture</button>` : ''}
         </div>`;
     if (!steps.length) {
-        body.innerHTML = html + `<div class="empty"><div class="ic">📖</div><div class="t">Aucune étape</div><div class="h">Cadre la vue puis « Capturer »</div></div>`;
+        body.innerHTML = html + `<div class="empty"><div class="ic">${icTrait(IC.recit, 40)}</div><div class="t">Aucune étape</div><div class="h">Cadre la vue puis « Capturer »</div></div>`;
         return;
     }
     html += `<div class="layer-list">${steps.map((s, i) => `
@@ -2888,10 +2929,10 @@ function renderRecit() {
             </div>
             <div style="display:flex;flex-direction:column;gap:2px">
                 <button class="layer-act" onclick="A.storyMove(${i},-1)" title="Monter">▲</button>
-                <button class="layer-act" onclick="A.storyRecapture(${i})" title="Re-capturer la vue">📸</button>
+                <button class="layer-act" onclick="A.storyRecapture(${i})" title="Re-capturer la vue">${icTrait(IC.camera)}</button>
                 <button class="layer-act" onclick="A.storyMove(${i},1)" title="Descendre">▼</button>
             </div>
-            <button class="layer-del" onclick="A.storyDelete(${i})" title="Supprimer">🗑️</button>
+            <button class="layer-del" onclick="A.storyDelete(${i})" title="Supprimer">${icTrait(IC.corbeille)}</button>
         </div>`).join('')}</div>`;
     body.innerHTML = html;
 }
@@ -2937,12 +2978,12 @@ function renderModelsPanel() {
     const isPoint = layer && (layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint');
     const banner = isPoint
         ? `<div class="hint" style="border-left-color:var(--accent)">Couche sélectionnée : <strong>${layer.name}</strong>.<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="A.openLayerModel('${layer.id}')">→ Choisir le modèle de cette couche</button></div>`
-        : `<div class="hint">⚙️ Réglages du catalogue, valables pour toute l'app. Pour <strong>affecter un modèle à une couche</strong> : sélectionne une couche de points (module Couches) → onglet <strong>Modèle 3D</strong> de l'inspecteur.</div>`;
+        : `<div class="hint">Réglages du catalogue, valables pour toute l'app. Pour <strong>affecter un modèle à une couche</strong> : sélectionne une couche de points (module Couches) → onglet <strong>Modèle 3D</strong> de l'inspecteur.</div>`;
     $('module-body').innerHTML = banner + `
         <div class="section">
             <div class="section-title">Jeu de modèles</div>
             <div class="seg">
-                <button class="${MODEL_LIBRARY.set === 'colored' ? 'active' : ''}" onclick="A.setModelSet('colored')">🎨 Coloré</button>
+                <button class="${MODEL_LIBRARY.set === 'colored' ? 'active' : ''}" onclick="A.setModelSet('colored')">${icTrait(IC.palette)} Coloré</button>
                 <button class="${MODEL_LIBRARY.set === 'mono' ? 'active' : ''}" onclick="A.setModelSet('mono')">⬜ Maquette</button>
             </div>
         </div>
@@ -2967,7 +3008,7 @@ function renderModelsPanel() {
 
 // ---- Soleil / Ambiance ----
 function renderSoleil() {
-    $('module-title').textContent = '☀️ Soleil';
+    $('module-title').textContent = 'Soleil';
     const min = STATE.settings.timeOfDay;
     const d = STATE.settings.date;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2977,10 +3018,10 @@ function renderSoleil() {
         <div class="section">
             <div class="section-title">Moment de la journée</div>
             <div class="option-cards grid2">
-                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon">🌅</div><div class="oc-label">Aube</div></div>
-                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon">☀️</div><div class="oc-label">Midi</div></div>
-                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon">🌆</div><div class="oc-label">Soir</div></div>
-                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon">🌙</div><div class="oc-label">Nuit</div></div>
+                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon">${icTrait('<path d="M3 18h18M6 18a6 6 0 0 1 12 0"/><path d="M12 5v2M5.6 8.6l1.4 1.4m11.4-1.4-1.4 1.4"/><path d="M2 21h20"/>', 26)}</div><div class="oc-label">Aube</div></div>
+                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon">${icTrait(IC.soleil, 26)}</div><div class="oc-label">Midi</div></div>
+                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon">${icTrait('<path d="M3 18h18M8 18a4 4 0 0 1 8 0"/><path d="M12 21v-1"/><path d="M2 14h4m12 0h4"/>', 26)}</div><div class="oc-label">Soir</div></div>
+                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon">${icTrait('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', 26)}</div><div class="oc-label">Nuit</div></div>
             </div>
         </div>
         <div class="section">
@@ -2988,15 +3029,15 @@ function renderSoleil() {
             <input type="range" class="rng acc" min="0" max="1439" step="5" value="${min}" oninput="A.setTime(this.value)">
         </div>
         <div class="section">
-            <div class="section-title">📅 Date</div>
+            <div class="section-title">Date</div>
             <input class="input" type="date" value="${dateStr}" onchange="A.setSunDate(this.value)">
         </div>
         <div class="section">
-            <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
+            <div class="range-info">Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
         </div>
         <div class="section">
             <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')" role="switch" tabindex="0" aria-checked="${!!STATE.settings.shadows}" aria-label="Ombres portées"></div></div>
-            <div class="hint" style="margin-top:8px">💡 Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
+            <div class="hint" style="margin-top:8px">Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
         </div>`;
 }
 
@@ -3009,8 +3050,8 @@ function renderVues() {
             <div class="section-title">Points de vue</div>
             <div class="option-cards">
                 <div class="option-card" onclick="A.viewPreset('top')"><div class="oc-icon">⬇️</div><div class="oc-label">Dessus</div></div>
-                <div class="option-card" onclick="A.viewPreset('3d')"><div class="oc-icon">🎯</div><div class="oc-label">3D</div></div>
-                <div class="option-card" onclick="A.viewPreset('street')"><div class="oc-icon">🚶</div><div class="oc-label">Piéton</div></div>
+                <div class="option-card" onclick="A.viewPreset('3d')"><div class="oc-icon">${icTrait(IC.cube, 26)}</div><div class="oc-label">3D</div></div>
+                <div class="option-card" onclick="A.viewPreset('street')"><div class="oc-icon">${icTrait(IC.pieton, 26)}</div><div class="oc-label">Piéton</div></div>
             </div>
         </div>
         <div class="section">
@@ -3022,8 +3063,8 @@ function renderVues() {
         <div class="section">
             <div class="section-title">Projection</div>
             <div class="seg">
-                <button class="${s.projection === 'globe' ? 'active' : ''}" onclick="A.setProjection('globe')">🌍 Globe</button>
-                <button class="${s.projection === 'mercator' ? 'active' : ''}" onclick="A.setProjection('mercator')">🗺️ Plan</button>
+                <button class="${s.projection === 'globe' ? 'active' : ''}" onclick="A.setProjection('globe')">${icTrait(IC.globe)} Globe</button>
+                <button class="${s.projection === 'mercator' ? 'active' : ''}" onclick="A.setProjection('mercator')">${icTrait(IC.carte)} Plan</button>
             </div>
             <div class="hint" style="margin-top:8px">Le globe (façon Google Earth) bascule automatiquement en plan une fois zoomé sur la zone.</div>
         </div>
@@ -3035,18 +3076,18 @@ function renderVues() {
         </div>
         <div class="section">
             <div class="section-title">Rendu 3D</div>
-            <div class="toggle-row"><span class="tlabel">🏢 Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')" role="switch" tabindex="0" aria-checked="${!!s.buildings3D}" aria-label="Bâti du fond de carte"></div></div>
-            <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')" role="switch" tabindex="0" aria-checked="${!!s.terrain3D}" aria-label="Terrain 3D"></div></div>
+            <div class="toggle-row"><span class="tlabel">Bâti du fond de carte</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')" role="switch" tabindex="0" aria-checked="${!!s.buildings3D}" aria-label="Bâti du fond de carte"></div></div>
+            <div class="toggle-row"><span class="tlabel">Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')" role="switch" tabindex="0" aria-checked="${!!s.terrain3D}" aria-label="Terrain 3D"></div></div>
             <label class="input-label" style="margin-top:6px">Source du relief</label>
             <select class="input" onchange="A.setTerrainSource(this.value)">
                 ${Object.entries(TERRAIN_SOURCES).map(([k, t]) => `<option value="${k}" ${s.terrainSource === k ? 'selected' : ''}>${t.label}</option>`).join('')}
             </select>
             <div class="slider-head" style="margin-top:8px"><span class="lbl">Exagération relief</span><span class="val" id="v-exag">${s.terrainExaggeration}×</span></div>
             <input type="range" class="rng" min="1" max="3" step="0.1" value="${s.terrainExaggeration}" oninput="A.setExag(this.value)">
-            <div class="toggle-row"><span class="tlabel">🏷️ Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')" role="switch" tabindex="0" aria-checked="${!!s.labels}" aria-label="Libellés du fond"></div></div>
-            <div class="toggle-row"><span class="tlabel">🌫️ Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')" role="switch" tabindex="0" aria-checked="${!!s.sky}" aria-label="Ciel et atmosphère"></div></div>
+            <div class="toggle-row"><span class="tlabel">Libellés du fond</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')" role="switch" tabindex="0" aria-checked="${!!s.labels}" aria-label="Libellés du fond"></div></div>
+            <div class="toggle-row"><span class="tlabel">Ciel / atmosphère</span><div class="toggle ${s.sky ? 'on' : ''}" onclick="A.toggleSetting('sky')" role="switch" tabindex="0" aria-checked="${!!s.sky}" aria-label="Ciel et atmosphère"></div></div>
         </div>
-        <button class="btn btn-soft btn-full" onclick="A.resetView()">🔄 Réinitialiser la vue</button>`;
+        <button class="btn btn-soft btn-full" onclick="A.resetView()">${icTrait(IC.rafraichir)} Réinitialiser la vue</button>`;
 }
 
 // ============================================================
@@ -3447,7 +3488,7 @@ function symModelPanel(layer, sym) {
 }
 function commonTransform(layer) {
     const c = layer.style.common = layer.style.common || { scale: 1, rotationX: 0, rotationY: 0, rotationZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
-    return `<div class="section"><div class="section-title">⚙️ Transform couche</div>
+    return `<div class="section"><div class="section-title">Transform couche</div>
         <div class="slider-head"><span class="lbl">Échelle</span><span class="val" id="ct-scale">${c.scale}×</span></div>
         <input type="range" class="rng acc" min="0.1" max="5" step="0.1" value="${c.scale}" oninput="A.setCommon('${layer.id}','scale',this.value,'ct-scale','×')">
         <div class="slider-head" style="margin-top:12px"><span class="lbl">Rotation Z (azimut)</span><span class="val" id="ct-rz">${c.rotationZ}°</span></div>
@@ -3916,7 +3957,7 @@ function clearFeatureOverrides(layer, idx) {
 // IMPORT — OSM (Overpass) & fichier
 // ============================================================
 function openOSM() {
-    $('module-title').textContent = '🌍 Import OSM';
+    $('module-title').textContent = 'Import OSM';
     const b = map.getBounds();
     $('module-body').innerHTML = `
         <div class="hint">Zone importée = emprise visible. Zoomez pour réduire.</div>
@@ -4689,35 +4730,35 @@ function openCmd() {
 function closeCmd() { $('cmd-overlay').classList.remove('open'); }
 function buildCmdItems(q) {
     let base = [
-        { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: '📍' },
-        { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: '🗂️' },
-        { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: '🎛️' },
-        { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: '📖' },
-        { label: 'Symboliser', kind: 'module', run: () => openModule('symbo'), ic: '🎨' },
-        { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: '⚙️' },
-        { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: '☀️' },
-        { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: '🎯' },
-        { label: 'Importer depuis OSM', kind: 'action', run: () => { openModule('couches'); openOSM(); }, ic: '🌍' },
-        { label: 'Importer un fichier', kind: 'action', run: () => $('file-input').click(), ic: '📄' },
-        { label: 'Enregistrer le projet', kind: 'action', run: saveProject, ic: '💾' },
-        { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
-        { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
+        { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: icTrait(IC.epingle) },
+        { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: icTrait(IC.dossier) },
+        { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: icTrait(IC.controles) },
+        { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: icTrait(IC.recit) },
+        { label: 'Symboliser', kind: 'module', run: () => openModule('symbo'), ic: icTrait(IC.palette) },
+        { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: icTrait(IC.reglages) },
+        { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: icTrait(IC.soleil) },
+        { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: icTrait(IC.cube) },
+        { label: 'Importer depuis OSM', kind: 'action', run: () => { openModule('couches'); openOSM(); }, ic: icTrait(IC.globe) },
+        { label: 'Importer un fichier', kind: 'action', run: () => $('file-input').click(), ic: icTrait(IC.fichier) },
+        { label: 'Enregistrer le projet', kind: 'action', run: saveProject, ic: icTrait(IC.enregistrer) },
+        { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: icTrait(IC.exporter) },
+        { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: icTrait(IC.rafraichir) },
     ];
     if (CONFIG.viewMode) {
         const hasStory = (STATE.story?.length || 0) > 0;
         base = [
             ...(hasStory ? [
-                { label: '▶ Lancer le récit', kind: 'action', run: () => A.storyPlay(0), ic: '📖' },
-                { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: '📖' },
+                { label: 'Lancer le récit', kind: 'action', run: () => A.storyPlay(0), ic: icTrait(IC.recit) },
+                { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: icTrait(IC.recit) },
             ] : []),
-            { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
-            { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
+            { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: icTrait(IC.exporter) },
+            { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: icTrait(IC.rafraichir) },
         ];
         STATE.layers.filter((l) => l.visible !== false).forEach((l) => base.push({
             label: `Cibler « ${l.name} »`,
             kind: 'couche',
             run: () => { _legendFocus = { layerId: l.id }; fitToLayer(l); updateLegend(); },
-            ic: '🎯',
+            ic: icTrait(IC.cube),
         }));
     } else {
         STATE.layers.forEach((l) => base.push({ label: l.name, kind: 'couche', run: () => { A.selectLayer(l.id); }, ic: '▢' }));
@@ -4810,7 +4851,7 @@ const A = {
         const body = $('module-body');
         const back = `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openModule('couches')">← Retour</button></div>`;
         if (!_linkChoices.length) {
-            body.innerHTML = `<div class="empty"><div class="ic">🔍</div><div class="t">Aucune table géo trouvée</div><div class="h">Importez d'abord via QGIS → Grist</div></div>${back}`;
+            body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.loupe, 40)}</div><div class="t">Aucune table géo trouvée</div><div class="h">Importez d'abord via QGIS → Grist</div></div>${back}`;
             return;
         }
         const already = new Set(STATE.layers.filter((l) => l.sourceTable).map((l) => l.sourceTable));
@@ -4818,7 +4859,7 @@ const A = {
             <div class="layer-item" onclick="A.linkTableChoice(${i})">
                 <div class="layer-info"><div class="layer-name">${g.table}${already.has(g.table) ? ' ✓' : ''}</div>
                 <div class="layer-meta">${geoTableMeta(g)}</div></div>
-                <button class="layer-act" title="Lier comme couche">🔗</button>
+                <button class="layer-act" title="Lier comme couche">${icTrait(IC.lien)}</button>
             </div>`).join('')}</div>${back}`;
     },
     linkTableChoice(i) { const g = _linkChoices[i]; if (g) linkTableFromGrist(g.table, g.geometryColumn, g._data); },
