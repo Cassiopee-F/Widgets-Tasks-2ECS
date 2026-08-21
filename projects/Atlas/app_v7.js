@@ -4232,7 +4232,7 @@ async function cablerMenuPrincipal() {
     const marque = document.querySelector('.brand');
     if (!marque) return;
     let hote;
-    try { hote = await import('./lib/hote-ui.js?v=20260820i'); } catch (_) { return; }
+    try { hote = await import('./lib/hote-ui.js?v=20260821a'); } catch (_) { return; }
     let caps;
     try {
         const dc = await import('./lib/data-client.js?v=20260820b');
@@ -5751,7 +5751,7 @@ async function demarrer() {
     try {
         const { capacites } = await import('./lib/data-client.js?v=20260820b');
         if (capacites().mode === 'grist') return init();
-        const { accueillir } = await import('./lib/hote-ui.js?v=20260820i');
+        const { accueillir } = await import('./lib/hote-ui.js?v=20260821a');
         const pret = await accueillir();
         if (!pret) return;          // l'accueil garde l'ecran : rien a demarrer
     } catch (e) {

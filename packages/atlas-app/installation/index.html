@@ -62,8 +62,25 @@
   <p>Elle ouvre vos scènes Atlas depuis votre compte Grist, sur le terrain
      comme au bureau. Android uniquement.</p>
 
-  <a class="btn" href="atlas.apk">Télécharger l’application</a>
-  <p class="discret">Version de test, non signée pour distribution.</p>
+  <a class="btn" id="apk" href="atlas.apk">Télécharger l’application</a>
+  <p class="discret" id="version">Version de test, non signée pour distribution.</p>
+
+  <script>
+    // Le lien porte la version : sans elle, le navigateur reservait le fichier
+    // deja telecharge sous ce nom, et on reinstallait l'ancienne application en
+    // croyant l'avoir mise a jour. C'est arrive — une heure perdue a chercher
+    // un defaut deja corrige.
+    fetch('version.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => {
+        if (!v || !v.commit) return;
+        document.getElementById('apk').href = 'atlas.apk?v=' + encodeURIComponent(v.commit);
+        document.getElementById('version').textContent =
+          'Version ' + v.commit + (v.date ? ' du ' + v.date : '')
+          + ' — de test, non signée pour distribution.';
+      })
+      .catch(() => {});   // sans version.json, le lien simple reste valable
+  </script>
 
   <ol>
     <li>Ouvrez le fichier téléchargé.</li>

@@ -76,6 +76,8 @@ const CSS = `
 .hote-menu button:active { background: var(--surface-muted, #FAF6EB); }
 .hote-menu button small { display: block; font-size: .78rem; color: var(--muted, #7A6F5E); }
 .hote-ic { flex: 0 0 auto; color: var(--muted, #7A6F5E); }
+.hote-version { font-family: var(--mono, monospace); font-size: .78rem;
+  color: var(--muted, #7A6F5E); opacity: .8; }
 `;
 
 /**
@@ -116,6 +118,18 @@ function expliquer(e, caps) {
   if (/403/.test(msg)) return 'Accès refusé à ce document.';
   if (/404/.test(msg)) return 'Document introuvable — il a peut-être été supprimé.';
   return msg;
+}
+
+/**
+ * Quelle version de l'application tourne, si elle le dit.
+ *
+ * Le paquet installe porte une meta posee au moment de la vendorisation. Le
+ * widget Grist n'en a pas, et n'en a pas besoin : il est servi en ligne, il est
+ * donc toujours a jour. Dans l'application, c'est le seul repere — sans lui on
+ * teste une ancienne APK en croyant l'avoir mise a jour.
+ */
+function versionInstallee(doc) {
+  return doc.querySelector('meta[name="atlas-version"]')?.content?.trim() || '';
 }
 
 const echapper = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -411,6 +425,7 @@ export function ouvrirMenuPrincipal({
 
   const changeable = peutChangerDeScene(caps, config);
   const situation = scene ? [situer(scene), depuis(scene.maj)].filter(Boolean).join(' — ') : '';
+  const version = versionInstallee(doc);
 
   boite.innerHTML = `${MARQUE}
     ${scene ? `<div class="hote-courante">
@@ -424,7 +439,8 @@ export function ouvrirMenuPrincipal({
       ${changeable ? `<button id="m-connexion">${IC.cle}<span>Instance et clé<small>${
         echapper(config?.baseUrl || '')}</small></span></button>` : ''}
       <button id="m-fermer">${IC.retour}<span>Revenir à la carte</span></button>
-    </div>`;
+    </div>
+    ${version ? `<p class="hote-version">Version ${echapper(version)}</p>` : ''}`;
 
   boite.querySelector('#m-fermer').onclick = fermer;
 

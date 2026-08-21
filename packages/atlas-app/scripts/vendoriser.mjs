@@ -11,6 +11,7 @@
  */
 import { mkdir, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +34,23 @@ const VENDOR = [
  * chercher le CDN au premier modele — et echouerait hors reseau.
  */
 const ADDONS = ['loaders/GLTFLoader.js', 'utils/BufferGeometryUtils.js'];
+
+/**
+ * Quelle version est dans le paquet.
+ *
+ * Sans cela, rien a l'ecran ne distingue deux APK : on croit avoir mis a jour,
+ * on teste l'ancienne, et on cherche un defaut deja corrige. C'est arrive.
+ * Le commit et sa date suffisent — c'est un repere, pas un numero de version
+ * publique.
+ */
+export function versionPaquet(cwd = ici) {
+  try {
+    const git = (...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
+    return { commit: git('rev-parse', '--short', 'HEAD'), date: git('log', '-1', '--format=%cs') };
+  } catch (_) {
+    return { commit: 'source', date: '' };   // hors depot : le paquet reste valable
+  }
+}
 
 async function telecharger(url, dest) {
   const r = await fetch(url);
@@ -83,9 +101,16 @@ async function main() {
   html = html.replace(/<\/head>/,
     '    <script>window.__ATLAS_MODELES__ = "./models/";</script>\n</head>');
 
-  await writeFile(join(out, 'index.html'), html);
+  // La version voyage avec le paquet, et s'affiche dans le menu : c'est le seul
+  // moyen de savoir, telephone en main, laquelle on est en train de tester.
+  const v = versionPaquet();
+  html = html.replace(/<\/head>/,
+    `    <meta name="atlas-version" content="${v.commit}${v.date ? ' · ' + v.date : ''}">\n</head>`);
 
-  console.log(`\nwww/ pret — ${(total / 1048576).toFixed(1)} Mo de dependances`);
+  await writeFile(join(out, 'index.html'), html);
+  await writeFile(join(ici, '..', 'www', 'version.json'), JSON.stringify(v) + '\n');
+
+  console.log(`\nwww/ pret — ${(total / 1048576).toFixed(1)} Mo de dependances, version ${v.commit}`);
 }
 
 main().catch((e) => { console.error('Vendorisation :', e.message); process.exit(1); });
