@@ -1,5 +1,5 @@
 {
-  "titre": "Des documents Grist qui deviennent des applications métier",
+  "titre": "Des documents Grist qui deviennent des applications métier, sur mesure",
   "chapeau": "Un tableur collaboratif porte déjà les données, les droits et l'historique. Ce dépôt ajoute ce qui manque pour en faire un outil de travail : des vues qui lisent ces tables au lieu de les copier — carte, planning, formulaire, plan de charge — et la chaîne qui permet de les fabriquer.",
   "principes": [
     {
@@ -79,7 +79,7 @@
       "texte": "l'application relève sur place, et écrit dans les mêmes tables"
     }
   ],
-  "statut": "Travaux personnels, publiés en open source sous licence MIT. Ils ne relèvent d'aucune organisation et n'engagent qu'eux-mêmes.",
+  "statut": "Publiés en open source sous licence MIT. Cette page est personnelle : elle n’exprime la position d’aucune organisation.",
   "conventionsTitre": "Ce qui tient les projets ensemble",
   "conventionsTexte": "Ces widgets ne partagent pas de code — ils partagent des contrats. Un même document peut donc passer d’un outil à l’autre sans conversion, et un projet peut évoluer sans casser les autres.",
   "conventions": [
