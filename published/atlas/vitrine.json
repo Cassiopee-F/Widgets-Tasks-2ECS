@@ -45,6 +45,10 @@
   },
   "journal": [
     {
+      "version": "v1.2.0",
+      "texte": "Atlas sait où il tourne : dans un document il ne change pas, ouvert seul il explique et propose l’application, sur un téléphone les panneaux deviennent des feuilles qu’on écarte d’un geste. Enregistrer, charger et exporter deviennent accessibles en mobile, où ils manquaient."
+    },
+    {
       "version": "v1.1.3",
       "texte": "Placement 3D corrigé — le viewport de la scène ne suivait pas l'ouverture d'un panneau. Droits en lecture respectés à l'édition. Récit enregistré de façon atomique."
     },
@@ -150,5 +154,32 @@
   "forum": {
     "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
     "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte"
-  }
+  },
+  "statut": {
+    "niveau": "En service",
+    "texte": "Version 1.2.0. Le widget est utilisé sur des scènes réelles ; l’application Android reste une version de test, non signée."
+  },
+  "constat": "Une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, la carte se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe. Grist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.",
+  "usages": [
+    {
+      "titre": "Risques et prévention",
+      "texte": "porter une étude d’aléa, ses enjeux et ses visites de terrain dans un même document, et la partager en lecture aux partenaires sans leur demander d’installer quoi que ce soit."
+    },
+    {
+      "titre": "Inventaire et patrimoine",
+      "texte": "un objet inspecté est une ligne éditable avec sa géométrie ; la carte et la table sont la même chose vue de deux côtés."
+    },
+    {
+      "titre": "Aménagement",
+      "texte": "montrer un projet en trois dimensions sur le relief réel, avec l’ombre portée à l’heure et à la date qu’on veut."
+    },
+    {
+      "titre": "Restitution",
+      "texte": "un récit rejouable remplace le diaporama : chaque étape retient le cadrage, les couches et les filtres, et reste juste quand la donnée évolue."
+    },
+    {
+      "titre": "Terrain",
+      "texte": "l’application Android ouvre les scènes du compte et sert au pied de l’ouvrage, là où le navigateur ne peut pas s’authentifier."
+    }
+  ]
 }
