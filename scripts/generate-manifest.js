@@ -52,6 +52,8 @@ console.log(`Base URL: ${BASE_URL}`);
 console.log(`Scanning: ${PUBLISHED_DIR}`);
 
 const widgets = [];
+// Les dossiers qui se voulaient des widgets et n'y arrivent pas.
+const ignores = [];
 
 // Vérifier que le dossier published existe
 if (!fs.existsSync(PUBLISHED_DIR)) {
@@ -68,16 +70,22 @@ for (const entry of entries) {
     const widgetDir = path.join(PUBLISHED_DIR, entry.name);
     const packagePath = path.join(widgetDir, 'package.json');
 
+    // Un dossier sans package.json n'est pas un widget rate : c'est `w/` et ses
+    // pages de vitrine, `models/` et ses fichiers. Rien a signaler.
     if (!fs.existsSync(packagePath)) {
-        console.log(`  Skipping ${entry.name}/ (no package.json)`);
         continue;
     }
 
     try {
         const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 
+        // Celui-la, en revanche, se voulait un widget : quelqu'un a ecrit son
+        // package.json. Sans section `grist` il ne sera jamais catalogue, donc
+        // jamais visible dans le selecteur — et l'ancien message, un
+        // `console.log` parmi vingt autres, ne prevenait personne. Deux widgets
+        // prepares dans un depot voisin sont arrives ici dans cet etat.
         if (!pkg.grist) {
-            console.log(`  Skipping ${entry.name}/ (no grist config)`);
+            ignores.push(entry.name);
             continue;
         }
 
@@ -143,3 +151,17 @@ console.log(`Total widgets: ${widgets.length}`);
 // Afficher l'URL du manifest pour Grist
 console.log(`\nPour configurer Grist, utilisez:`);
 console.log(`GRIST_WIDGET_LIST_URL=${BASE_URL}/manifest.json`);
+
+// En dernier, et sur stderr : c'est ce qu'on doit encore lire quand le reste a
+// defile. Le manifeste n'est pas faux — il est incomplet, et personne ne s'en
+// apercevrait avant de chercher le widget dans le selecteur, en vain.
+if (ignores.length) {
+    console.error(`\n  Attention — ${ignores.length} dossier(s) absent(s) du catalogue :`);
+    for (const nom of ignores) {
+        console.error(`    published/${nom}/  a un package.json, mais pas de section "grist"`);
+    }
+    console.error('\n  Ces widgets ne seront pas proposés dans Grist. Il leur faut :');
+    console.error('    "grist": { "widgetId": "...", "name": "...", "accessLevel": "full" }');
+    console.error('  `url` est facultatif : il est déduit du nom du dossier.');
+    console.error('  Si le dossier n\'est pas un widget, ajoutez "prive": true pour le dire.');
+}
