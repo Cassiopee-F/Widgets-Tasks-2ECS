@@ -16,23 +16,19 @@
     },
     {
       "titre": "Symbolisation par la donnée",
-      "texte": "couleur par catégorie ou graduée, étiquettes, extrusion — la règle est enregistrée dans le document et suit la scène."
+      "texte": "couleur par catégorie ou graduée, étiquettes, extrusion. La règle est enregistrée dans le document et suit la scène."
     },
     {
       "titre": "Relief et volumes",
-      "texte": "modèles 3D posés sur le terrain réel, ombres portées à l'heure choisie, surfaces extrudées calées sur l'altitude."
+      "texte": "modèles 3D posés sur le terrain réel, ombres portées à l’heure choisie, surfaces extrudées calées sur l’altitude."
     },
     {
-      "titre": "Un récit se rejoue",
-      "texte": "chaque étape retient le cadrage, les couches visibles, les filtres et l'heure ; la lecture les enchaîne."
+      "titre": "Un récit qui se rejoue",
+      "texte": "chaque étape retient le cadrage, les couches visibles, les filtres et l’heure — et reste juste quand la donnée change."
     },
     {
       "titre": "Les droits du document font foi",
-      "texte": "en lecture seule, l'édition disparaît et le récit reste consultable — les règles d'accès Grist sont respectées."
-    },
-    {
-      "titre": "Import depuis QGIS",
-      "texte": "un projet QGIS converti par qgis2grist arrive avec ses couches et sa symbologie."
+      "texte": "aucune liste d’accès propre à Atlas : en lecture seule l’édition disparaît, le récit reste consultable."
     }
   ],
   "encart": {
@@ -100,49 +96,40 @@
         "texte": "Le lien d’un document Grist suffit. Chacun voit la même scène, et deux personnes qui éditent voient les modifications de l’autre."
       }
     ],
-    "titreContextes": "Où ça tourne",
+    "titreContextes": "Construire, diffuser, relever",
     "contextes": [
       {
-        "titre": "Dans votre document Grist",
-        "texte": "Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.",
-        "pourquoi": "C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.",
-        "format": "large",
-        "images": [
-          {
-            "image": "dans-grist.jpg",
-            "legende": "Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent."
-          }
-        ]
-      },
-      {
-        "titre": "Dans un navigateur, pour diffuser",
-        "texte": "La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.",
-        "pourquoi": "Personne n’a rien à installer pour regarder : un lien suffit, et les droits restent ceux du document.",
+        "titre": "Construire, dans votre document",
+        "texte": "Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez sur la carte est écrit dans la table, et l’inverse. Les règles d’accès du document s’appliquent telles quelles : qui peut écrire édite, qui ne peut que lire voit la scène et le récit, sans que l’édition lui soit proposée.",
+        "pourquoi": "Il n’y a pas de droits Atlas à configurer en plus de ceux de Grist. C’est le document qui décide, y compris au niveau d’une table ou d’une ligne.",
         "format": "large",
         "images": [
           {
             "image": "apercu.jpg",
-            "legende": "Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi."
+            "legende": "Les outils d’édition : lieu, couches, soleil, vues, contrôles, récit — et la carte en volume."
           }
         ]
       },
       {
-        "titre": "Sur le terrain, en application",
-        "texte": "Une application Android ouvre les scènes de votre compte Grist, sans passer par un document. L’interface se replie : la carte occupe l’écran, les panneaux deviennent des feuilles qu’on écarte d’un geste.",
-        "pourquoi": "Elle existe parce qu’un navigateur ne peut pas présenter de clé API à l’instance — celle-ci refuse l’en-tête d’authentification au contrôle préalable. L’application émet ses requêtes hors du moteur web, ce qui lève l’obstacle.",
+        "titre": "Diffuser en lecture, sans rien installer",
+        "texte": "Grist sait s’intégrer dans une page : en ajoutant `?embed=true&style=singlePage` à l’adresse d’une page de votre document, vous obtenez la scène seule, plein cadre. Ce lien se met dans un courriel, un intranet, un article — et la personne qui l’ouvre voit la carte et peut jouer le récit, sans compte et sans installation.",
+        "pourquoi": "C’est le partage d’un document Grist, pas une publication à part : si vous retirez l’accès, le lien cesse de fonctionner. Rien n’a été recopié ailleurs.",
+        "format": "large",
+        "images": [
+          {
+            "image": "dans-grist.jpg",
+            "legende": "La même scène ouverte par un visiteur sans compte : le badge « Lecture » remplace l’édition, la carte et la légende restent entières."
+          }
+        ]
+      },
+      {
+        "titre": "Relever sur le terrain",
+        "texte": "Une application Android ouvre les scènes de votre compte sans passer par un document. Ce n’est pas une interface différente pour le plaisir : c’est le seul moyen d’être authentifié hors du navigateur, celui-ci ne pouvant pas présenter de clé API à l’instance.",
         "format": "mobile",
         "images": [
           {
             "image": "mobile-carte.jpg",
-            "legende": "La carte occupe l’écran ; on relève au pied de l’ouvrage."
-          },
-          {
-            "image": "mobile-couches.jpg",
-            "legende": "Un panneau se tire à mi-hauteur : on garde la carte sous les yeux."
-          },
-          {
-            "image": "mobile-menu.jpg",
-            "legende": "Passer d’une scène à l’autre, sans quitter l’application."
+            "legende": "Sur place, la carte occupe l’écran ; les panneaux se tirent au doigt."
           }
         ]
       }
@@ -161,11 +148,11 @@
     "niveau": "En service",
     "texte": "Version 1.2.0. Le widget est utilisé sur des scènes réelles ; l’application Android reste une version de test, non signée."
   },
-  "constat": "Grist embarque un widget de carte : il place des marqueurs à partir de colonnes de latitude et de longitude. C’est utile, et cela s’arrête là — pas de lignes, pas de polygones, pas de symbolisation par la donnée, pas de relief.\n\nOr une carte faite pour un dossier finit presque toujours au même endroit : un PDF, ou une plateforme cartographique où l’on recopie les données. Dans les deux cas, elle se fige le jour où on l’exporte. La donnée, elle, continue de vivre — un attribut corrigé, une entité ajoutée, un relevé de terrain — et l’écart s’installe.\n\nGrist sait déjà porter cette donnée, avec ses formules, ses liens et ses droits. Il lui manquait une carte qui la lise au lieu d’en faire une copie.",
+  "constat": "Grist embarque un widget de carte : il place des marqueurs à partir de colonnes de latitude et de longitude. C’est utile, et cela s’arrête là — pas de lignes, pas de polygones, pas de symbolisation par la donnée, pas de relief.\n\nAlors on sort les données vers un PDF ou une plateforme cartographique, et la carte se fige le jour de l’export pendant que la donnée continue de vivre. Atlas essaie l’inverse : lire les tables là où elles sont.",
   "usages": [
     {
       "titre": "Risques et prévention",
-      "texte": "porter une étude d’aléa, ses enjeux et ses visites de terrain dans un même document, et la partager en lecture aux partenaires sans leur demander d’installer quoi que ce soit."
+      "texte": "une étude d’aléa, ses enjeux et ses visites de terrain dans le même document, partagée en lecture aux partenaires."
     },
     {
       "titre": "Inventaire et patrimoine",
@@ -173,15 +160,7 @@
     },
     {
       "titre": "Aménagement",
-      "texte": "montrer un projet en trois dimensions sur le relief réel, avec l’ombre portée à l’heure et à la date qu’on veut."
-    },
-    {
-      "titre": "Restitution",
-      "texte": "un récit rejouable remplace le diaporama : chaque étape retient le cadrage, les couches et les filtres, et reste juste quand la donnée évolue."
-    },
-    {
-      "titre": "Terrain",
-      "texte": "l’application Android ouvre les scènes du compte et sert au pied de l’ouvrage, là où le navigateur ne peut pas s’authentifier."
+      "texte": "montrer un projet en volume sur le relief réel, avec l’ombre portée à l’heure et à la date voulues."
     }
   ]
 }

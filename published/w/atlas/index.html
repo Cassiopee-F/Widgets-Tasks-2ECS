@@ -178,51 +178,43 @@ section { margin: 0 0 3rem; }
     <div><b>3</b><span>usages : concevoir, diffuser, relever sur le terrain</span></div>
   </section>
   <section class="contextes reveler">
-    <h2>Où ça tourne</h2>
+    <h2>Construire, diffuser, relever</h2>
     <article class="contexte">
       <div class="dit">
-        <h3>Dans votre document Grist</h3>
-        <p>Le cas courant : Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez dans la carte est écrit dans la table, et l’inverse.</p>
-        <p class="pourquoi">C’est là que la carte cesse d’être un export : elle lit la donnée vivante, avec ses formules et ses liens entre tables.</p>
+        <h3>Construire, dans votre document</h3>
+        <p>Atlas est un widget de votre document, à côté de vos tables. Ce que vous modifiez sur la carte est écrit dans la table, et l’inverse. Les règles d’accès du document s’appliquent telles quelles : qui peut écrire édite, qui ne peut que lire voit la scène et le récit, sans que l’édition lui soit proposée.</p>
+        <p class="pourquoi">Il n’y a pas de droits Atlas à configurer en plus de ceux de Grist. C’est le document qui décide, y compris au niveau d’une table ou d’une ligne.</p>
       </div>
       <div class="montre">
         <figure class="large">
-          <img src="dans-grist.jpg" alt="Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent." loading="lazy">
-          <figcaption>Une scène ouverte dans un document — les tables de la scène à gauche, la carte à droite, et le badge « Lecture » quand les droits du document le veulent.</figcaption>
+          <img src="apercu.jpg" alt="Les outils d’édition : lieu, couches, soleil, vues, contrôles, récit — et la carte en volume." loading="lazy">
+          <figcaption>Les outils d’édition : lieu, couches, soleil, vues, contrôles, récit — et la carte en volume.</figcaption>
         </figure>
       </div>
     </article>
     <article class="contexte">
       <div class="dit">
-        <h3>Dans un navigateur, pour diffuser</h3>
-        <p>La même adresse s’ouvre seule, sans document. On y charge un fichier, on importe depuis OpenStreetMap, on consulte une scène partagée en lecture.</p>
-        <p class="pourquoi">Personne n’a rien à installer pour regarder : un lien suffit, et les droits restent ceux du document.</p>
+        <h3>Diffuser en lecture, sans rien installer</h3>
+        <p>Grist sait s’intégrer dans une page : en ajoutant `?embed=true&amp;style=singlePage` à l’adresse d’une page de votre document, vous obtenez la scène seule, plein cadre. Ce lien se met dans un courriel, un intranet, un article — et la personne qui l’ouvre voit la carte et peut jouer le récit, sans compte et sans installation.</p>
+        <p class="pourquoi">C’est le partage d’un document Grist, pas une publication à part : si vous retirez l’accès, le lien cesse de fonctionner. Rien n’a été recopié ailleurs.</p>
       </div>
       <div class="montre">
         <figure class="large">
-          <img src="apercu.jpg" alt="Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi." loading="lazy">
-          <figcaption>Atlas seul dans un navigateur — l’aperçu ci-dessus s’ouvre exactement ainsi.</figcaption>
+          <img src="dans-grist.jpg" alt="La même scène ouverte par un visiteur sans compte : le badge « Lecture » remplace l’édition, la carte et la légende restent entières." loading="lazy">
+          <figcaption>La même scène ouverte par un visiteur sans compte : le badge « Lecture » remplace l’édition, la carte et la légende restent entières.</figcaption>
         </figure>
       </div>
     </article>
     <article class="contexte">
       <div class="dit">
-        <h3>Sur le terrain, en application</h3>
-        <p>Une application Android ouvre les scènes de votre compte Grist, sans passer par un document. L’interface se replie : la carte occupe l’écran, les panneaux deviennent des feuilles qu’on écarte d’un geste.</p>
-        <p class="pourquoi">Elle existe parce qu’un navigateur ne peut pas présenter de clé API à l’instance — celle-ci refuse l’en-tête d’authentification au contrôle préalable. L’application émet ses requêtes hors du moteur web, ce qui lève l’obstacle.</p>
+        <h3>Relever sur le terrain</h3>
+        <p>Une application Android ouvre les scènes de votre compte sans passer par un document. Ce n’est pas une interface différente pour le plaisir : c’est le seul moyen d’être authentifié hors du navigateur, celui-ci ne pouvant pas présenter de clé API à l’instance.</p>
+        
       </div>
       <div class="montre telephones">
         <figure class="telephone">
-          <div class="ecran"><img src="mobile-carte.jpg" alt="La carte occupe l’écran ; on relève au pied de l’ouvrage." loading="lazy"></div>
-          <figcaption>La carte occupe l’écran ; on relève au pied de l’ouvrage.</figcaption>
-        </figure>
-        <figure class="telephone">
-          <div class="ecran"><img src="mobile-couches.jpg" alt="Un panneau se tire à mi-hauteur : on garde la carte sous les yeux." loading="lazy"></div>
-          <figcaption>Un panneau se tire à mi-hauteur : on garde la carte sous les yeux.</figcaption>
-        </figure>
-        <figure class="telephone">
-          <div class="ecran"><img src="mobile-menu.jpg" alt="Passer d’une scène à l’autre, sans quitter l’application." loading="lazy"></div>
-          <figcaption>Passer d’une scène à l’autre, sans quitter l’application.</figcaption>
+          <div class="ecran"><img src="mobile-carte.jpg" alt="Sur place, la carte occupe l’écran ; les panneaux se tirent au doigt." loading="lazy"></div>
+          <figcaption>Sur place, la carte occupe l’écran ; les panneaux se tirent au doigt.</figcaption>
         </figure>
       </div>
     </article>
@@ -231,11 +223,10 @@ section { margin: 0 0 3rem; }
     <h2>Ce qu’il fait</h2>
     <ul class="points">
       <li><b>Vos tables deviennent des couches</b> — toute table portant une géométrie est reconnue et posée sur la carte, avec ses attributs.</li>
-      <li><b>Symbolisation par la donnée</b> — couleur par catégorie ou graduée, étiquettes, extrusion — la règle est enregistrée dans le document et suit la scène.</li>
-      <li><b>Relief et volumes</b> — modèles 3D posés sur le terrain réel, ombres portées à l&#39;heure choisie, surfaces extrudées calées sur l&#39;altitude.</li>
-      <li><b>Un récit se rejoue</b> — chaque étape retient le cadrage, les couches visibles, les filtres et l&#39;heure ; la lecture les enchaîne.</li>
-      <li><b>Les droits du document font foi</b> — en lecture seule, l&#39;édition disparaît et le récit reste consultable — les règles d&#39;accès Grist sont respectées.</li>
-      <li><b>Import depuis QGIS</b> — un projet QGIS converti par qgis2grist arrive avec ses couches et sa symbologie.</li>
+      <li><b>Symbolisation par la donnée</b> — couleur par catégorie ou graduée, étiquettes, extrusion. La règle est enregistrée dans le document et suit la scène.</li>
+      <li><b>Relief et volumes</b> — modèles 3D posés sur le terrain réel, ombres portées à l’heure choisie, surfaces extrudées calées sur l’altitude.</li>
+      <li><b>Un récit qui se rejoue</b> — chaque étape retient le cadrage, les couches visibles, les filtres et l’heure — et reste juste quand la donnée change.</li>
+      <li><b>Les droits du document font foi</b> — aucune liste d’accès propre à Atlas : en lecture seule l’édition disparaît, le récit reste consultable.</li>
     </ul>
   </section>
   <section class="sequence reveler">

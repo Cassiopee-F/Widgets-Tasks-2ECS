@@ -75,14 +75,18 @@ function rendre(id) {
   const bloc = [];
 
   /* ---- en-tete ---------------------------------------------------- */
-  bloc.push(`# ${nom}\n`);
-  if (fiche.statut) {
-    bloc.push(`**${fiche.statut.niveau}** — ${fiche.statut.texte}\n`);
-  }
+  // Ce qu'on vient chercher sur un forum, c'est l'adresse a coller et le niveau
+  // d'acces a donner. Le reste peut attendre : on le met donc en premier, avant
+  // meme d'expliquer pourquoi le widget existe.
+  // Pas de titre de niveau 1 : Discourse affiche deja le titre du sujet
+  // au-dessus du message, et le repeter fait deux titres l'un sur l'autre.
   bloc.push(`${fiche.pitch || principal.description || ''}\n`);
-  bloc.push(`:link: **${principal.url}**`);
-  bloc.push(`:page_facing_up: Présentation détaillée : ${base}w/${id}/`);
-  if (fiche.depot) bloc.push(`:open_file_folder: Le code : ${fiche.depot}`);
+  bloc.push('**À coller dans un widget personnalisé :**');
+  bloc.push(`\`\`\`\n${principal.url}\n\`\`\``);
+  bloc.push(`Accès à donner : **${acces(principal.accessLevel)}**. C'est un fichier HTML autonome — il fonctionne sur n'importe quelle instance Grist, y compris auto-hébergée.`);
+  if (fiche.statut) {
+    bloc.push(`\n*${fiche.statut.niveau} — ${fiche.statut.texte}*`);
+  }
 
   /* ---- le constat -------------------------------------------------- */
   if (fiche.constat) {
@@ -100,7 +104,7 @@ function rendre(id) {
   /* ---- en images ---------------------------------------------------- */
   const contextes = produit.contextes || [];
   if (contextes.length) {
-    bloc.push(SEPARATEUR, '## Où ça tourne\n');
+    bloc.push(SEPARATEUR, `## ${produit.titreContextes || 'Où ça tourne'}\n`);
     for (const c of contextes) {
       bloc.push(`### ${c.titre}\n`);
       bloc.push(c.texte);
@@ -137,30 +141,17 @@ function rendre(id) {
     }
   }
 
-  /* ---- comment l'essayer ---------------------------------------------- */
-  bloc.push(SEPARATEUR, '## Comment l’essayer\n');
-  bloc.push(`Dans un document Grist : **Ajouter un widget** → **Custom** → coller l’adresse`);
-  bloc.push(`\`\`\`\n${principal.url}\n\`\`\``);
-  bloc.push(`et donner l’accès **${acces(principal.accessLevel)}**.`);
-  bloc.push('');
-  bloc.push('Le widget est un fichier HTML autonome : il fonctionne sur n’importe quelle instance Grist, y compris auto-hébergée.');
-  // L'encart de la page redisait l'application mot pour mot, alors qu'un
-  // contexte venait de l'expliquer. Sur la page il est seul et se suffit ; ici
-  // il faisait doublon. Quand le propos est deja tenu, on ne garde que
-  // l'adresse — c'est la seule chose qui manquait.
+  // Le journal de versions n'a pas sa place ici : un fil de forum se lit dans
+  // l'ordre, et l'historique d'un widget appartient a sa page. On ne garde du
+  // depot que ce qu'on ne peut pas obtenir autrement — le fichier de
+  // l'application, et une ligne pour le code. Un post n'est pas une vitrine :
+  // ramener du monde vers son propre depot n'est pas ce qu'on vient y faire.
+  const liens = [];
   if (fiche.encart && fiche.encart.lien) {
-    const ditAilleurs = (produit.contextes || []).some((c) => /application/i.test(c.titre));
-    bloc.push('');
-    bloc.push(ditAilleurs
-      ? `:arrow_down: **${fiche.encart.lien.libelle}** — ${fiche.encart.lien.url}`
-      : `${fiche.encart.titre} — ${fiche.encart.texte}\n\n:arrow_down: ${fiche.encart.lien.url}`);
+    liens.push(`**${fiche.encart.lien.libelle}** : ${fiche.encart.lien.url}`);
   }
-
-  /* ---- le journal ------------------------------------------------------ */
-  if ((fiche.journal || []).length) {
-    bloc.push(SEPARATEUR, '## Ce qui a changé\n');
-    for (const e of fiche.journal) bloc.push(`- **${e.version}** — ${e.texte}`);
-  }
+  if (fiche.depot) liens.push(`Le code, sous licence MIT : ${fiche.depot}`);
+  if (liens.length) bloc.push(SEPARATEUR, ...liens);
 
   /* ---- l'appel a retours ------------------------------------------------ */
   bloc.push(SEPARATEUR, '## Vos retours\n');
