@@ -246,3 +246,19 @@ test('la structure ne bouge pas d’une peau a l’autre', () => {
     assert.match(html, /class="pied"/);
   }
 });
+
+test('l’apercu lance le widget mis en avant, pas le premier du manifeste', () => {
+  // Sur qgis2grist, il lancait la v1 que la page annonce elle-meme comme
+  // depassee : la demonstration contredisait le texte.
+  const html = V.rendreProjet({
+    id: 'atlas',   // un projet qui a une image d'apercu dans published/w/
+    widgets: [
+      W('a-v1', 'https://s.io/r/atlas/', { name: 'v1' }),
+      W('a-v2', 'https://s.io/r/atlas/v2/', { name: 'v2' }),
+    ],
+    presentation: { principal: 'a-v2' },
+  }, Date.now(), 'https://s.io/r/');
+  const m = html.match(/data-widget="([^"]+)"/);
+  assert.ok(m, 'apercu absent');
+  assert.equal(m[1], 'https://s.io/r/atlas/v2/?vitrine=1');
+});

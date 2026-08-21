@@ -460,7 +460,10 @@ function apercuDe(id) {
  */
 function sectionApercu(p, image) {
   if (!image) return '';
-  const url = `${p.widgets[0].url}${p.widgets[0].url.includes('?') ? '&' : '?'}vitrine=1`;
+  // Celui qu'on met en avant, pas le premier venu du manifeste : sur
+  // qgis2grist, l'apercu lancait la v1 que la page annonce comme depassee.
+  const principal = principalDe(p);
+  const url = `${principal.url}${principal.url.includes('?') ? '&' : '?'}vitrine=1`;
   return `  <section class="apercu">
     <div class="cadre" data-widget="${echapper(url)}">
       <img src="${echapper(image)}" alt="Aperçu du widget ${echapper(p.presentation.nom || p.id)}"

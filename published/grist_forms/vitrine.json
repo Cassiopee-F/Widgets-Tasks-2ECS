@@ -1,13 +1,39 @@
 {
   "nom": "Form Builder",
   "pitch": "Des questionnaires branchés sur vos tables : ce qui est répondu atterrit directement dans le document, et le formulaire s'adapte à qui le remplit.",
-  "couleur": "#7A4E9B",
-  "tags": ["Formulaires", "Collecte", "Publication"],
+  "couleur": "#000091",
+  "tags": [
+    "Formulaires",
+    "Collecte",
+    "Publication"
+  ],
   "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/grist_forms",
   "points": [
-    { "titre": "Lié aux tables", "texte": "chaque champ vise une colonne : les réponses n'ont pas à être recopiées ailleurs." },
-    { "titre": "Conditions et chemins", "texte": "une question peut n'apparaître qu'en fonction d'une réponse précédente." },
-    { "titre": "Audience", "texte": "le formulaire se présente différemment selon la personne qui l'ouvre." },
-    { "titre": "Publication figée", "texte": "une version publiée reste stable pendant que l'édition continue à côté." }
-  ]
+    {
+      "titre": "Lié aux tables",
+      "texte": "chaque champ vise une colonne : les réponses n'ont pas à être recopiées ailleurs."
+    },
+    {
+      "titre": "Conditions et chemins",
+      "texte": "une question peut n'apparaître qu'en fonction d'une réponse précédente."
+    },
+    {
+      "titre": "Audience",
+      "texte": "le formulaire se présente différemment selon la personne qui l'ouvre."
+    },
+    {
+      "titre": "Publication figée",
+      "texte": "une version publiée reste stable pendant que l'édition continue à côté."
+    }
+  ],
+  "peau": {
+    "clair": {
+      "papier": "#F6F6F6",
+      "surface": "#FFFFFF",
+      "encre": "#161616",
+      "plume": "#666666",
+      "filet": "#DDDDDD"
+    },
+    "display": "Marianne, \"Segoe UI\", system-ui, sans-serif"
+  }
 }
