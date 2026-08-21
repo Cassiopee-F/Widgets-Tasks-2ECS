@@ -2197,10 +2197,10 @@ function applyStoryState(s) {
 // ============================================================
 const MODULE_TITLES = {
     lieu: 'Lieu', couches: 'Couches', controles: 'Contrôles', recit: 'Récit',
-    symbo: 'Symboliser', soleil: 'Soleil', vues: 'Vue & rendu', reglages: 'Catalogue 3D',
+    soleil: 'Soleil', vues: 'Vue & rendu', reglages: 'Catalogue 3D',
 };
 
-const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'symbo', 'couches']);
+const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'couches']);
 
 function openModule(name) {
     if (CONFIG.viewMode && name === 'recit') {
@@ -2280,7 +2280,7 @@ function renderLieu() {
     $('module-title').textContent = 'Lieu';
     const L = STATE.location;
     $('module-body').innerHTML = `
-        <div class="section">
+        <div class="section loc-identite">
             <div class="section-title">Nom du projet</div>
             <input class="input" id="proj-name" placeholder="Ma maquette…" value="${STATE.projectName}" onchange="A.setProjectName(this.value)">
         </div>
@@ -2357,7 +2357,7 @@ function renderLayersPanel(mode) {
         renderLayersPanelLecture();
         return;
     }
-    $('module-title').textContent = mode === 'symbo' ? 'Symboliser' : 'Couches';
+    $('module-title').textContent = 'Couches';
     const body = $('module-body');
     if (STATE.layers.length === 0) {
         body.innerHTML = `
@@ -3016,7 +3016,7 @@ function renderModelsPanel() {
         <div class="section">
             <div class="section-title">Jeu de modèles</div>
             <div class="seg">
-                <button class="${MODEL_LIBRARY.set === 'colored' ? 'active' : ''}" onclick="A.setModelSet('colored')">${icTrait(IC.palette)} Coloré</button>
+                <button class="${MODEL_LIBRARY.set === 'colored' ? 'active' : ''}" onclick="A.setModelSet('colored')">🎨 Coloré</button>
                 <button class="${MODEL_LIBRARY.set === 'mono' ? 'active' : ''}" onclick="A.setModelSet('mono')">⬜ Maquette</button>
             </div>
         </div>
@@ -4887,7 +4887,6 @@ function buildCmdItems(q) {
         { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: icTrait(IC.dossier) },
         { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: icTrait(IC.controles) },
         { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: icTrait(IC.recit) },
-        { label: 'Symboliser', kind: 'module', run: () => openModule('symbo'), ic: icTrait(IC.palette) },
         { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: icTrait(IC.reglages) },
         { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: icTrait(IC.soleil) },
         { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: icTrait(IC.cube) },
@@ -5405,7 +5404,7 @@ const A = {
         }
         applyPointStyle(l); Models3D.forceBuild(); renderInspector(); markDirty();
     },
-    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('symbo'); },
+    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('couches'); },
     editLayerObjects(id) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         enterSelectionMode(id);
