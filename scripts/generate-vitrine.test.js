@@ -65,10 +65,9 @@ test('la vitrine n’ecrit jamais par-dessus un widget', () => {
   // dans les instances Grist. Ecrire la presentation la casserait toutes les
   // installations, sans que rien ne le signale.
   const { faits } = V.generer();
+  const permis = new Set(['index.html', 'sitemap.xml']);
   for (const f of faits) {
-    const estAccueil = f === 'index.html';
-    const estVitrine = f.startsWith('w/');
-    assert.ok(estAccueil || estVitrine, `${f} sort de la vitrine`);
+    assert.ok(permis.has(f) || f.startsWith('w/'), `${f} sort de la vitrine`);
   }
 });
 
@@ -87,7 +86,7 @@ test('la page d’un projet mene au widget et revient a l’accueil', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'published', 'w', 'atlas', 'index.html'), 'utf8');
   assert.match(html, /href="\.\.\/\.\.\/"/, 'retour vers l’accueil');
   assert.ok(html.includes(atlas.widgets[0].url), 'lien vers le widget');
-  assert.match(html, /<title>Atlas — Widgets Grist<\/title>/);
+  assert.match(html, /<title>Atlas — widget Grist<\/title>/);
 });
 
 test('un projet sans fiche reste presentable', () => {
@@ -122,4 +121,52 @@ test('la fiche de presentation ne date pas le projet', () => {
   const dates = projets.map((p) => V.majProjet(p).slice(0, 10));
   assert.ok(new Set(dates).size > 1,
     `toutes les dates sont identiques (${dates[0]}) — la fiche les ecrase`);
+});
+
+/* ---------- ce que lisent les moteurs et les partages ---------- */
+
+test('l’adresse publique se deduit du manifeste, jamais codee en dur', () => {
+  // Le jour ou le depot change de nom ou de compte, une adresse ecrite ici
+  // mentirait sans que rien ne le signale.
+  assert.equal(V.baseDe([W('a', 'https://qui.github.io/Le-Depot/atlas/')]), 'https://qui.github.io/Le-Depot/');
+  assert.equal(V.baseDe([W('a', 'pas une url'), W('b', 'https://x.io/r/t/')]), 'https://x.io/r/');
+  assert.equal(V.baseDe([]), '');
+});
+
+test('chaque page se declare canonique et se presente aux partages', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'published', 'w', 'atlas', 'index.html'), 'utf8');
+  assert.match(html, /<link rel="canonical" href="https:\/\/[^"]+\/w\/atlas\/">/);
+  assert.match(html, /<meta property="og:title"/);
+  assert.match(html, /<meta property="og:description"/);
+  assert.match(html, /<meta name="twitter:card"/);
+});
+
+test('un widget se decrit comme un logiciel, pas comme une page', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'published', 'w', 'atlas', 'index.html'), 'utf8');
+  const m = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  assert.ok(m, 'donnees structurees absentes');
+  const ld = JSON.parse(m[1]);
+  assert.equal(ld['@type'], 'SoftwareApplication');
+  assert.equal(ld.inLanguage, 'fr');
+  assert.ok(ld.url.endsWith('/w/atlas/'));
+  assert.equal(ld.offers.price, '0');
+});
+
+test('le plan du site liste l’accueil et chaque projet, une seule fois', () => {
+  const xml = fs.readFileSync(path.join(__dirname, '..', 'published', 'sitemap.xml'), 'utf8');
+  const { projets, base } = V.generer();
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.equal(locs.length, projets.length + 1);
+  assert.equal(new Set(locs).size, locs.length, 'une URL apparait deux fois');
+  assert.ok(locs.includes(base));
+  for (const p of projets) assert.ok(locs.includes(`${base}w/${p.id}/`), `${p.id} absent du plan`);
+});
+
+test('le plan date les pages d’apres le projet, pas d’apres la generation', () => {
+  // Annoncer que tout a change a chaque deploiement apprend a un moteur a ne
+  // plus croire ces dates.
+  const xml = fs.readFileSync(path.join(__dirname, '..', 'published', 'sitemap.xml'), 'utf8');
+  const dates = [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1]);
+  assert.ok(dates.length >= 2);
+  assert.ok(new Set(dates).size > 1, 'toutes les dates du plan sont identiques');
 });

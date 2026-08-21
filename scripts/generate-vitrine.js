@@ -128,6 +128,71 @@ function estRecent(iso, maintenant = Date.now()) {
 
 
 /* ------------------------------------------------------------------ */
+/* Ce que les moteurs et les partages lisent                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * L'adresse publique de la vitrine, deduite du manifeste.
+ *
+ * Elle n'est ecrite nulle part ailleurs : les URLs du manifeste la portent
+ * deja, et la CI les construit a partir du depot. La coder en dur ici la ferait
+ * mentir le jour ou le depot est renomme ou publie sous un autre compte.
+ */
+function baseDe(widgets) {
+  for (const w of widgets) {
+    try {
+      const u = new URL(w.url);
+      const depot = u.pathname.split('/').filter(Boolean)[0];
+      return `${u.origin}/${depot}/`;
+    } catch (_) { /* url inexploitable : on essaie la suivante */ }
+  }
+  return '';
+}
+
+/**
+ * Ce qu'un moteur, un forum ou une messagerie affichent du lien.
+ *
+ * Sans ces balises, une adresse collee sur le forum Grist ou le bureau
+ * numerique s'affiche nue : ni titre, ni resume. C'est la premiere impression,
+ * et elle se joue avant que quiconque ait ouvert la page.
+ *
+ * Le lien canonique evite qu'une meme page soit comptee deux fois — atteinte
+ * avec ou sans barre finale, ou suivie d'un parametre de campagne.
+ */
+function entete({ url, titre, description, image }) {
+  const abs = image && url ? new URL(image, url).href : '';
+  const lignes = [
+    `<link rel="canonical" href="${echapper(url)}">`,
+    '<meta property="og:type" content="website">',
+    '<meta property="og:site_name" content="Widgets Grist">',
+    '<meta property="og:locale" content="fr_FR">',
+    `<meta property="og:url" content="${echapper(url)}">`,
+    `<meta property="og:title" content="${echapper(titre)}">`,
+    `<meta property="og:description" content="${echapper(description)}">`,
+    abs ? `<meta property="og:image" content="${echapper(abs)}">` : '',
+    `<meta name="twitter:card" content="${abs ? 'summary_large_image' : 'summary'}">`,
+    `<meta name="twitter:title" content="${echapper(titre)}">`,
+    `<meta name="twitter:description" content="${echapper(description)}">`,
+  ].filter(Boolean);
+  return '\n' + lignes.join('\n');
+}
+
+/**
+ * Les donnees structurees, en JSON-LD.
+ *
+ * `SoftwareApplication` decrit ce qu'est reellement un widget : un logiciel
+ * gratuit qui tourne dans un navigateur. Sans ce vocabulaire, un moteur ne voit
+ * qu'une page de texte parmi d'autres et ne peut rien en presenter de plus.
+ *
+ * Le JSON est insere tel quel : il ne peut pas contenir de balise fermante,
+ * `JSON.stringify` echappant deja ce qui pourrait en former une.
+ */
+function donneesStructurees(objet) {
+  const json = JSON.stringify(objet).split('<').join('\\u003c');
+  return `\n<script type="application/ld+json">${json}</` + `script>`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Le rendu                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -181,14 +246,14 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size:
 }
 
 /** Ouverture et fermeture d'un document — un seul endroit ou elles vivent. */
-function page({ titre, description, accent, corps, css = '' }) {
+function page({ titre, description, accent, corps, css = '', meta = '', ld = '' }) {
   return `<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${echapper(titre)}</title>
-<meta name="description" content="${echapper(description || '')}">
+<meta name="description" content="${echapper(description || '')}">${meta}${ld}
 <style>${socle(accent)}${css}</style>
 </head>
 <body>
@@ -238,11 +303,31 @@ function carteProjet(p, v, maintenant) {
       </a>`;
 }
 
-function rendreAccueil(projets, maintenant) {
+function rendreAccueil(projets, maintenant, base = '') {
   const cartes = projets.map((p) => carteProjet(p, p.presentation, maintenant)).join('\n');
+  const titre = 'Widgets Grist — cartographie 3D, gestion de projet, formulaires';
+  const description = 'Widgets libres pour Grist : maquette territoriale 3D, suite de gestion de projet, questionnaires liés aux tables, import de projets QGIS.';
   return page({
-    titre: 'Widgets Grist',
-    description: 'Widgets personnalisés pour Grist : cartographie 3D, gestion de projet, formulaires, import QGIS.',
+    titre,
+    description,
+    meta: base ? entete({ url: base, titre, description }) : '',
+    // Une liste, decrite comme une liste : c'est ce qui relie l'accueil aux
+    // pages qu'il annonce, au lieu de laisser un moteur les decouvrir une a une.
+    ld: base ? donneesStructurees({
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: titre,
+      description,
+      url: base,
+      inLanguage: 'fr',
+      hasPart: projets.map((pr) => ({
+        '@type': 'SoftwareApplication',
+        name: pr.presentation.nom || pr.widgets[0].name,
+        url: `${base}w/${pr.id}/`,
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+      })),
+    }) : '',
     corps: `<main>
   <p class="eyebrow">Widgets pour Grist</p>
   <h1>Des outils qui vivent dans vos documents</h1>
@@ -310,7 +395,7 @@ function ligneWidget(w) {
       </div>`;
 }
 
-function rendreProjet(p, maintenant) {
+function rendreProjet(p, maintenant, base = '') {
   const v = p.presentation;
   const maj = majProjet(p);
   const nom = v.nom || p.widgets[0].name || p.id;
@@ -357,10 +442,28 @@ ${v.journal.map((e) => `      <div><b>${echapper(e.version)}</b><p>${echapper(e.
   </section>`);
   }
 
+  const titre = `${nom} — widget Grist`;
+  const description = v.pitch || principal.description || '';
+  const url = base ? `${base}w/${p.id}/` : '';
   return page({
-    titre: `${nom} — Widgets Grist`,
-    description: v.pitch || principal.description || '',
+    titre,
+    description,
     accent: v.couleur,
+    meta: url ? entete({ url, titre, description }) : '',
+    ld: url ? donneesStructurees({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: nom,
+      description,
+      url,
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      inLanguage: 'fr',
+      // Gratuit, et dit comme tel plutot que laisse a deviner.
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+      ...(v.depot ? { codeRepository: v.depot } : {}),
+      ...(maj ? { dateModified: maj.slice(0, 10) } : {}),
+    }) : '',
     css: CSS_PROJET,
     corps: `<main>
   <a class="retour" href="../../">← Tous les widgets</a>
@@ -387,6 +490,34 @@ ${sections.join('\n')}
   });
 }
 
+/**
+ * Le plan du site.
+ *
+ * Il n'y a pas de `robots.txt` a poser : les moteurs le lisent a la racine du
+ * domaine, qui appartient au depot de profil, pas a celui-ci. Le plan reste
+ * donc a soumettre une fois dans la console de recherche — apres quoi il se
+ * met a jour tout seul a chaque publication.
+ *
+ * La date de derniere modification est celle du projet, pas celle de la
+ * generation : annoncer que tout a change a chaque deploiement apprend a un
+ * moteur a ne plus croire ces dates.
+ */
+function rendreSitemap(projets, base) {
+  const pages = [
+    { url: base, maj: '' },
+    ...projets.map((p) => ({ url: `${base}w/${p.id}/`, maj: majProjet(p) })),
+  ];
+  const lignes = pages.map(({ url, maj }) => [
+    '  <url>',
+    `    <loc>${echapper(url)}</loc>`,
+    maj ? `    <lastmod>${maj.slice(0, 10)}</lastmod>` : '',
+    '  </url>',
+  ].filter(Boolean).join('\n'));
+  return ['<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...lignes, '</urlset>', ''].join('\n');
+}
+
 /* ------------------------------------------------------------------ */
 /* Ecriture                                                            */
 /* ------------------------------------------------------------------ */
@@ -403,11 +534,13 @@ function generer(maintenant = Date.now()) {
   const projets = grouper(widgets);
   for (const p of projets) p.presentation = presentation(p);
 
-  const faits = [ecrire(path.join(PUBLIE, 'index.html'), rendreAccueil(projets, maintenant))];
+  const base = baseDe(widgets);
+  const faits = [ecrire(path.join(PUBLIE, 'index.html'), rendreAccueil(projets, maintenant, base))];
   for (const p of projets) {
-    faits.push(ecrire(path.join(PUBLIE, 'w', p.id, 'index.html'), rendreProjet(p, maintenant)));
+    faits.push(ecrire(path.join(PUBLIE, 'w', p.id, 'index.html'), rendreProjet(p, maintenant, base)));
   }
-  return { projets, faits };
+  if (base) faits.push(ecrire(path.join(PUBLIE, 'sitemap.xml'), rendreSitemap(projets, base)));
+  return { projets, faits, base };
 }
 
 if (require.main === module) {
@@ -418,4 +551,4 @@ if (require.main === module) {
   if (sans.length) console.log(`\nSans vitrine.json (presentation minimale) : ${sans.join(', ')}`);
 }
 
-module.exports = { projetDe, grouper, depuis, majProjet, estRecent, generer, rendreAccueil, rendreProjet };
+module.exports = { projetDe, grouper, depuis, majProjet, estRecent, generer, rendreAccueil, rendreProjet, rendreSitemap, baseDe };
