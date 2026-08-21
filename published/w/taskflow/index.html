@@ -122,27 +122,11 @@ section { margin: 0 0 3rem; }
   </div>
   <section class="apercu">
     <div class="cadre" data-widget="https://nic01asfr.github.io/Widgets-Grist/taskflow/?vitrine=1">
-      <img src="apercu.png" alt="Aperçu du widget TaskFlow"
-           width="1200" height="630" loading="lazy">
+      <img src="apercu.png" alt="Aperçu du widget TaskFlow" loading="lazy">
       <button type="button" class="lancer">Lancer l’aperçu</button>
     </div>
     <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist : les données y sont fictives.</p>
   </section>
-  <script>
-    // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
-    document.querySelectorAll('.cadre').forEach(function (cadre) {
-      cadre.querySelector('.lancer').addEventListener('click', function () {
-        var f = document.createElement('iframe');
-        f.src = cadre.dataset.widget;
-        f.title = 'Aperçu du widget';
-        f.loading = 'lazy';
-        f.allow = 'fullscreen';
-        cadre.innerHTML = '';
-        cadre.appendChild(f);
-        cadre.classList.add('vivant');
-      });
-    });
-  </script>
   <section>
     <h2>Ce qu’il fait</h2>
     <ul class="points">

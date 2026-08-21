@@ -3,30 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Artefactory — widget Grist</title>
-<meta name="description" content="Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.">
-<link rel="canonical" href="https://nic01asfr.github.io/Widgets-Grist/w/artefactory/">
+<title>Budget perso — App complète — widget Grist</title>
+<meta name="description" content="App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget">
+<link rel="canonical" href="https://nic01asfr.github.io/Widgets-Grist/w/budget/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Widgets Grist">
 <meta property="og:locale" content="fr_FR">
-<meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/w/artefactory/">
-<meta property="og:title" content="Artefactory — widget Grist">
-<meta property="og:description" content="Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.">
-<meta property="og:image" content="https://nic01asfr.github.io/Widgets-Grist/w/artefactory/apercu.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Artefactory — widget Grist">
-<meta name="twitter:description" content="Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Artefactory","description":"Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l'artefact vit dans le document.","url":"https://nic01asfr.github.io/Widgets-Grist/w/artefactory/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/widget_app","dateModified":"2026-05-09"}</script>
+<meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/w/budget/">
+<meta property="og:title" content="Budget perso — App complète — widget Grist">
+<meta property="og:description" content="App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Budget perso — App complète — widget Grist">
+<meta name="twitter:description" content="App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Budget perso — App complète","description":"App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget","url":"https://nic01asfr.github.io/Widgets-Grist/w/budget/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"dateModified":"2026-08-21"}</script>
 <style>
-:root { --papier: #F8FAFC; --surface: #FFFFFF; --encre: #0F172A; --plume: #64748B; --filet: #E2E8F0; --accent: #3B82F6; }
-
+:root { --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355; --filet: #E6DFD1; --accent: #8B5E3C; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --papier: #14120F; --surface: #1D1A16; --encre: #F2EDE3; --plume: #9A9184; --filet: #2E2A23; }
+}
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--papier); color: var(--encre);
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 main { max-width: 60rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
-h1, h2, h3 { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 500;
+h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 500;
   line-height: 1.15; text-wrap: balance; margin: 0; }
 h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: -.01em; }
 h2 { font-size: 1.5rem; margin-bottom: 1rem; }
@@ -105,38 +106,48 @@ section { margin: 0 0 3rem; }
 <main>
   <a class="retour" href="../../">← Tous les widgets</a>
   <p class="eyebrow">Widget Grist</p>
-  <h1>Artefactory</h1>
-  <p class="chapeau">Un atelier pour écrire ses propres widgets sans quitter Grist : on compose, on prévisualise, on enregistre — l&#39;artefact vit dans le document.</p>
+  <h1>Budget perso — App complète</h1>
+  <p class="chapeau">App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget</p>
   
-  <div class="tags"><span class="tag">Atelier</span><span class="tag">No-code</span><span class="tag">Composition</span></div>
+  
   <div class="faits">
-    <span><b>1</b> widget</span>
+    <span><b>4</b> widgets</span>
     <span>Accès <b>lecture et écriture</b></span>
-    <span>Mis à jour il y a 3 mois</span>
+    <span><span class="vif"></span>Mis à jour aujourd&#39;hui</span>
   </div>
   <div class="boutons">
-    <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/artefactory/" target="_blank" rel="noopener">Ouvrir le widget</a>
-    <a class="bouton creux" href="https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/widget_app" target="_blank" rel="noopener">Le code</a>
+    <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/budget/" target="_blank" rel="noopener">Ouvrir le widget</a>
+    
   </div>
-  <section class="apercu">
-    <div class="cadre" data-widget="https://nic01asfr.github.io/Widgets-Grist/artefactory/?vitrine=1">
-      <img src="apercu.png" alt="Aperçu du widget Artefactory" loading="lazy">
-      <button type="button" class="lancer">Lancer l’aperçu</button>
-    </div>
-    <p class="mention">L’aperçu s’exécute dans votre navigateur, sans document Grist : les données y sont fictives.</p>
-  </section>
   <section>
-    <h2>Ce qu’il fait</h2>
-    <ul class="points">
-      <li><b>Plusieurs écritures</b> — React, HTML, SVG, Mermaid ou Markdown — selon ce qu&#39;on a à montrer.</li>
-      <li><b>Composition</b> — un artefact peut en inclure un autre : les briques se réutilisent au lieu d&#39;être recopiées.</li>
-      <li><b>Assistant optionnel</b> — une aide à la rédaction est disponible, mais rien n&#39;oblige à s&#39;en servir.</li>
-    </ul>
+    <h2>Les vues</h2>
+    <div class="liste">
+      <div class="vue">
+        <b>Budget perso — App complète</b>
+        <span>App modularisée : cockpit mensuel (disponible, fixes, épargne), classement intelligent et import CSV dans un seul widget</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/budget/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+      <div class="vue">
+        <b>Budget — Suivi</b>
+        <span>Cockpit mensuel d&#39;un coup d&#39;œil : revenus, fixes, à mettre de côté, disponible, enveloppes et trajectoire</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/budget/suivi/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+      <div class="vue">
+        <b>Budget — Classement</b>
+        <span>Catégorisation intelligente des opérations par marchand : combobox unique famille et sous-catégorie</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/budget/classement/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+      <div class="vue">
+        <b>Budget — Import</b>
+        <span>Import de relevés CSV multi-banques vers Grist, avec catégorisation et dédoublonnage</span>
+        <a href="https://nic01asfr.github.io/Widgets-Grist/budget/import/" target="_blank" rel="noopener">ouvrir</a>
+      </div>
+    </div>
   </section>
 </main>
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
-     <code>https://nic01asfr.github.io/Widgets-Grist/artefactory/</code>, et donnez l’accès
+     <code>https://nic01asfr.github.io/Widgets-Grist/budget/</code>, et donnez l’accès
      <b>lecture et écriture</b>.</p>
 </footer>
 </body>

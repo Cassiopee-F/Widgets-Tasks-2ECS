@@ -165,27 +165,11 @@ section { margin: 0 0 3rem; }
   </div>
   <section class="apercu">
     <div class="cadre" data-widget="https://nic01asfr.github.io/Widgets-Grist/atlas/?vitrine=1">
-      <img src="apercu.jpg" alt="Aperçu du widget Atlas"
-           width="1200" height="630" loading="lazy">
+      <img src="apercu.jpg" alt="Aperçu du widget Atlas" loading="lazy">
       <button type="button" class="lancer">Lancer l’aperçu</button>
     </div>
     <p class="mention">L’aperçu est Atlas seul, sans document : chargez un GeoJSON ou importez depuis OpenStreetMap pour le voir travailler. Dans un document Grist, ce sont vos tables qui deviennent les couches.</p>
   </section>
-  <script>
-    // Le widget n'est charge qu'au clic — voir le commentaire du generateur.
-    document.querySelectorAll('.cadre').forEach(function (cadre) {
-      cadre.querySelector('.lancer').addEventListener('click', function () {
-        var f = document.createElement('iframe');
-        f.src = cadre.dataset.widget;
-        f.title = 'Aperçu du widget';
-        f.loading = 'lazy';
-        f.allow = 'fullscreen';
-        cadre.innerHTML = '';
-        cadre.appendChild(f);
-        cadre.classList.add('vivant');
-      });
-    });
-  </script>
   <section class="chiffres reveler">
     <div><b>0</b><span>export à refaire quand la donnée change</span></div>
     <div><b>0</b><span>système de droits en plus de celui de Grist</span></div>

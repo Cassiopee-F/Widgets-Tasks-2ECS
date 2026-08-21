@@ -136,7 +136,7 @@ const TERRAIN_SOURCES = {
 };
 
 const CONFIG = {
-    defaultCenter: [1.4437, 43.6043], // Toulouse (Capitole)
+    defaultCenter: [5.3740, 43.2951], // Marseille (Vieux-Port)
     defaultZoom: 16,
     defaultPitch: 55,
     defaultBearing: -18,
@@ -155,7 +155,7 @@ const CONFIG = {
 
 const STATE = {
     projectName: '',
-    location: { name: 'Capitole · Toulouse', lat: 43.6043, lng: 1.4437 },
+    location: { name: 'Vieux-Port · Marseille', lat: 43.2951, lng: 5.3740 },
     layers: [],
     story: [],
     viewerControls: createDefaultViewerControls(),
@@ -326,6 +326,13 @@ const MODEL_LIBRARY = {
 let MODEL_BASE_EXPLICIT = false;
 (function () {
     try {
+        // Application installee : le catalogue est embarque dans le paquet, et
+        // c'est le seul chemin valable — aucun CDN n'est joignable hors reseau.
+        if (typeof window !== 'undefined' && window.__ATLAS_MODELES__) {
+            MODEL_LIBRARY.baseRoot = String(window.__ATLAS_MODELES__).replace(/\/+$/, '') + '/';
+            MODEL_BASE_EXPLICIT = true;
+            return;
+        }
         const qp = new URLSearchParams(location.search).get('models');
         if (qp) { MODEL_LIBRARY.baseRoot = qp.replace(/\/+$/, '') + '/'; MODEL_BASE_EXPLICIT = true; return; }
         const ls = localStorage.getItem('atlas_model_base');
@@ -2189,11 +2196,11 @@ function applyStoryState(s) {
 // MODULES — chrome contextuel
 // ============================================================
 const MODULE_TITLES = {
-    lieu: '📍 Lieu', couches: 'Couches', controles: '🎛️ Contrôles', recit: '📖 Récit',
-    symbo: 'Symboliser', soleil: '☀️ Soleil', vues: 'Vue & rendu', reglages: '⚙️ Catalogue 3D',
+    lieu: 'Lieu', couches: 'Couches', controles: 'Contrôles', recit: 'Récit',
+    soleil: 'Soleil', vues: 'Vue & rendu', reglages: 'Catalogue 3D',
 };
 
-const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'symbo', 'couches']);
+const VIEW_AUTHOR_MODULES = new Set(['lieu', 'soleil', 'vues', 'controles', 'reglages', 'couches']);
 
 function openModule(name) {
     if (CONFIG.viewMode && name === 'recit') {
@@ -2213,6 +2220,19 @@ function openModule(name) {
     $('module-title').textContent = (MODULE_TITLES[name] || name).replace(/^[^ ]+ /, (m) => m);
     $('module-panel').classList.add('open');
     $('module-foot').style.display = 'none';
+    if (document.body.classList.contains('mobile-layout')) {
+        // L'onglet suit le module, d'ou qu'il vienne — palette de commandes,
+        // feuille « Plus », clic sur une couche. Sans cela, retoucher l'onglet
+        // ne refermait pas : la barre ignorait ce qui etait ouvert.
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
+            b.classList.toggle('active', b.dataset.mobileTab === name);
+        });
+        // A mi-hauteur : la carte reste visible sous le panneau, c'est elle le
+        // sujet. Une feuille deja deployee garde la hauteur qu'on lui a donnee.
+        installerFeuilleMobile().then(() => {
+            if (feuillePosition === 'fermee') poserFeuille('demi');
+        });
+    }
 
     if (name === 'lieu') renderLieu();
     // Le scan des tables géo ne sert qu'à la liste « à afficher » de ce
@@ -2227,7 +2247,26 @@ function openModule(name) {
 
     renderInspector();
 }
+/**
+ * Annonce la scene qu'on ouvre, avant meme d'avoir ses donnees.
+ *
+ * Le chargement prend quelques secondes ; pendant ce temps l'en-tete affichait
+ * « Nouveau projet » et la legende « Aucune couche visible », sur une carte
+ * vide posee a l'ancrage par defaut. Tout disait que l'ouverture avait echoue,
+ * alors qu'elle etait en cours.
+ */
+function annoncerOuverture(nom) {
+    const t = document.getElementById('project-name');
+    if (t && nom) t.textContent = nom;
+    const l = document.getElementById('legend');
+    const corps = document.getElementById('legend-body');
+    if (corps && !corps.textContent.trim()) corps.textContent = 'Chargement…';
+    if (l) l.dataset.ouverture = '1';
+}
+if (typeof window !== 'undefined') window.__atlasAnnoncerOuverture = annoncerOuverture;
+
 function closeModulePanel() {
+    if (Feuille) poserFeuille('fermee');
     $('module-panel').classList.remove('open');
     document.querySelectorAll('.rail-item').forEach((b) => b.classList.remove('active'));
     STATE.currentModule = null;
@@ -2238,11 +2277,15 @@ function closeModulePanel() {
 let searchTimer = null;
 let locationPickMode = false;
 function renderLieu() {
-    $('module-title').textContent = '📍 Lieu';
+    $('module-title').textContent = 'Lieu';
     const L = STATE.location;
     $('module-body').innerHTML = `
+        <div class="section loc-identite">
+            <div class="section-title">Nom du projet</div>
+            <input class="input" id="proj-name" placeholder="Ma maquette…" value="${STATE.projectName}" onchange="A.setProjectName(this.value)">
+        </div>
         <div class="loc-badge">
-            <span class="ic">📌</span>
+            <span class="ic">${icTrait(IC.epingle)}</span>
             <div>
                 <div class="nm">${L.name || 'Non défini'}</div>
                 <div class="co">${(L.lat ?? 0).toFixed(5)}°N · ${(L.lng ?? 0).toFixed(5)}°E</div>
@@ -2251,12 +2294,12 @@ function renderLieu() {
         </div>
         <div class="section">
             <div class="section-title">Rechercher un lieu</div>
-            <input class="input" id="loc-search" placeholder="🔍 Adresse, ville, monument…" oninput="A.searchLocation(this.value)">
+            <input class="input" id="loc-search" placeholder="Adresse, ville, monument…" oninput="A.searchLocation(this.value)">
             <div class="search-results" id="loc-results"></div>
         </div>
         <div class="section">
-            <button class="btn btn-soft btn-full" onclick="A.useGeolocation()">📍 Ma position actuelle</button>
-            <button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.pickOnMap()">🗺️ Pointer sur la carte</button>
+            <button class="btn btn-soft btn-full" onclick="A.useGeolocation()">${icTrait(IC.epingle)} Ma position actuelle</button>
+            <button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.pickOnMap()">${icTrait(IC.carte)} Pointer sur la carte</button>
         </div>
         <div class="section">
             <div class="section-title">Coordonnées manuelles</div>
@@ -2266,10 +2309,7 @@ function renderLieu() {
             </div>
             <button class="btn btn-soft btn-full" style="margin-top:10px" onclick="A.applyManualCoords()">Aller</button>
         </div>
-        <div class="section">
-            <div class="section-title">Nom du projet</div>
-            <input class="input" id="proj-name" placeholder="Ma maquette…" value="${STATE.projectName}" onchange="A.setProjectName(this.value)">
-        </div>`;
+`;
 }
 
 // ---- Couches ----
@@ -2299,26 +2339,32 @@ function availableTablesSection() {
         <div class="layer-item" onclick="A.showGeoTable('${String(g.table).replace(/'/g, "\\'")}')">
             <span class="layer-vis" title="Afficher comme couche">＋</span>
             <div class="layer-info"><div class="layer-name">${g.table}</div><div class="layer-meta">${geoTableMeta(g)}</div></div>
-            <button class="layer-act" title="Afficher">👁</button>
+            <button class="layer-act" title="Afficher">${icTrait(IC.oeil)}</button>
         </div>`).join('')}</div></div>`;
 }
+
+    const actions = () => `
+        <div class="section layer-actions">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">${icTrait(IC.globe)} OSM</button>
+                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">${icTrait(IC.fichier)} Fichier</button>
+                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">${icTrait(IC.lien)} Table</button>` : ''}
+            </div>
+        </div>`;
 
 function renderLayersPanel(mode) {
     if (CONFIG.viewMode) {
         renderLayersPanelLecture();
         return;
     }
-    $('module-title').textContent = mode === 'symbo' ? 'Symboliser' : 'Couches';
+    $('module-title').textContent = 'Couches';
     const body = $('module-body');
     if (STATE.layers.length === 0) {
         body.innerHTML = `
-            <div class="empty"><div class="ic">📂</div><div class="t">Aucune couche affichée</div><div class="h">Affiche une table ci-dessous, ou importe</div></div>
+            <div class="empty"><div class="ic">${icTrait(IC.dossier, 40)}</div><div class="t">Aucune couche affichée</div><div class="h">Affiche une table ci-dessous, ou importe</div></div>
             ${availableTablesSection()}
-            <div class="section"><div class="section-title">🌍 OpenStreetMap</div><button class="btn btn-primary btn-full" onclick="A.openOSM()">Importer depuis OSM</button></div>
-            <div class="section"><div class="section-title">📄 Fichier</div>
-                <div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">📄</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div>
-            </div>
-            ${CONFIG.grist.ready ? `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openLinkTable()">🔗 Lier une table Grist</button></div>` : ''}`;
+            <div class="section"><div class="drop" id="drop" onclick="document.getElementById('file-input').click()"><div class="ic">${icTrait(IC.fichier, 40)}</div><div class="t">Glissez un GeoJSON</div><div class="h">.geojson / .json</div></div></div>
+            ${actions()}`;
         wireDrop();
         return;
     }
@@ -2326,7 +2372,7 @@ function renderLayersPanel(mode) {
     body.innerHTML = `
         <div class="section" style="margin-top:0">
             <div style="display:flex;gap:8px">
-                <button class="btn ${allVis ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(true)">👁 Tout</button>
+                <button class="btn ${allVis ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(true)">${icTrait(IC.oeil)} Tout</button>
                 <button class="btn ${!STATE.layers.some((l) => l.visible !== false) ? 'btn-dark' : 'btn-soft'}" style="flex:1" onclick="A.toggleAllLayers(false)">Masquer</button>
             </div>
         </div>
@@ -2349,26 +2395,20 @@ function renderLayersPanel(mode) {
                         title="Glisser pour réordonner (ou ↑ ↓ au clavier)">⠿</span>`;
                 return `<div class="layer-item ${sel ? 'active' : ''}" data-layer="${l.id}" onclick="A.selectLayer('${l.id}')">
                     ${poignee}
-                    <span class="layer-vis ${visible ? 'on' : ''}" onclick="A.toggleLayer('${l.id}', event)">${visible ? '👁' : '🚫'}</span>
+                    <span class="layer-vis ${visible ? 'on' : ''}" onclick="A.toggleLayer('${l.id}', event)">${icTrait(visible ? IC.oeil : IC.oeilBarre)}</span>
                     <span class="layer-swatch" style="background:${l.color}"></span>
                     <div class="layer-info">
                         <div class="layer-name">${l.name}</div>
                         <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
                     </div>
-                    ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">🔄</button>` : ''}
-                    <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">🎯</button>
-                    <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">🗑️</button>
+                    ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">${icTrait(IC.rafraichir)}</button>` : ''}
+                    <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">${icTrait(IC.cible)}</button>
+                    <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">${icTrait(IC.corbeille)}</button>
                 </div>`;
             }).join('')}
         </div>
         ${availableTablesSection()}
-        <div class="section">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-primary" style="flex:1" onclick="A.openOSM()">🌍 OSM</button>
-                <button class="btn btn-soft" style="flex:1" onclick="document.getElementById('file-input').click()">📄 Fichier</button>
-                ${CONFIG.grist.ready ? `<button class="btn btn-soft" style="flex:1" onclick="A.openLinkTable()">🔗 Table</button>` : ''}
-            </div>
-        </div>`;
+        ${actions()}`;
     wireLayerReorder(body);
 }
 
@@ -2379,7 +2419,7 @@ function renderLayersPanelLecture() {
     // Même sens de lecture que le panneau d'édition : le dessus en premier.
     const visible = displayOrder(STATE.layers).filter((l) => l.visible !== false);
     if (!visible.length) {
-        body.innerHTML = `<div class="empty"><div class="ic">🗺️</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
+        body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.carte, 40)}</div><div class="t">Scène vide</div><div class="h">Aucune couche visible (configuration éditeur)</div></div>`;
         return;
     }
     body.innerHTML = `
@@ -2392,12 +2432,68 @@ function renderLayersPanelLecture() {
                     <div class="layer-name">${l.name}</div>
                     <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
                 </div>
-                <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">🎯</button>
+                <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">${icTrait(IC.cible)}</button>
             </div>`;
         }).join('')}</div>`;
 }
 
+/**
+ * Icones du dock, au trait.
+ *
+ * C'etaient des emoji, faute d'un glyphe Unicode present partout — un `▦`
+ * s'affichait vide sur les polices systeme courantes. Mais l'emoji ne resout
+ * rien : sur Android il sort en Noto couleur, a une taille que la page ne
+ * controle pas, et pique des pastilles bariolees dans une interface qui n'en a
+ * aucune. Un trace inline ne depend d'aucune police et suit la couleur du texte.
+ */
+function icTrait(d, taille = 19) {
+    // L'epaisseur se reduit quand l'icone grandit, sinon une illustration d'etat
+    // vide parait grossiere a cote d'un bouton de 19 px.
+    const trait = taille > 32 ? 1.3 : 1.7;
+    return `<svg class="ic-trait" width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="${trait}" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true">${d}</svg>`;
+}
+
+/**
+ * Le vocabulaire d'icones des panneaux.
+ *
+ * Un seul endroit ou les tracer : la meme corbeille doit etre la meme partout,
+ * et une icone qui change de dessin d'un panneau a l'autre se lit comme deux
+ * actions differentes.
+ */
+const IC = {
+    oeil:      '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+    oeilBarre: '<path d="M10.6 6.2A9.9 9.9 0 0 1 12 6c6.4 0 10 6 10 6a18 18 0 0 1-3.1 3.9M6.6 6.7A17.9 17.9 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 4.2-.9"/><path d="M3 3l18 18"/>',
+    cible:     '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
+    corbeille: '<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7"/><path d="M10 11v6m4-6v6"/>',
+    rafraichir:'<path d="M20 11a8 8 0 1 0-2.3 6.2"/><path d="M20 5v6h-6"/>',
+    lien:      '<path d="M10 13a5 5 0 0 0 7.1.1l2.9-2.9a5 5 0 0 0-7.1-7.1L11 4.9"/><path d="M14 11a5 5 0 0 0-7.1-.1L4 13.8a5 5 0 0 0 7.1 7.1l1.8-1.8"/>',
+    fichier:   '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    dossier:   '<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/>',
+    globe:     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15 0 18M12 3C9.5 5.7 9.5 18 12 21"/>',
+    carte:     '<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/>',
+    epingle:   '<path d="M12 22s7-7 7-12a7 7 0 0 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/>',
+    loupe:     '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>',
+    soleil:    '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
+    recit:     '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M9 7h7M9 11h5"/>',
+    controles: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    reglages:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    camera:    '<path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="3.2"/>',
+    palette:   '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-1-.8-1.5-.8-2.4 0-.9.7-1.5 1.6-1.5H16a5 5 0 0 0 5-5c0-4-4-7.5-9-7.5z"/><circle cx="7.5" cy="11" r="1.1" fill="currentColor"/><circle cx="10.5" cy="7.5" r="1.1" fill="currentColor"/><circle cx="15" cy="8.5" r="1.1" fill="currentColor"/>',
+    cube:      '<path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/>',
+    enregistrer:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    exporter:  '<path d="M12 3v13M7 8l5-5 5 5M5 21h14"/>',
+    piste:     '<path d="M4 20V7a3 3 0 0 1 6 0v10a3 3 0 0 0 6 0V4"/><path d="M17 7h4M17 4h4"/>',
+    pieton:    '<circle cx="12" cy="4" r="2"/><path d="M12 7v6m0 0-3 8m3-8 3 8M8 10l4-2 4 2"/>',
+};
+
+
+
 function controlTypeIcon(type) {
+    // Les filtres gardent leurs emoji : ils nomment une donnee, pas une commande
+    // de la carte, et l'utilisateur les repere mieux ainsi dans une rangee de
+    // pastilles. Le sujet est le choix de l'auteur de la scene, pas la charte.
     if (type === 'time') return '🕑';
     if (type === 'range') return '📊';
     return '🏷️';
@@ -2779,7 +2875,7 @@ function renderControles() {
         closeModulePanel();
         return;
     }
-    $('module-title').textContent = '🎛️ Contrôles';
+    $('module-title').textContent = 'Contrôles';
     const body = $('module-body');
     const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer) || STATE.layers[0];
 
@@ -2788,7 +2884,7 @@ function renderControles() {
     html += `<div class="section"><div class="section-title">Environnement</div>${renderEnvControlsSection()}</div>`;
 
     if (!layer) {
-        body.innerHTML = html + `<div class="empty" style="margin-top:12px"><div class="ic">🎛️</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
+        body.innerHTML = html + `<div class="empty" style="margin-top:12px"><div class="ic">${icTrait(IC.controles, 40)}</div><div class="t">Aucune couche</div><div class="h">Importez ou liez des données</div></div>`;
         return;
     }
 
@@ -2827,12 +2923,12 @@ function renderControles() {
 }
 
 function renderRecit() {
-    $('module-title').textContent = '📖 Récit';
+    $('module-title').textContent = 'Récit';
     const body = $('module-body');
     const steps = STATE.story || [];
     if (CONFIG.viewMode) {
         if (!steps.length) {
-            body.innerHTML = `<div class="empty"><div class="ic">📖</div><div class="t">Pas de récit</div><div class="h">L’éditeur n’a pas publié d’étapes</div></div>`;
+            body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.recit, 40)}</div><div class="t">Pas de récit</div><div class="h">L’éditeur n’a pas publié d’étapes</div></div>`;
             return;
         }
         body.innerHTML = `
@@ -2850,11 +2946,11 @@ function renderRecit() {
     }
     let html = `<div class="hint">Capture des <strong>étapes</strong> (caméra + couches + filtres + heure) et rejoue-les en présentation.</div>
         <div class="section" style="display:flex;gap:8px">
-            <button class="btn btn-primary" style="flex:2" onclick="A.storyCapture()">📸 Capturer l'étape</button>
+            <button class="btn btn-primary" style="flex:2" onclick="A.storyCapture()">${icTrait(IC.camera)} Capturer l'étape</button>
             ${steps.length ? `<button class="btn btn-dark" style="flex:1" onclick="A.storyPlay(0)">▶ Lecture</button>` : ''}
         </div>`;
     if (!steps.length) {
-        body.innerHTML = html + `<div class="empty"><div class="ic">📖</div><div class="t">Aucune étape</div><div class="h">Cadre la vue puis « Capturer »</div></div>`;
+        body.innerHTML = html + `<div class="empty"><div class="ic">${icTrait(IC.recit, 40)}</div><div class="t">Aucune étape</div><div class="h">Cadre la vue puis « Capturer »</div></div>`;
         return;
     }
     html += `<div class="layer-list">${steps.map((s, i) => `
@@ -2866,10 +2962,10 @@ function renderRecit() {
             </div>
             <div style="display:flex;flex-direction:column;gap:2px">
                 <button class="layer-act" onclick="A.storyMove(${i},-1)" title="Monter">▲</button>
-                <button class="layer-act" onclick="A.storyRecapture(${i})" title="Re-capturer la vue">📸</button>
+                <button class="layer-act" onclick="A.storyRecapture(${i})" title="Re-capturer la vue">${icTrait(IC.camera)}</button>
                 <button class="layer-act" onclick="A.storyMove(${i},1)" title="Descendre">▼</button>
             </div>
-            <button class="layer-del" onclick="A.storyDelete(${i})" title="Supprimer">🗑️</button>
+            <button class="layer-del" onclick="A.storyDelete(${i})" title="Supprimer">${icTrait(IC.corbeille)}</button>
         </div>`).join('')}</div>`;
     body.innerHTML = html;
 }
@@ -2915,7 +3011,7 @@ function renderModelsPanel() {
     const isPoint = layer && (layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint');
     const banner = isPoint
         ? `<div class="hint" style="border-left-color:var(--accent)">Couche sélectionnée : <strong>${layer.name}</strong>.<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="A.openLayerModel('${layer.id}')">→ Choisir le modèle de cette couche</button></div>`
-        : `<div class="hint">⚙️ Réglages du catalogue, valables pour toute l'app. Pour <strong>affecter un modèle à une couche</strong> : sélectionne une couche de points (module Couches) → onglet <strong>Modèle 3D</strong> de l'inspecteur.</div>`;
+        : `<div class="hint">Réglages du catalogue, valables pour toute l'app. Pour <strong>affecter un modèle à une couche</strong> : sélectionne une couche de points (module Couches) → onglet <strong>Modèle 3D</strong> de l'inspecteur.</div>`;
     $('module-body').innerHTML = banner + `
         <div class="section">
             <div class="section-title">Jeu de modèles</div>
@@ -2945,7 +3041,7 @@ function renderModelsPanel() {
 
 // ---- Soleil / Ambiance ----
 function renderSoleil() {
-    $('module-title').textContent = '☀️ Soleil';
+    $('module-title').textContent = 'Soleil';
     const min = STATE.settings.timeOfDay;
     const d = STATE.settings.date;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2955,10 +3051,10 @@ function renderSoleil() {
         <div class="section">
             <div class="section-title">Moment de la journée</div>
             <div class="option-cards grid2">
-                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon">🌅</div><div class="oc-label">Aube</div></div>
-                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon">☀️</div><div class="oc-label">Midi</div></div>
-                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon">🌆</div><div class="oc-label">Soir</div></div>
-                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon">🌙</div><div class="oc-label">Nuit</div></div>
+                <div class="option-card" onclick="A.timePreset('dawn')"><div class="oc-icon" style="color:#D98C3F">${icTrait('<path d="M3 18h18M6 18a6 6 0 0 1 12 0"/><path d="M12 5v2M5.6 8.6l1.4 1.4m11.4-1.4-1.4 1.4"/><path d="M2 21h20"/>', 26)}</div><div class="oc-label">Aube</div></div>
+                <div class="option-card" onclick="A.timePreset('day')"><div class="oc-icon" style="color:#E0A526">${icTrait(IC.soleil, 26)}</div><div class="oc-label">Midi</div></div>
+                <div class="option-card" onclick="A.timePreset('dusk')"><div class="oc-icon" style="color:#B4593A">${icTrait('<path d="M3 18h18M8 18a4 4 0 0 1 8 0"/><path d="M12 21v-1"/><path d="M2 14h4m12 0h4"/>', 26)}</div><div class="oc-label">Soir</div></div>
+                <div class="option-card" onclick="A.timePreset('night')"><div class="oc-icon" style="color:#5B6B8C">${icTrait('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', 26)}</div><div class="oc-label">Nuit</div></div>
             </div>
         </div>
         <div class="section">
@@ -2966,15 +3062,15 @@ function renderSoleil() {
             <input type="range" class="rng acc" min="0" max="1439" step="5" value="${min}" oninput="A.setTime(this.value)">
         </div>
         <div class="section">
-            <div class="section-title">📅 Date</div>
+            <div class="section-title">Date</div>
             <input class="input" type="date" value="${dateStr}" onchange="A.setSunDate(this.value)">
         </div>
         <div class="section">
-            <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
+            <div class="range-info">Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
         </div>
         <div class="section">
             <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')" role="switch" tabindex="0" aria-checked="${!!STATE.settings.shadows}" aria-label="Ombres portées"></div></div>
-            <div class="hint" style="margin-top:8px">💡 Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
+            <div class="hint" style="margin-top:8px">Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
         </div>`;
 }
 
@@ -3425,7 +3521,7 @@ function symModelPanel(layer, sym) {
 }
 function commonTransform(layer) {
     const c = layer.style.common = layer.style.common || { scale: 1, rotationX: 0, rotationY: 0, rotationZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
-    return `<div class="section"><div class="section-title">⚙️ Transform couche</div>
+    return `<div class="section"><div class="section-title">Transform couche</div>
         <div class="slider-head"><span class="lbl">Échelle</span><span class="val" id="ct-scale">${c.scale}×</span></div>
         <input type="range" class="rng acc" min="0.1" max="5" step="0.1" value="${c.scale}" oninput="A.setCommon('${layer.id}','scale',this.value,'ct-scale','×')">
         <div class="slider-head" style="margin-top:12px"><span class="lbl">Rotation Z (azimut)</span><span class="val" id="ct-rz">${c.rotationZ}°</span></div>
@@ -3894,7 +3990,7 @@ function clearFeatureOverrides(layer, idx) {
 // IMPORT — OSM (Overpass) & fichier
 // ============================================================
 function openOSM() {
-    $('module-title').textContent = '🌍 Import OSM';
+    $('module-title').textContent = 'Import OSM';
     const b = map.getBounds();
     $('module-body').innerHTML = `
         <div class="hint">Zone importée = emprise visible. Zoomez pour réduire.</div>
@@ -4185,6 +4281,106 @@ function refreshViewerControlsHud() {
     el.innerHTML = '';
 }
 
+/* ------------------------------------------------------------------ */
+/* La feuille mobile                                                    */
+/* ------------------------------------------------------------------ */
+
+let Feuille = null;              // charge a la demande : le bureau n'en a pas besoin
+let feuillePosition = 'fermee';  // 'fermee' | 'demi' | 'pleine'
+
+async function chargerFeuille() {
+    if (!Feuille) Feuille = await import('./lib/feuille-mobile.js?v=1.1.3');
+    return Feuille;
+}
+
+/**
+ * Pose la feuille a une position.
+ *
+ * La fraction pilote une translation, pas une hauteur : le contenu ne se
+ * redispose pas a chaque geste, et le glissement reste franc meme sur une
+ * longue liste de couches.
+ */
+function poserFeuille(nom, anime = true) {
+    const p = $('module-panel');
+    if (!p || !Feuille) return;
+    feuillePosition = nom;
+    p.classList.toggle('feuille-glisse', !anime);
+    p.style.setProperty('--feuille-frac', String(Feuille.ANCRAGES[nom] ?? 0));
+    if (nom === 'fermee') {
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => b.classList.remove('active'));
+    }
+}
+
+/**
+ * Le glissement, qui remplace l'ancien onglet « Carte ».
+ *
+ * On n'allait pas « a la carte » : elle est dessous, en permanence. On ecarte
+ * ce qui la masque — et pendant l'edition d'un recit, c'etait le seul moyen de
+ * cadrer la vue, sauf que le bouton se trouvait sous la feuille a ecarter.
+ */
+async function installerFeuilleMobile() {
+    const p = $('module-panel');
+    if (!p) return;
+    const F = await chargerFeuille();
+    if (p.dataset.feuille) return;
+    p.dataset.feuille = '1';
+
+    if (!p.querySelector('.feuille-poignee')) {
+        const poignee = document.createElement('div');
+        poignee.className = 'feuille-poignee';
+        poignee.setAttribute('aria-hidden', 'true');
+        p.prepend(poignee);
+    }
+
+    const corps = () => p.querySelector('#module-body');
+    let geste = null;
+
+    p.addEventListener('pointerdown', (e) => {
+        if (!document.body.classList.contains('mobile-layout')) return;
+        geste = {
+            y0: e.clientY, t0: e.timeStamp, y: e.clientY, t: e.timeStamp,
+            depart: feuillePosition,
+            surPoignee: !!e.target.closest('.feuille-poignee, .module-head'),
+            defilement: corps()?.scrollTop ?? 0,
+            pris: false, id: e.pointerId,
+        };
+    });
+
+    p.addEventListener('pointermove', (e) => {
+        if (!geste || e.pointerId !== geste.id) return;
+        const dy = e.clientY - geste.y0;
+        if (!geste.pris) {
+            if (Math.abs(dy) < 6) return;    // laisser passer les taps
+            if (!F.gestePourLaFeuille({
+                surPoignee: geste.surPoignee, defilement: geste.defilement, versLeBas: dy > 0,
+            })) { geste = null; return; }
+            geste.pris = true;
+            p.classList.add('feuille-glisse');
+        }
+        geste.y = e.clientY;
+        geste.t = e.timeStamp;
+        p.style.setProperty('--feuille-frac',
+            String(F.fractionPendantGeste(geste.depart, dy, window.innerHeight)));
+        e.preventDefault();
+    }, { passive: false });
+
+    const finir = (e) => {
+        if (!geste || (e && e.pointerId !== geste.id)) return;
+        const g = geste; geste = null;
+        p.classList.remove('feuille-glisse');
+        if (!g.pris) return;
+        const dt = Math.max(0.016, (g.t - g.t0) / 1000);
+        const vitesse = -((g.y - g.y0) / window.innerHeight) / dt;   // positif = vers le haut
+        poserFeuille(F.ancrageApresGeste({
+            depart: g.depart,
+            fraction: F.fractionPendantGeste(g.depart, g.y - g.y0, window.innerHeight),
+            vitesse,
+        }));
+    };
+    p.addEventListener('pointerup', finir);
+    p.addEventListener('pointercancel', finir);
+}
+
 function updateMobileLayout() {
     const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
     document.body.classList.toggle('mobile-layout', narrow);
@@ -4199,19 +4395,109 @@ function updateMobileLayout() {
     }
 }
 
+/**
+ * La marque « Atlas » ouvre le menu principal — dans l'application seulement.
+ *
+ * Le widget n'a rien au-dessus de sa scene : la marque y reste inerte, et le
+ * chevron ne s'affiche pas. C'est aussi le point ou viendront s'accrocher les
+ * modules a venir, sans toucher a la carte.
+ */
+async function cablerMenuPrincipal() {
+    const marque = document.querySelector('.brand');
+    if (!marque) return;
+    let hote;
+    try { hote = await import('./lib/hote-ui.js?v=1.1.3'); } catch (_) { return; }
+    let caps;
+    try {
+        const dc = await import('./lib/data-client.js?v=1.1.3');
+        caps = dc.capacites();
+    } catch (_) { return; }
+    // Widget : rien au-dessus de la scene. Navigateur sans compte : le menu
+    // n'aurait rien a offrir — ni liste de scenes, ni connexion possible. Une
+    // marque actionnable qui ouvre un menu vide vaut moins que pas de bouton.
+    if (caps.mode === 'grist' || !caps.decouverte) return;
+
+    marque.classList.add('brand-menu');
+    marque.setAttribute('role', 'button');
+    marque.setAttribute('tabindex', '0');
+    marque.setAttribute('aria-label', 'Menu principal');
+    const ouvrir = () => hote.ouvrirMenuPrincipal({
+        scene: { nom: STATE.projectName || 'Scène en cours' },
+        modifie: dirty,
+    });
+    marque.addEventListener('click', ouvrir);
+    marque.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
+    });
+}
+
+/** La feuille des modules que la barre du bas ne peut pas porter. */
+function ouvrirFeuilleModules() {
+    const f = $('mobile-plus');
+    if (!f) return;
+    f.hidden = false;
+    const fermer = () => {
+        f.hidden = true;
+        // L'onglet « Plus » ne reste pas actif : il ouvre, il ne selectionne pas.
+        document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
+            b.classList.toggle('active', b.dataset.mobileTab === STATE.currentModule);
+        });
+    };
+    f.querySelector('.mp-fond').onclick = fermer;
+    f.querySelectorAll('[data-module-plus]').forEach((b) => {
+        b.onclick = () => { fermer(); openModule(b.dataset.modulePlus); };
+    });
+    // Enregistrer, charger, exporter : dans l'en-tete sur un ecran large, nulle
+    // part sur un telephone. On pouvait donc tout modifier sans jamais rien
+    // enregistrer — le pire endroit ou manquer un bouton.
+    const actions = {
+        enregistrer: () => saveProject(),
+        charger: () => $('file-input')?.click(),
+        exporter: () => exportProject(),
+    };
+    f.querySelectorAll('[data-action-plus]').forEach((b) => {
+        b.onclick = () => { fermer(); actions[b.dataset.actionPlus]?.(); };
+    });
+}
+
 function wireMobileNav() {
     document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const tab = btn.dataset.mobileTab;
+            // Toucher l'onglet deja ouvert referme la feuille : c'est ce qui
+            // remplace l'ancien onglet « Carte », sous le doigt plutot qu'a
+            // l'autre bout de la barre — et sous la feuille qu'il fallait ecarter.
+            const F = await chargerFeuille();
+            const actif = document.querySelector('#mobile-nav [data-mobile-tab].active')?.dataset.mobileTab;
+            if (tab !== 'plus' && F.ancrageApresOnglet({
+                ongletActif: actif, onglet: tab, position: feuillePosition,
+            }) === 'fermee') {
+                closeModulePanel();
+                A.closeInspector?.();
+                return;
+            }
             document.querySelectorAll('#mobile-nav [data-mobile-tab]').forEach((b) => {
                 b.classList.toggle('active', b === btn);
             });
-            if (tab === 'map') {
-                closeModulePanel();
-                A.closeInspector?.();
-            } else if (tab === 'couches') {
+            if (tab === 'couches') {
                 if (CONFIG.viewMode) return;
                 openModule('couches');
+            } else if (tab === 'plus') {
+                // Lieu, Soleil, Vue et Reglages n'ont pas d'onglet : le rail qui
+                // les portait est masque sur telephone. Sans cette feuille, ils
+                // sont simplement inatteignables — dont la source du catalogue 3D,
+                // qui n'a aucun autre acces.
+                ouvrirFeuilleModules();
+            } else if (tab === 'controles') {
+                // Filtrer sur le terrain est l'usage premier : c'est ce qui
+                // permet de ne garder a l'ecran que les objets qu'on va voir.
+                // En lecture, les controles exposes vivent dans le dock ; le
+                // module d'auteur, lui, reste ferme.
+                if (CONFIG.viewMode) {
+                    showToast('Utilisez les pastilles de la carte pour filtrer', 'info');
+                    return;
+                }
+                openModule('controles');
             } else if (tab === 'recit') {
                 if (CONFIG.viewMode && !(STATE.story?.length)) {
                     showToast('Aucun récit publié', 'info');
@@ -4597,35 +4883,34 @@ function openCmd() {
 function closeCmd() { $('cmd-overlay').classList.remove('open'); }
 function buildCmdItems(q) {
     let base = [
-        { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: '📍' },
-        { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: '🗂️' },
-        { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: '🎛️' },
-        { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: '📖' },
-        { label: 'Symboliser', kind: 'module', run: () => openModule('symbo'), ic: '🎨' },
-        { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: '⚙️' },
-        { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: '☀️' },
-        { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: '🎯' },
-        { label: 'Importer depuis OSM', kind: 'action', run: () => { openModule('couches'); openOSM(); }, ic: '🌍' },
-        { label: 'Importer un fichier', kind: 'action', run: () => $('file-input').click(), ic: '📄' },
-        { label: 'Enregistrer le projet', kind: 'action', run: saveProject, ic: '💾' },
-        { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
-        { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
+        { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: icTrait(IC.epingle) },
+        { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: icTrait(IC.dossier) },
+        { label: 'Contrôles', kind: 'module', run: () => openModule('controles'), ic: icTrait(IC.controles) },
+        { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: icTrait(IC.recit) },
+        { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: icTrait(IC.reglages) },
+        { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: icTrait(IC.soleil) },
+        { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: icTrait(IC.cube) },
+        { label: 'Importer depuis OSM', kind: 'action', run: () => { openModule('couches'); openOSM(); }, ic: icTrait(IC.globe) },
+        { label: 'Importer un fichier', kind: 'action', run: () => $('file-input').click(), ic: icTrait(IC.fichier) },
+        { label: 'Enregistrer le projet', kind: 'action', run: saveProject, ic: icTrait(IC.enregistrer) },
+        { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: icTrait(IC.exporter) },
+        { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: icTrait(IC.rafraichir) },
     ];
     if (CONFIG.viewMode) {
         const hasStory = (STATE.story?.length || 0) > 0;
         base = [
             ...(hasStory ? [
-                { label: '▶ Lancer le récit', kind: 'action', run: () => A.storyPlay(0), ic: '📖' },
-                { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: '📖' },
+                { label: 'Lancer le récit', kind: 'action', run: () => A.storyPlay(0), ic: icTrait(IC.recit) },
+                { label: 'Récit', kind: 'module', run: () => openModule('recit'), ic: icTrait(IC.recit) },
             ] : []),
-            { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: '📤' },
-            { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: '🔄' },
+            { label: 'Exporter en GeoJSON', kind: 'action', run: exportProject, ic: icTrait(IC.exporter) },
+            { label: 'Réinitialiser la vue', kind: 'action', run: () => A.resetView(), ic: icTrait(IC.rafraichir) },
         ];
         STATE.layers.filter((l) => l.visible !== false).forEach((l) => base.push({
             label: `Cibler « ${l.name} »`,
             kind: 'couche',
             run: () => { _legendFocus = { layerId: l.id }; fitToLayer(l); updateLegend(); },
-            ic: '🎯',
+            ic: icTrait(IC.cube),
         }));
     } else {
         STATE.layers.forEach((l) => base.push({ label: l.name, kind: 'couche', run: () => { A.selectLayer(l.id); }, ic: '▢' }));
@@ -4718,7 +5003,7 @@ const A = {
         const body = $('module-body');
         const back = `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openModule('couches')">← Retour</button></div>`;
         if (!_linkChoices.length) {
-            body.innerHTML = `<div class="empty"><div class="ic">🔍</div><div class="t">Aucune table géo trouvée</div><div class="h">Importez d'abord via QGIS → Grist</div></div>${back}`;
+            body.innerHTML = `<div class="empty"><div class="ic">${icTrait(IC.loupe, 40)}</div><div class="t">Aucune table géo trouvée</div><div class="h">Importez d'abord via QGIS → Grist</div></div>${back}`;
             return;
         }
         const already = new Set(STATE.layers.filter((l) => l.sourceTable).map((l) => l.sourceTable));
@@ -4726,7 +5011,7 @@ const A = {
             <div class="layer-item" onclick="A.linkTableChoice(${i})">
                 <div class="layer-info"><div class="layer-name">${g.table}${already.has(g.table) ? ' ✓' : ''}</div>
                 <div class="layer-meta">${geoTableMeta(g)}</div></div>
-                <button class="layer-act" title="Lier comme couche">🔗</button>
+                <button class="layer-act" title="Lier comme couche">${icTrait(IC.lien)}</button>
             </div>`).join('')}</div>${back}`;
     },
     linkTableChoice(i) { const g = _linkChoices[i]; if (g) linkTableFromGrist(g.table, g.geometryColumn, g._data); },
@@ -5119,7 +5404,7 @@ const A = {
         }
         applyPointStyle(l); Models3D.forceBuild(); renderInspector(); markDirty();
     },
-    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('symbo'); },
+    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('couches'); },
     editLayerObjects(id) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         enterSelectionMode(id);
@@ -5565,6 +5850,7 @@ function wireEvents() {
     $('btn-load').addEventListener('click', loadProject);
     $('btn-export').addEventListener('click', exportProject);
     $('btn-story').addEventListener('click', () => A.storyPlay(0));
+    cablerMenuPrincipal();
     $('cmdk-trigger').addEventListener('click', openCmd);
     $('compass').addEventListener('click', () => map.easeTo({ bearing: 0, duration: 600 }));
 
@@ -5572,6 +5858,9 @@ function wireEvents() {
 
     // legend collapse
     $('legend-head').addEventListener('click', () => $('legend').classList.toggle('collapsed'));
+    // Sur un telephone, la legende depliee mangeait le quart de l'ecran et
+    // masquait ce qu'elle decrit. Elle s'ouvre d'un doigt quand on en a besoin.
+    if (document.body.classList.contains('mobile-layout')) $('legend')?.classList.add('collapsed');
 
     // selection bar
     $('sel-prev').addEventListener('click', () => A.selPrev());
@@ -5643,5 +5932,31 @@ async function init() {
     updateSunStrip();
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-else init();
+/**
+ * Demarrage — deux chemins, un seul point d'entree.
+ *
+ * Dans un document Grist, rien ne change : `init()` part comme avant. Ouvert
+ * seul — application installee ou simple onglet — Atlas ne sait ni ou se
+ * connecter ni quelle scene montrer : l'accueil le demande, puis rend la main.
+ *
+ * L'accueil est charge A LA DEMANDE. En widget, ce `import()` n'a jamais lieu :
+ * ni le module d'accueil ni ses dependances ne sont telecharges, et le chemin
+ * eprouve reste rigoureusement inchange.
+ */
+async function demarrer() {
+    try {
+        const { capacites } = await import('./lib/data-client.js?v=1.1.3');
+        if (capacites().mode === 'grist') return init();
+        const { accueillir } = await import('./lib/hote-ui.js?v=1.1.3');
+        const pret = await accueillir();
+        if (!pret) return;          // l'accueil garde l'ecran : rien a demarrer
+    } catch (e) {
+        // Un accueil defaillant ne doit pas empecher Atlas de s'ouvrir : hors
+        // Grist il n'aura pas de donnees, mais il le dira mieux qu'une page morte.
+        console.error('[Atlas] accueil :', e);
+    }
+    return init();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);
+else demarrer();
