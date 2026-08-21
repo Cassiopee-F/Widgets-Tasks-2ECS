@@ -81,3 +81,7 @@ Si quelque chose échoue ou vous surprend, dites-le dans ce fil — en précisan
 - ou simplement ce qui vous a paru bizarre.
 
 C’est ce qui permet de couvrir des usages au-delà des miens.
+
+---
+
+<sub>Ce message est rédigé automatiquement à partir de la fiche du projet, versionnée avec son code. Il est remis à jour depuis cette même source quand le widget évolue — les modifications restent visibles dans l’historique du message.</sub>

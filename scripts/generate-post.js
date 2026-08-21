@@ -166,6 +166,12 @@ function rendre(id) {
     'C’est ce qui permet de couvrir des usages au-delà des miens.',
   ].join('\n'));
 
+  // Ce message sera reecrit sans prevenir chaque fois que la fiche change. Le
+  // dire evite qu'une edition passe pour une retouche discrete : Discourse en
+  // garde l'historique, autant annoncer d'ou elle vient.
+  bloc.push(SEPARATEUR);
+  bloc.push('<sub>Ce message est rédigé automatiquement à partir de la fiche du projet, versionnée avec son code. Il est remis à jour depuis cette même source quand le widget évolue — les modifications restent visibles dans l’historique du message.</sub>');
+
   return bloc.join('\n') + '\n';
 }
 
