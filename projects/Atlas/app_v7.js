@@ -122,11 +122,11 @@ function ignRasterStyle(tiles) {
         layers: [{ id: 'ign-base', type: 'raster', source: 'ign' }] };
 }
 const BASEMAPS = {
-    liberty:  { url: 'https://tiles.openfreemap.org/styles/liberty',  label: 'Liberty 3D', icon: '✨' },
-    bright:   { url: 'https://tiles.openfreemap.org/styles/bright',   label: 'Plan',       icon: '🗺️' },
+    liberty:  { url: 'https://tiles.openfreemap.org/styles/liberty',  label: 'Liberty 3D', icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.2 5.6L20 10l-5.8 1.4L12 17l-2.2-5.6L4 10l5.8-1.4z"/></svg>' },
+    bright:   { url: 'https://tiles.openfreemap.org/styles/bright',   label: 'Plan',       icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/></svg>' },
     positron: { url: 'https://tiles.openfreemap.org/styles/positron', label: 'Clair',      icon: '⬜' },
     'plan-ign':  { style: () => ignRasterStyle(IGN.plan),  label: 'Plan IGN',  icon: '🇫🇷' },
-    'ortho-ign': { style: () => ignRasterStyle(IGN.ortho), label: 'Ortho IGN', icon: '🛰️' },
+    'ortho-ign': { style: () => ignRasterStyle(IGN.ortho), label: 'Ortho IGN', icon: '<svg class="ic-trait" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15 0 18M12 3C9.5 5.7 9.5 18 12 21"/></svg>' },
 };
 
 // Sources de relief (DEM) : terrarium mondial (sans clé) ou LIDAR HD IGN (France)
@@ -2404,10 +2404,25 @@ function renderLayersPanelLecture() {
         }).join('')}</div>`;
 }
 
+/**
+ * Icones du dock, au trait.
+ *
+ * C'etaient des emoji, faute d'un glyphe Unicode present partout — un `▦`
+ * s'affichait vide sur les polices systeme courantes. Mais l'emoji ne resout
+ * rien : sur Android il sort en Noto couleur, a une taille que la page ne
+ * controle pas, et pique des pastilles bariolees dans une interface qui n'en a
+ * aucune. Un trace inline ne depend d'aucune police et suit la couleur du texte.
+ */
+function icTrait(d) {
+    return `<svg class="ic-trait" width="19" height="19" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true">${d}</svg>`;
+}
+
 function controlTypeIcon(type) {
-    if (type === 'time') return '🕑';
-    if (type === 'range') return '📊';
-    return '🏷️';
+    if (type === 'time') return icTrait('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>');
+    if (type === 'range') return icTrait('<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>');
+    return icTrait('<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>');
 }
 
 function controlTypeLabel(type) {
@@ -2483,17 +2498,17 @@ function listDockPills() {
     const edit = !CONFIG.viewMode;
 
     if (edit || getViewerControl(vcs, 'sun')?.exposed) {
-        pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
+        pills.push({ id: 'sun', kind: 'sun', icon: icTrait('<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>'), label: 'Soleil' });
     }
     // Icônes du dock : s'en tenir aux emoji, avec leur sélecteur de variante
     // (U+FE0F). Un glyphe symbolique rare — ici `▦` U+25A6 — n'existe pas dans
     // les polices système courantes, et un emoji sans sélecteur bascule en
     // rendu texte : dans les deux cas la pastille s'affiche vide, sans erreur.
     if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
-        pills.push({ id: 'view3d', kind: 'env', icon: '🏙️', label: '2D / 3D' });
+        pills.push({ id: 'view3d', kind: 'env', icon: icTrait('<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'), label: '2D / 3D' });
     }
     if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
-        pills.push({ id: 'basemap', kind: 'env', icon: '🗺️', label: 'Fonds' });
+        pills.push({ id: 'basemap', kind: 'env', icon: icTrait('<path d="m9 3-6 3v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15m6-12v15"/>'), label: 'Fonds' });
     }
     for (const { layer, c } of collectPublishedControls()) {
         pills.push({

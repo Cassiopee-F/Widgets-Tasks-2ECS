@@ -273,6 +273,10 @@
             width: 18px; height: 18px; border-radius: 9px;
         }
         .map-controls-dock .dock-fab .dock-fab-ic { font-size: 17px; line-height: 1; }
+        /* Les icones sont tracees, pas ecrites : elles suivent l'encre du dock
+           au lieu de dependre d'une police d'emoji propre a chaque appareil. */
+        .ic-trait { display: block; color: var(--ink); }
+        .dock-chip .ic-trait { display: inline-block; vertical-align: -3px; margin-right: 2px; }
 
         .map-controls-dock .dock-panel {
             display: flex; align-items: center; gap: 10px;
@@ -1203,6 +1207,6 @@
     <input type="file" id="file-input" accept=".geojson,.json" style="display:none" />
     <input type="file" id="project-input" accept=".json" style="display:none" />
 
-    <script type="module" src="./app_v7.js?v=20260821b"></script>
+    <script type="module" src="./app_v7.js?v=20260821c"></script>
 </body>
 </html>
