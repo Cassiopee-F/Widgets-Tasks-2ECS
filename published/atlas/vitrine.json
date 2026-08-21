@@ -146,5 +146,9 @@
     "apercu": {
       "mention": "L’aperçu est Atlas seul, sans document : chargez un GeoJSON ou importez depuis OpenStreetMap pour le voir travailler. Dans un document Grist, ce sont vos tables qui deviennent les couches."
     }
+  },
+  "forum": {
+    "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
+    "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte"
   }
 }
