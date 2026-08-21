@@ -450,6 +450,46 @@ format OpenAI. Il ne reste qu'à le généraliser au lieu de le coder deux fois.
 
 ---
 
+## Le modèle appartient au formulaire, pas à l'application
+
+**Le cas qui tranche** : un agent part faire un audit à la recherche de fissures.
+Son formulaire a été configuré pour cela — soit par un référent, soit en se
+configurant tout seul. Le classifieur « fissure » lui sert **parce que son
+formulaire le réclame**, pas parce qu'il a ouvert telle ou telle application.
+
+Le modèle est donc **un attribut du champ**, porté par l'extension « sources
+d'entrée » :
+
+    champ « nature du désordre »  (type Choice)
+      └── source : classification, modèle « fissure-v3 » du catalogue ML_Models
+
+Ce qui fait tomber la question posée en ces termes : ni « dans la vision temps
+réel » ni « sur la photo » dans l'absolu — **là où c'est déclaré**. Un champ
+`Choice` déclare une classification sur une photo ; un champ liste déclare une
+détection, sur une photo ou sur un flux. La même application sert les deux sans
+rien savoir du métier.
+
+**La boucle complète :**
+
+    1. le formulaire « Audit fissures » est configuré dans le document
+         ├── champs : localisation · nature · gravité · photo
+         └── le champ « nature » déclare le classifieur fissure-v3
+    2. l'agent part avec ce formulaire
+         → Terrain charge le formulaire ET les modèles qu'il déclare
+    3. il photographie → « nature » se pré-remplit → il arbitre
+    4. ses corrections deviennent des exemples d'entraînement
+    5. réentraînement → fissure-v4 publiée au catalogue
+    6. l'équipe reçoit la version suivante
+
+**Conséquence pratique pour le hors-ligne**, à ne pas manquer : puisque le
+formulaire déclare ses modèles, Terrain doit les **précharger avec les données**,
+avant le départ. Un modèle qu'il faudrait aller chercher sur le réseau au moment
+de photographier ne servirait à rien — c'est précisément là qu'il n'y a pas de
+réseau. Le modèle rejoint donc ce qu'on emporte, au même titre que les entités et
+le référentiel.
+
+---
+
 ## Ce qui reste à décider
 
 1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
@@ -458,8 +498,9 @@ format OpenAI. Il ne reste qu'à le généraliser au lieu de le coder deux fois.
 2. ~~Le niveau « pro » de la reconnaissance.~~ **Tranché** : il n'y a **pas de
    backend à construire**. Le « service » est une compatibilité, pas une
    dépendance — voir la section précédente.
-3. **Où le modèle entraîné s'applique** : dans la vision temps réel, sur la photo
-   d'une saisie vocale, ou les deux.
+3. ~~Où le modèle entraîné s'applique.~~ **Tranché** : là où le **formulaire le
+   déclare**. Le modèle est un attribut du champ, pas un mode de l'application —
+   voir « Le modèle appartient au formulaire » ci-dessus.
 4. **Le coût du modèle déclaratif.** Il déplace la complexité vers le bureau au
    lieu de la supprimer : quelqu'un doit tenir les tables de configuration. Gain
    net pour une équipe qui a un référent Grist ; pour un agent seul, il faut des
