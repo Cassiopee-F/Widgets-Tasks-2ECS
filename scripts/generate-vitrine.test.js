@@ -170,3 +170,22 @@ test('le plan date les pages d’apres le projet, pas d’apres la generation', 
   assert.ok(dates.length >= 2);
   assert.ok(new Set(dates).size > 1, 'toutes les dates du plan sont identiques');
 });
+
+test('la fiche designe le widget mis en avant, pas l’ordre du manifeste', () => {
+  // Une v2 arrive apres la v1 dans le manifeste, sans que l'ordre dise laquelle
+  // compte. Et l'URL de la v1 ne peut pas etre reprise : elle est enregistree
+  // dans des documents.
+  const html = V.rendreProjet({
+    id: 'x',
+    widgets: [
+      W('x-v1', 'https://s.io/r/x/', { name: 'Ancienne', description: 'v1' }),
+      W('x-v2', 'https://s.io/r/x/v2/', { name: 'Nouvelle', description: 'v2' }),
+    ],
+    presentation: { principal: 'x-v2', archives: ['x-v1'] },
+  }, Date.now(), 'https://s.io/r/');
+  const bouton = html.match(/<a class="bouton" href="([^"]+)"/);
+  assert.equal(bouton[1], 'https://s.io/r/x/v2/', 'le bouton ouvre la version mise en avant');
+  assert.match(html, /class="vue passee"/, 'la v1 est signalee comme precedente');
+  assert.match(html, /version précédente/);
+  assert.ok(html.includes('https://s.io/r/x/'), 'la v1 reste atteignable');
+});

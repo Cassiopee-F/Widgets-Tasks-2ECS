@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QGIS → Grist — widget Grist</title>
-<meta name="description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.">
+<meta name="description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu&#39;Atlas sait relire.">
 <link rel="canonical" href="https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Widgets Grist">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/">
 <meta property="og:title" content="QGIS → Grist — widget Grist">
-<meta property="og:description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.">
+<meta property="og:description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu&#39;Atlas sait relire.">
 <meta property="og:image" content="https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/apercu.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="QGIS → Grist — widget Grist">
-<meta name="twitter:description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"QGIS → Grist","description":"Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.","url":"https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/qgis2grist","dateModified":"2026-08-04"}</script>
+<meta name="twitter:description" content="Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu&#39;Atlas sait relire.">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"QGIS → Grist","description":"Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu'Atlas sait relire.","url":"https://nic01asfr.github.io/Widgets-Grist/w/qgis2grist/","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"codeRepository":"https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/qgis2grist","dateModified":"2026-08-04"}</script>
 <style>
 :root {
   --papier: #FAF7F0; --surface: #FFFFFF; --encre: #1A1814; --plume: #6B6355;
@@ -75,6 +75,11 @@ section { margin: 0 0 3rem; }
 .vue span { color: var(--plume); font-size: .9rem; flex: 1; }
 .vue a { font-size: .82rem; color: var(--accent); text-decoration: none;
   white-space: nowrap; }
+/* Une version precedente reste atteignable — son adresse vit dans des
+   documents — mais elle ne se presente plus comme le chemin a prendre. */
+.vue.passee { opacity: .62; }
+.vue.passee em { font-style: normal; font-weight: 400; font-size: .78rem;
+  color: var(--plume); }
 .points { list-style: none; padding: 0; margin: 0; display: grid; gap: .8rem;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 .points li { padding-left: 1.1rem; position: relative; color: var(--plume);
@@ -108,7 +113,7 @@ section { margin: 0 0 3rem; }
   <a class="retour" href="../../">← Tous les widgets</a>
   <p class="eyebrow">Widget Grist</p>
   <h1>QGIS → Grist</h1>
-  <p class="chapeau">Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.</p>
+  <p class="chapeau">Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu&#39;Atlas sait relire.</p>
   <div class="tags"><span class="tag">Import</span><span class="tag">QGIS</span><span class="tag">Géomatique</span></div>
   <div class="faits">
     <span><b>2</b> widgets</span>
@@ -116,7 +121,7 @@ section { margin: 0 0 3rem; }
     <span>Mis à jour il y a 16 j</span>
   </div>
   <div class="boutons">
-    <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/" target="_blank" rel="noopener">Ouvrir le widget</a>
+    <a class="bouton" href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/v2/" target="_blank" rel="noopener">Ouvrir le widget</a>
     <a class="bouton creux" href="https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/qgis2grist" target="_blank" rel="noopener">Le code</a>
   </div>
   <section class="apercu">
@@ -155,8 +160,8 @@ section { margin: 0 0 3rem; }
   <section>
     <h2>Les vues</h2>
     <div class="liste">
-      <div class="vue">
-        <b>QGIS → Grist Importer</b>
+      <div class="vue passee">
+        <b>QGIS → Grist Importer <em>version précédente</em></b>
         <span>v1 Leaflet — importez qgis2web / QGZ / QField / GPKG dans Grist (schéma auto)</span>
         <a href="https://nic01asfr.github.io/Widgets-Grist/qgis2grist/" target="_blank" rel="noopener">ouvrir</a>
       </div>
@@ -170,7 +175,7 @@ section { margin: 0 0 3rem; }
 </main>
 <footer class="pied">
   <p>Dans Grist : <em>Ajouter un widget</em> → <em>Custom</em> → collez l’adresse
-     <code>https://nic01asfr.github.io/Widgets-Grist/qgis2grist/</code>, et donnez l’accès
+     <code>https://nic01asfr.github.io/Widgets-Grist/qgis2grist/v2/</code>, et donnez l’accès
      <b>lecture et écriture</b>.</p>
 </footer>
 </body>

@@ -292,7 +292,7 @@ function carteProjet(p, v, maintenant) {
         <div class="filet"></div>
         <div class="dedans">
           <h2>${echapper(v.nom || p.widgets[0].name || p.id)}</h2>
-          <p>${echapper(v.pitch || p.widgets[0].description || '')}</p>
+          <p>${echapper(v.pitch || principalDe(p).description || '')}</p>
           ${(v.tags || []).length ? `<div class="tags">${(v.tags || []).slice(0, 3)
             .map((t) => `<span class="tag">${echapper(t)}</span>`).join('')}</div>` : ''}
           <div class="bas">
@@ -370,6 +370,11 @@ section { margin: 0 0 3rem; }
 .vue span { color: var(--plume); font-size: .9rem; flex: 1; }
 .vue a { font-size: .82rem; color: var(--accent); text-decoration: none;
   white-space: nowrap; }
+/* Une version precedente reste atteignable — son adresse vit dans des
+   documents — mais elle ne se presente plus comme le chemin a prendre. */
+.vue.passee { opacity: .62; }
+.vue.passee em { font-style: normal; font-weight: 400; font-size: .78rem;
+  color: var(--plume); }
 .points { list-style: none; padding: 0; margin: 0; display: grid; gap: .8rem;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 .points li { padding-left: 1.1rem; position: relative; color: var(--plume);
@@ -457,10 +462,29 @@ function sectionApercu(p, image) {
   </` + `script>`;
 }
 
+/**
+ * Le widget mis en avant.
+ *
+ * Ce n'est pas forcement le premier du manifeste : une v2 y arrive apres la v1
+ * qu'elle remplace, sans que l'ordre le dise. Et l'URL de la v1 ne peut pas
+ * etre reprise — elle est enregistree dans des documents. C'est donc la fiche
+ * qui designe ce qu'on montre d'abord.
+ */
+function principalDe(p) {
+  const vise = p.presentation && p.presentation.principal;
+  return p.widgets.find((w) => w.widgetId === vise) || p.widgets[0];
+}
+
+/** Les vues qu'on ne met plus en avant, sans les retirer : leur URL vit ailleurs. */
+function estArchive(p, w) {
+  const liste = (p.presentation && p.presentation.archives) || [];
+  return liste.includes(w.widgetId);
+}
+
 /** Une vue du projet, avec l'adresse a coller dans Grist. */
-function ligneWidget(w) {
-  return `      <div class="vue">
-        <b>${echapper(w.name)}</b>
+function ligneWidget(w, archive = false) {
+  return `      <div class="vue${archive ? ' passee' : ''}">
+        <b>${echapper(w.name)}${archive ? ' <em>version précédente</em>' : ''}</b>
         <span>${echapper(w.description || '')}</span>
         <a href="${echapper(w.url)}" target="_blank" rel="noopener">ouvrir</a>
       </div>`;
@@ -470,7 +494,7 @@ function rendreProjet(p, maintenant, base = '') {
   const v = p.presentation;
   const maj = majProjet(p);
   const nom = v.nom || p.widgets[0].name || p.id;
-  const principal = p.widgets[0];
+  const principal = principalDe(p);
   const acces = principal.accessLevel === 'full' ? 'lecture et écriture'
     : principal.accessLevel === 'read table' ? 'lecture seule' : 'aucun accès aux données';
 
@@ -493,7 +517,7 @@ ${v.points.map((pt) => `      <li>${pt.titre ? `<b>${echapper(pt.titre)}</b> —
     sections.push(`  <section>
     <h2>Les vues</h2>
     <div class="liste">
-${p.widgets.map(ligneWidget).join('\n')}
+${p.widgets.map((w) => ligneWidget(w, estArchive(p, w))).join('\n')}
     </div>
   </section>`);
   }

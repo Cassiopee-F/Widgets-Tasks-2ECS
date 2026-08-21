@@ -1,13 +1,33 @@
 {
   "nom": "QGIS → Grist",
-  "pitch": "Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée.",
+  "pitch": "Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu'Atlas sait relire.",
   "couleur": "#3A6EA5",
-  "tags": ["Import", "QGIS", "Géomatique"],
+  "tags": [
+    "Import",
+    "QGIS",
+    "Géomatique"
+  ],
   "depot": "https://github.com/nic01asFr/Widgets-Grist/tree/main/projects/qgis2grist",
   "points": [
-    { "titre": "Plusieurs formats d'entrée", "texte": "export qgis2web, projet QGZ, paquet QField, GeoPackage — le contenu est reconnu et déplié." },
-    { "titre": "Schéma déduit", "texte": "les tables et leurs colonnes sont créées d'après les champs rencontrés, sans les décrire à la main." },
-    { "titre": "La symbologie suit", "texte": "les règles de couleur et de classification du projet QGIS sont converties, pas perdues à l'import." },
-    { "titre": "Deux versions", "texte": "la v1 rend en Leaflet ; la v2 en MapLibre, avec Scene Manifest et contrôles — ce qu'Atlas sait relire." }
+    {
+      "titre": "Plusieurs formats d'entrée",
+      "texte": "export qgis2web, projet QGZ, paquet QField, GeoPackage — le contenu est reconnu et déplié."
+    },
+    {
+      "titre": "Schéma déduit",
+      "texte": "les tables et leurs colonnes sont créées d'après les champs rencontrés, sans les décrire à la main."
+    },
+    {
+      "titre": "La symbologie suit",
+      "texte": "les règles de couleur et de classification du projet QGIS sont converties, pas perdues à l'import."
+    },
+    {
+      "titre": "Deux versions",
+      "texte": "la v1 rend en Leaflet ; la v2 en MapLibre, avec Scene Manifest et contrôles — ce qu'Atlas sait relire."
+    }
+  ],
+  "principal": "qgis2grist-v2",
+  "archives": [
+    "qgis2grist"
   ]
 }

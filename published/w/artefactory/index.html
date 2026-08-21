@@ -75,6 +75,11 @@ section { margin: 0 0 3rem; }
 .vue span { color: var(--plume); font-size: .9rem; flex: 1; }
 .vue a { font-size: .82rem; color: var(--accent); text-decoration: none;
   white-space: nowrap; }
+/* Une version precedente reste atteignable — son adresse vit dans des
+   documents — mais elle ne se presente plus comme le chemin a prendre. */
+.vue.passee { opacity: .62; }
+.vue.passee em { font-style: normal; font-weight: 400; font-size: .78rem;
+  color: var(--plume); }
 .points { list-style: none; padding: 0; margin: 0; display: grid; gap: .8rem;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 .points li { padding-left: 1.1rem; position: relative; color: var(--plume);
