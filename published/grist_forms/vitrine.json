@@ -35,5 +35,9 @@
       "filet": "#DDDDDD"
     },
     "display": "Marianne, \"Segoe UI\", system-ui, sans-serif"
+  },
+  "forum": {
+    "url": "https://forum.grist.libre.sh/t/formseeder-generateur-de-formulaire-multi-etapes-a-conditions/1591",
+    "titre": "FormSeeder — le fil d'origine du projet, sous son premier nom"
   }
 }
