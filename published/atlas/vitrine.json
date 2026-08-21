@@ -141,8 +141,8 @@
   "forum": {
     "url": "https://forum.grist.libre.sh/t/widget-grist-mapbox/2426",
     "titre": "Le fil d'origine, du temps où le widget rendait avec Mapbox — Atlas en est la refonte",
-    "postId": 5054,
-    "titreSujet": "Atlas — un support cartographique complet pour Grist"
+    "titreSujet": "Atlas — un support cartographique complet pour Grist",
+    "cibleARenseigner": "Le sujet dédié n’existe pas encore. Y noter l’identifiant de son premier message sous `postId` une fois créé — surtout pas celui du fil Mapbox (5054), que le workflow écraserait."
   },
   "statut": {
     "niveau": "En service",
