@@ -220,6 +220,58 @@ n'ont pas. C'est pourquoi aucun n'aboutit seul.
   appelé, mais c'est la pièce qui transformerait un modèle personnel en modèle
   d'équipe.
 
+### Les interfaces existantes, revues à l'écran le 21/08/2026
+
+Ce que Terrain aura à reprendre, et qui est déjà dessiné :
+
+| Interface | Parcours | Ce qu'elle apporte |
+|---|---|---|
+| **catalogue** (`index.html`) | — | décrit **déjà** chaque app comme un triptyque *App Android · Widget Grist · Table Grist*, avec ses permissions déclarées. Le modèle de Terrain y est énoncé avant d'être implémenté. |
+| **app** (voix) | Visite → Audio → Texte → Validation | quatre étapes numérotées, dictée, photo, badge « Mode démo », « Continuer » désactivé tant que la connexion n'est pas testée |
+| **app-video** (vision) | plein écran caméra | badges FPS · GPS · Démo, bouton **Détecter**, bascule de caméra, réglages. Le modèle se charge et s'annonce prêt. |
+| **app-ml-lite** | 📷 Capturer → 🧠 Entraîner → ▶ Utiliser | classes par défaut **`fissure` / `Sain`**, compteur d'exemples par classe, « + Classe » |
+| **app-ml-pro** | 📷 Capturer → 📊 Dataset → 🧠 Modèles | **annotation par rectangles** — « dessiner un rectangle pour annoter ; appuyer sans dessiner = image entière » |
+
+**Ce que `ml-lite` et `ml-pro` sont pour Terrain** : non pas des applications,
+mais les **outils qui entraînent et spécialisent les modèles servant à
+automatiser les entrées**. Ils ferment la boucle du projet :
+
+```
+saisir sur place → corriger l'étiquette proposée → ces corrections sont des exemples
+  → réentraîner → publier dans ML_Models → l'équipe reçoit le modèle
+  → la saisie suivante arrive pré-remplie
+```
+
+La donnée produite améliore l'outil qui la produit. C'est la lecture exacte de
+« produire de la donnée à travers la saisie terrain ».
+
+Et les deux tâches alimentent **deux natures de champ différentes** :
+
+| Outil | Produit | Remplit un champ de type |
+|---|---|---|
+| `ml-lite` (classification) | une classe pour l'image entière | un **choix** — « nature du désordre : fissure » |
+| `ml-pro` (détection) | N objets localisés dans l'image | une **liste** — N détections, donc N lignes |
+
+**La détection produit nativement du 1-N.** Elle rejoint donc exactement
+l'extension « section répétable » à porter au contrat FormDef : les deux besoins
+n'en font qu'un. Un rectangle annoté et un constat répété sont la même structure.
+
+Trois enseignements de plus :
+
+- **Le catalogue ne liste que deux applications.** `ml-lite` et `ml-pro` n'y
+  figurent pas : leurs auteurs ne les ont jamais considérées comme des produits.
+  C'est cohérent avec leur nature d'outils.
+- **`lite` et `pro` ne sont pas deux habillages d'une même chose** : classer une
+  image entière et annoter des rectangles sont **deux tâches d'apprentissage
+  distinctes**. Ce qui les rapproche, c'est qu'aucune n'a de backend.
+- **Le parcours en étapes numérotées est le motif commun** aux quatre. C'est ce
+  qu'un hôte Terrain doit savoir rendre, une fois, pour tous les modules.
+
+> **Précaution mesurée** : `app-video` demande la caméra dès l'ouverture, sans
+> écran intermédiaire. En test au navigateur, la webcam s'active immédiatement.
+> Préférer `take_snapshot` (arbre d'accessibilité) à une capture d'écran quand on
+> inspecte ces interfaces.
+
 ### Ce qu'ils n'ont pas prouvé
 
 **Qu'on peut les assembler.** Le défaut central est mesuré : le modèle entraîné
@@ -235,7 +287,8 @@ applications là où il y avait des briques :
 - l'application voix **ne démarre pas hors réseau** : son cache contient
   `index.html` mais aucun des quatre scripts qu'elle charge, et son handler
   `fetch` ne met jamais rien en cache ;
-- `lite` et `pro` diffèrent par l'interface, pas par l'architecture ;
+- `lite` et `pro` ne partagent ni dataset, ni modèle, ni écran de connexion,
+  alors qu'ils s'adressent au même agent sur le même téléphone ;
 - neuf `catch` vides sur la transcription : quand les deux tentatives échouent,
   l'agent parle et rien ne se passe, sans savoir pourquoi.
 
@@ -303,10 +356,15 @@ synchronisations d'un coup au retour, vérifier qu'il n'y a ni doublon ni perte.
 1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
    pas perturbé. Il sert de référence ; son code se copie et s'adapte, il ne se
    partage pas. Ne pas rouvrir cette question sans décision explicite.
-2. **Le niveau « pro » de la reconnaissance.** Un vrai service web, ou le même
-   socle avec un modèle plus lourd que le catalogue Grist distribue ? Aujourd'hui
-   il n'y a aucun backend : `ml-models.js` sait charger depuis une URL, rien de
-   plus.
+2. **Le niveau « pro » de la reconnaissance.** Revu à l'écran le 21/08 : `lite`
+   et `pro` ne sont pas deux habillages d'une même chose, ce sont **deux tâches
+   d'apprentissage distinctes** — `lite` classe une image entière (parcours
+   Capturer → Entraîner → Utiliser, classes `fissure` / `Sain` par défaut),
+   `pro` annote des rectangles pour de la détection (parcours Capturer →
+   Dataset → Modèles). Ce qui reste ouvert n'est donc pas « les fusionner » mais :
+   le « service web associé » annoncé n'existe pas — aucun backend, `ml-models.js`
+   sait seulement charger depuis une URL. Un vrai service, ou tout sur l'appareil
+   avec le catalogue Grist pour distribuer ?
 3. **Où le modèle entraîné s'applique** : dans la vision temps réel, sur la photo
    d'une saisie vocale, ou les deux.
 4. **Le coût du modèle déclaratif.** Il déplace la complexité vers le bureau au
