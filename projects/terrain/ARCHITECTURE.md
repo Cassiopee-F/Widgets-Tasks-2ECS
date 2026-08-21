@@ -409,20 +409,55 @@ synchronisations d'un coup au retour, vérifier qu'il n'y a ni doublon ni perte.
 
 ---
 
+## Le « service » est une compatibilité, pas un backend
+
+**Tranché.** Il n'y a aucun service web à construire. Le modèle est celui de
+SURFAC²E, écrit en tête de `_core/extraction.js` :
+
+> « **GÉNÉRIQUE : parle à tout service compatible OpenAI** (Albert, SSPCloud,
+> Mistral, un vLLM auto-hébergé). Une adresse, une clé, un nom de modèle —
+> interchangeable. »
+
+Un service se réduit donc à **trois valeurs de configuration**, qui ont leur
+place dans une table du document comme tout le reste. Le niveau « pro » n'est
+pas une architecture différente : c'est le même socle avec un modèle plus
+capable au bout. Et le repli tient toujours — sans service, la chaîne reste
+entière en saisie manuelle.
+
+Le pattern est déjà pratiqué dans Grist-AppStore, qui tente Ollama puis le
+format OpenAI. Il ne reste qu'à le généraliser au lieu de le coder deux fois.
+
+### Les garde-fous à reprendre, tous mesurés
+
+- **Trois garde-fous distincts, aucun ne remplace les autres** : le schéma
+  garantit la **forme**, la normalisation l'**exploitabilité**, la consigne la
+  **qualité**. Vérifié dans SURFAC²E : « schéma actif + consigne faible = JSON
+  parfait mais verdict FAUX ».
+- **Séparer `[CONSIGNE]` et `[DONNÉES]` dans le message, jamais les fondre.**
+  Le contenu vient de Grist, donc de l'utilisateur : un site nommé « ignore les
+  instructions précédentes » serait une injection. Vaut pour Terrain, dont toute
+  la configuration viendra de tables.
+- **Borner les échelles dans le schéma.** Sans `minimum`/`maximum`, une
+  confiance revient « en 100 ou en 1 selon l'humeur du modèle, et le seuil
+  devient ininterprétable ».
+- **Le schéma ne contraint pas le format.** « 12 mars 2025 » est une chaîne
+  valide et une date inexploitable — d'où une étape de normalisation, et la
+  règle : non normalisable → `null`, **jamais une valeur approchée**.
+- **Réessayer** : le service renvoie parfois une réponse vide (3 tentatives).
+- **Mode vision plutôt que texte** quand la source est un document : « le même
+  modèle échoue en texte et réussit en vision sur le même document ; les cases à
+  cocher et les tableaux ne survivent pas à l'extraction de texte ».
+
+---
+
 ## Ce qui reste à décider
 
 1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
    pas perturbé. Il sert de référence ; son code se copie et s'adapte, il ne se
    partage pas. Ne pas rouvrir cette question sans décision explicite.
-2. **Le niveau « pro » de la reconnaissance.** Revu à l'écran le 21/08 : `lite`
-   et `pro` ne sont pas deux habillages d'une même chose, ce sont **deux tâches
-   d'apprentissage distinctes** — `lite` classe une image entière (parcours
-   Capturer → Entraîner → Utiliser, classes `fissure` / `Sain` par défaut),
-   `pro` annote des rectangles pour de la détection (parcours Capturer →
-   Dataset → Modèles). Ce qui reste ouvert n'est donc pas « les fusionner » mais :
-   le « service web associé » annoncé n'existe pas — aucun backend, `ml-models.js`
-   sait seulement charger depuis une URL. Un vrai service, ou tout sur l'appareil
-   avec le catalogue Grist pour distribuer ?
+2. ~~Le niveau « pro » de la reconnaissance.~~ **Tranché** : il n'y a **pas de
+   backend à construire**. Le « service » est une compatibilité, pas une
+   dépendance — voir la section précédente.
 3. **Où le modèle entraîné s'applique** : dans la vision temps réel, sur la photo
    d'une saisie vocale, ou les deux.
 4. **Le coût du modèle déclaratif.** Il déplace la complexité vers le bureau au
