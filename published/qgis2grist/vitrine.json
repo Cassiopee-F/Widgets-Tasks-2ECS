@@ -1,5 +1,5 @@
 {
-  "nom": "QGIS → Grist",
+  "nom": "qgis2grist",
   "pitch": "Un projet QGIS devient un document Grist : les couches, leurs attributs et leur symbologie sont importés, le schéma des tables est déduit de la donnée. La v2 rend en MapLibre et produit un Scene Manifest — ce qu'Atlas sait relire.",
   "couleur": "#3E5DE7",
   "tags": [
