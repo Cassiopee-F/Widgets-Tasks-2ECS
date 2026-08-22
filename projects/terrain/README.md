@@ -86,12 +86,14 @@ réécrire, ni modifier les dépôts d'origine, qui restent intacts.
 
 ---
 
-## Les deux widgets déjà dans `published/`
+## Les deux widgets migrés
 
-`published/terrain-observations/` et `published/terrain-detections/` ont été
-migrés depuis Grist-AppStore le 21/08/2026, avec quatre bloquants corrigés
+`projects/terrain-observations/` et `projects/terrain-detections/` ont été
+repris depuis Grist-AppStore le 21/08/2026, avec quatre bloquants corrigés
 (section `grist` absente, mode démonstration inopérant, garde ACL, contraste du
-thème sombre).
+thème sombre). Partis d'abord dans `published/`, ils ont été ramenés dans
+`projects/` le 22 — ils n'ont jamais tourné dans un document réel, et ils vont
+être refondus : leur place est en développement.
 
 **Ils portent `prive: true` et ne seront pas publiés en l'état** : ils seront
 refondus comme faces du produit Terrain. Ils restent servis parce qu'ils sont la

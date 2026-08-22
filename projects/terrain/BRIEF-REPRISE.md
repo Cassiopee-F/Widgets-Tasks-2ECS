@@ -34,8 +34,8 @@ Dans `Widgets-Grist` :
 
 | | |
 |---|---|
-| `published/terrain-observations/`, `published/terrain-detections/` | migrés, quatre bloquants corrigés |
-| `published/*/package.json` | portent `prive: true` — **hors catalogue**, servis pour référence |
+| `projects/terrain-observations/`, `projects/terrain-detections/` | repris, quatre bloquants corrigés — **en développement**, pas publiés |
+| leur emplacement | partis dans `published/` le 21, **ramenés dans `projects/` le 22** : jamais tournés dans un document réel, et destinés à être refondus |
 | `projects/terrain/ARCHITECTURE.md` | le cadrage, 300+ lignes |
 | `skills/vitrine.md` | le format de publication, qui n'était documenté nulle part |
 | `skills/patterns.md` | complété : respect des droits du document |
@@ -65,7 +65,7 @@ Les quatre bloquants corrigés, pour mémoire — ils sont instructifs :
 | Qui | Quoi |
 |---|---|
 | **Agent Grist-AppStore** | `to-publish/`, `grist-widget*/`, les README racine, la passe de retrait des mentions d'employeur |
-| **Agent Widgets-Grist** | `published/terrain-*`, `projects/terrain/`, `skills/`, les scripts |
+| **Agent Widgets-Grist** | `projects/terrain*`, `skills/`, les scripts, les schémas |
 
 Cette répartition évitait de se croiser. Elle vaut toujours pour ne pas écraser
 de travail en cours, mais **son objet a changé** : ce ne sont plus des
