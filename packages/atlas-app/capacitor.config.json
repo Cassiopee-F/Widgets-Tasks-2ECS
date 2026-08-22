@@ -1,5 +1,5 @@
 {
-  "appId": "fr.cerema.atlas",
+  "appId": "io.github.nic01asfr.atlas",
   "appName": "Atlas",
   "webDir": "www",
   "android": { "allowMixedContent": true },

@@ -146,7 +146,7 @@ export function depuis(iso, maintenant = Date.now()) {
   return `il y a ${an} an${an > 1 ? 's' : ''}`;
 }
 
-/** Ou vit la scene : « Cerema · Etudes ». Les deux peuvent manquer. */
+/** Ou vit la scene : « Organisation · Espace ». Les deux peuvent manquer. */
 export function situer(scene) {
   return [scene?.org, scene?.espace].filter(Boolean).join(' · ');
 }

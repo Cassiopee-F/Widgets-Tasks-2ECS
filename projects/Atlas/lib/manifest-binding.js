@@ -1,6 +1,6 @@
 /**
  * Binding Atlas ↔ Scene Manifest V0.2 (StyleDeclarative + ControlDeclarative + prefs).
- * Aligné offre de service Cerema / interop interactive_map.
+ * Aligné sur le contrat d’offre de service / interop interactive_map.
  */
 import {
   applyDeclarativeToLayer,

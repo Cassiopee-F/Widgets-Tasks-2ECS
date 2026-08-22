@@ -1,6 +1,6 @@
 /**
  * Récit / storymaps — étapes caméra + état scène, persistance Atlas_Story.
- * Binding : caméra, visibilité, contrôles, symbolisation (interop Cerema).
+ * Binding : caméra, visibilité, contrôles, symbolisation (interop interactive_map).
  */
 import { declarativeFromAtlasLayer } from './manifest-binding.js?v=20260729m';
 import {
