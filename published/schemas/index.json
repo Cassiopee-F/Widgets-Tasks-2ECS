@@ -1,0 +1,32 @@
+{
+  "titre": "Contrats — Widgets Grist",
+  "description": "Les contrats déclaratifs que se partagent ces outils. Un producteur les écrit, un consommateur les lit, et aucun des deux n'a besoin de connaître l'autre. Ils sont faits pour être produits et interprétés par des agents autant que par des humains : le schéma est la contrainte de génération, pas la documentation.",
+  "contrats": [
+    {
+      "nom": "FormDef",
+      "version": "1.0",
+      "schema": "https://nic01asfr.github.io/Widgets-Grist/schemas/formdef-1.0.schema.json",
+      "porte": "La définition d'un formulaire : champs typés Grist, conditions d'affichage, cascades de références, filtres dynamiques.",
+      "produit_par": [
+        "grist_forms (builder)",
+        "qgis2grist (depuis une couche QField)"
+      ],
+      "lu_par": [
+        "grist_forms (runtime)"
+      ]
+    },
+    {
+      "nom": "Scene Manifest",
+      "version": "0.2.2",
+      "schema": "https://nic01asfr.github.io/Widgets-Grist/schemas/scene-manifest-0.2.2.schema.json",
+      "porte": "La définition d’une scène cartographique : couches, symbolisation déclarative, contrôles, récit rejouable.",
+      "produit_par": [
+        "qgis2grist"
+      ],
+      "lu_par": [
+        "Atlas"
+      ]
+    }
+  ],
+  "note": "Chaque adresse porte sa version : ciblez une version précise plutôt que « la dernière », sinon un contenu valide cesse de l'être sans que rien ne vous en avertisse."
+}

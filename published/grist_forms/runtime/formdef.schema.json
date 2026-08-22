@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://widgets-grist.local/grist_forms/formdef.schema.json",
+  "$id": "https://nic01asfr.github.io/Widgets-Grist/schemas/formdef-1.0.schema.json",
   "title": "FormDef",
   "description": "Contrat canonique formulaires Grist (Form Builder)",
   "type": "object",
@@ -44,10 +44,18 @@
       "description": "Logo / images Accueil et Fin",
       "additionalProperties": false,
       "properties": {
-        "logoUrl": { "type": "string" },
-        "logoAlt": { "type": "string" },
-        "successImageUrl": { "type": "string" },
-        "successImageAlt": { "type": "string" }
+        "logoUrl": {
+          "type": "string"
+        },
+        "logoAlt": {
+          "type": "string"
+        },
+        "successImageUrl": {
+          "type": "string"
+        },
+        "successImageAlt": {
+          "type": "string"
+        }
       }
     },
     "audience": {
@@ -55,10 +63,22 @@
       "description": "Ciblage personne/groupe via table existante du document (optionnel)",
       "additionalProperties": false,
       "properties": {
-        "mode": { "type": "string", "enum": ["none", "bind"] },
-        "tableId": { "type": "string" },
-        "emailCol": { "type": "string" },
-        "groupCol": { "type": "string" },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "bind"
+          ]
+        },
+        "tableId": {
+          "type": "string"
+        },
+        "emailCol": {
+          "type": "string"
+        },
+        "groupCol": {
+          "type": "string"
+        },
         "probe": {
           "type": "boolean",
           "description": "Reconnaître la personne connectée via formule user.Email (trigger à la création de ligne)"
@@ -71,7 +91,10 @@
     },
     "composeMode": {
       "type": "string",
-      "enum": ["bind", "ensureSchema"],
+      "enum": [
+        "bind",
+        "ensureSchema"
+      ],
       "description": "Mode de composition : colonnes existantes ou création/alignement du schéma"
     },
     "sections": {
@@ -95,7 +118,11 @@
   "definitions": {
     "section": {
       "type": "object",
-      "required": ["id", "label", "fields"],
+      "required": [
+        "id",
+        "label",
+        "fields"
+      ],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -109,15 +136,23 @@
         "gate": {
           "description": "Raccourci Bool (colId) ; équivalent condition field==true. Prefer section.condition.",
           "oneOf": [
-            { "type": "null" },
-            { "type": "string" }
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
           ]
         },
         "condition": {
           "description": "Condition d'affichage de l'étape (chemins) — règle simple ou AND/OU",
           "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/definitions/condition" }
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/condition"
+            }
           ]
         },
         "fields": {
@@ -131,7 +166,12 @@
     },
     "field": {
       "type": "object",
-      "required": ["colId", "label", "type", "widget"],
+      "required": [
+        "colId",
+        "label",
+        "type",
+        "widget"
+      ],
       "additionalProperties": false,
       "properties": {
         "colId": {
@@ -162,36 +202,56 @@
         "condition": {
           "description": "Condition d'affichage { field, operator, value }",
           "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/definitions/condition" }
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/condition"
+            }
           ]
         },
         "cascade": {
           "description": "Cascade Ref→Ref { parentField, parentRefCol }",
           "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/definitions/cascade" }
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/cascade"
+            }
           ]
         },
         "dynamicFilter": {
           "description": "Filtre dynamique { parentField, filterColumn }",
           "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/definitions/dynamicFilter" }
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/dynamicFilter"
+            }
           ]
         },
         "profile": {
           "description": "Profil survey (likert5, rank_place, polarity, etc.)",
           "oneOf": [
-            { "type": "null" },
-            { "type": "string" }
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
           ]
         },
         "theme": {
           "description": "Thème survey optionnel",
           "oneOf": [
-            { "type": "null" },
-            { "type": "string" }
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
           ]
         },
         "polarity": {
@@ -205,26 +265,50 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "field": { "type": "string" },
-        "path": { "type": "string" },
-        "source": { "type": "string", "enum": ["field", "context", "audience"] },
-        "operator": { "type": "string" },
+        "field": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "field",
+            "context",
+            "audience"
+          ]
+        },
+        "operator": {
+          "type": "string"
+        },
         "value": {},
         "bind": {
           "type": "object",
           "additionalProperties": true,
           "description": "Audience : tableId, emailCol, groupCol, groups[]"
         },
-        "op": { "type": "string", "enum": ["and", "or"] },
+        "op": {
+          "type": "string",
+          "enum": [
+            "and",
+            "or"
+          ]
+        },
         "rules": {
           "type": "array",
-          "items": { "$ref": "#/definitions/condition" }
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
         }
       }
     },
     "cascade": {
       "type": "object",
-      "required": ["parentField", "parentRefCol"],
+      "required": [
+        "parentField",
+        "parentRefCol"
+      ],
       "additionalProperties": false,
       "properties": {
         "parentField": {
@@ -239,7 +323,10 @@
     },
     "dynamicFilter": {
       "type": "object",
-      "required": ["parentField", "filterColumn"],
+      "required": [
+        "parentField",
+        "filterColumn"
+      ],
       "additionalProperties": false,
       "properties": {
         "parentField": {
