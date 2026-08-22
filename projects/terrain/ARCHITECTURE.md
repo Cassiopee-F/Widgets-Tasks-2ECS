@@ -291,7 +291,7 @@ Ce que Terrain aura à reprendre, et qui est déjà dessiné :
 | **app** (voix) | Visite → Audio → Texte → Validation | quatre étapes numérotées, dictée, photo, badge « Mode démo », « Continuer » désactivé tant que la connexion n'est pas testée |
 | **app-video** (vision) | plein écran caméra | badges FPS · GPS · Démo, bouton **Détecter**, bascule de caméra, réglages. Le modèle se charge et s'annonce prêt. |
 | **app-ml-lite** | 📷 Capturer → 🧠 Entraîner → ▶ Utiliser | classes par défaut **`fissure` / `Sain`**, compteur d'exemples par classe, « + Classe » |
-| **app-ml-pro** | 📷 Capturer → 📊 Dataset → 🧠 Modèles | **annotation par rectangles** — « dessiner un rectangle pour annoter ; appuyer sans dessiner = image entière » |
+| **app-ml-pro** | 📷 Capturer → 📊 Dataset → 🧠 Modèles | **annotation par rectangles** puis `exportCOCO()`. Il n'entraîne pas : il constitue un jeu de données et réimporte un modèle entraîné ailleurs. |
 
 **Ce que `ml-lite` et `ml-pro` sont pour Terrain** : non pas des applications,
 mais les **outils qui entraînent et spécialisent les modèles servant à
@@ -553,8 +553,9 @@ le référentiel.
 
 ## Comment on bâtit : trois temps, deux lieux
 
-`ml-lite` et `ml-pro` sont des **démonstrateurs**. L'entraînement sur l'appareil
-fonctionne — mesuré : 16 exemples, 535 ms, 4 bonnes réponses sur 4 — mais un
+`ml-lite` et `ml-pro` sont des **démonstrateurs**, et ils ne font pas la même
+chose : `ml-lite` entraîne sur l'appareil, `ml-pro` annote et exporte.
+L'entraînement sur l'appareil fonctionne — mesuré : 16 exemples, 535 ms, 4 bonnes réponses sur 4 — mais un
 modèle *réellement valable* demande un jeu de données autrement plus conséquent.
 L'entraînement sérieux se fera donc ailleurs, sur des données accumulées.
 
@@ -633,6 +634,32 @@ plus immédiat au plus sérieux :
 | **Amorçage** | sur l'appareil (`ml-lite`) | démarrer sans rien, éprouver une idée sur place | quelques dizaines d'exemples — imparfait, immédiat |
 | **Recette** | poste, Colab, SSP Cloud | le régime nominal | un vrai jeu de données, reproductible |
 | **Service** | une organisation qui enveloppe la recette | passage à l'échelle | Terrain sait déjà en parler (`exécution: service`) |
+
+**Bonne nouvelle vérifiée le 22/08 : `ml-pro` était déjà conçu ainsi.** Contrairement
+à ce que son titre laisse croire, **il n'entraîne pas** — zéro `.fit(` dans son
+code. Il **annote et exporte** :
+
+- annotation par rectangles, classes définies par l'utilisateur ;
+- **`exportCOCO()`** — un vrai COCO JSON (`images`, `annotations`, `categories`),
+  le format standard de la détection d'objets ;
+- `importModel()`, `loadPresetModel()`, `activateModel()` — le retour du modèle
+  entraîné ailleurs.
+
+C'est exactement la chaîne décrite ci-dessus : annoter → exporter au standard →
+entraîner ailleurs → réimporter. L'intention était juste dès l'origine.
+
+**Et le maillon manquant est nommé dans le code** :
+
+```js
+async function syncToGrist() {
+  toast('Sync Grist non implémenté (à venir)');
+}
+```
+
+Le corpus reste en IndexedDB, sur l'appareil. Il ne remonte pas dans le document
+— donc il n'est ni partagé, ni sauvegardé, ni exploitable par l'équipe. **C'est
+le trou principal, et il est petit.** Le format est déjà bon, l'interface déjà
+faite ; il manque l'écriture vers Grist.
 
 **Ce que le projet doit livrer, c'est le deuxième niveau** — et il tient en deux
 choses :
