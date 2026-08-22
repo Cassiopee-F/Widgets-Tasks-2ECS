@@ -1010,6 +1010,38 @@ Rien de tout cela ne demande une interface de configuration propre à Terrain. L
 configuration se fait au bureau, avec les outils qui existent — c'est exactement
 ce qu'on voulait.
 
+### Form Builder s'aligne — vérifié à l'écran le 22/08
+
+Deux interfaces à ne pas confondre : **configurer** un formulaire, qui se fait au
+bureau, et **le remplir** sur le terrain, qui demande l'application. Seule la
+seconde est à construire.
+
+Pour la première, Form Builder couvre déjà l'essentiel. Par question : libellé,
+**treize types** — dont `Fichier(s)` et `Référence` —, requis, options,
+placeholder, condition d'affichage avec opérateurs et combinaison ET/OU. Plus les
+étapes, leurs propres conditions, l'accueil, la page de fin, le branding, et la
+table cible avec création automatique des colonnes.
+
+**Et il porte déjà un panneau « Technique » repliable par question.** C'est
+l'emplacement naturel des sources d'entrée : le réglage avancé existe comme
+notion, il suffit d'y ajouter une ligne.
+
+    ▸ Technique
+        Source d'entrée : [aucune ▾] [voix] [photo] [vision : fissure-v3] …
+
+**Trois précautions**, parce qu'on toucherait à un widget publié :
+
+- **L'extension doit être invisible pour qui n'en a pas besoin.** Un formulaire
+  de satisfaction n'a que faire d'une source d'entrée ; le champ reste vide et
+  rien ne change. C'est aussi ce qui permet de la livrer sans rien casser.
+- **Le vocabulaire du builder est celui de l'utilisateur, pas celui de Grist** —
+  « Paragraphe », « Échelle 1–5 », « Oui / Non ». Les sources doivent suivre :
+  « Dicter », « Photographier », « Reconnaître », pas `stt`, `capture`,
+  `inference`.
+- **La section répétable manque toujours.** « Ajouter une section » crée une
+  *étape*, pas une répétition — confirmé à l'écran. C'est bien une extension à
+  porter, pas un réglage à découvrir.
+
 ### Ce qu'il faut anticiper dans la structure, même sans le faire
 
 Quatre choses qui coûtent cher si on les ajoute tard :
