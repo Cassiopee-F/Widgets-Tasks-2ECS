@@ -617,6 +617,49 @@ contournement existe et est éprouvé — encore faut-il l'avoir prévu.
 - **L'entraînement reste un service**, au sens déjà tranché : une adresse, une
   clé, un modèle. Terrain ne l'héberge pas.
 
+### Un modèle se décrit, il ne se code pas en dur
+
+Même exigence que pour les services : Terrain ne doit connaître **ni TensorFlow.js,
+ni COCO-SSD, ni tel fournisseur** en particulier. Il doit savoir exécuter *ce qu'on
+lui décrit*. Le catalogue `ML_Models` devient donc un descripteur, et non une
+liste d'URL.
+
+Cinq attributs suffisent à rendre un modèle utilisable sans le connaître :
+
+| Attribut | Ce qu'il dit | Valeurs |
+|---|---|---|
+| **exécution** | où et comment il tourne | `tfjs-layers` · `tfjs-graph` · `onnx` · `mediapipe` · `service` (API distante) |
+| **tâche** | ce qu'il sait faire | classification · détection · segmentation · transcription · extraction structurée |
+| **entrée** | ce qu'il consomme | image (taille, normalisation) · audio · texte |
+| **sortie** | la forme du résultat | classe + confiance · boîtes + classes · masque · texte · JSON typé |
+| **rattachement** | à quels champs il peut se brancher | les types FormDef qu'il sait remplir |
+
+Le dernier attribut est la charnière : c'est lui qui relie le catalogue à
+l'extension « sources d'entrée » d'un champ.
+
+**La correspondance tâche → champ découle du format de sortie**, elle ne
+s'invente pas :
+
+| Tâche | Sortie | Remplit un champ |
+|---|---|---|
+| classification | une classe, une confiance | `Choice`, `Text` |
+| détection | N objets localisés | une **liste** — donc une section répétable |
+| segmentation | un masque | une surface (`Numeric`), une géométrie |
+| transcription | du texte | `Text` |
+| extraction structurée | du JSON typé | **plusieurs champs à la fois** |
+
+**Conséquence qui unifie tout** : un service distant et un modèle embarqué ne
+sont pas deux mécanismes, mais **le même descripteur avec une valeur d'exécution
+différente**. Le LLM qui structure une dictée est un « modèle » au même titre
+qu'un classifieur de fissures — il a simplement `exécution: service` et
+`sortie: JSON typé`. Terrain n'a donc pas quatre intégrations à écrire, mais un
+seul mécanisme et des adaptateurs d'exécution.
+
+Ce qui laisse une frontière nette : **ajouter un moteur d'exécution est un
+travail de développement** (`onnx` demande son runtime) ; **ajouter un modèle est
+une ligne dans une table**. La seconde opération doit rester à la portée de
+quelqu'un qui ne programme pas.
+
 ### L'agencement, pour que ce soit simple
 
 L'exigence est claire : **utilisable par quelqu'un qui n'a rien configuré**. Elle
