@@ -617,6 +617,44 @@ contournement existe et est éprouvé — encore faut-il l'avoir prévu.
 - **L'entraînement reste un service**, au sens déjà tranché : une adresse, une
   clé, un modèle. Terrain ne l'héberge pas.
 
+### Qui entraîne ? Trois niveaux, un seul aboutissement
+
+Terrain **ne fournit pas de service d'entraînement**, et ne doit pas en fournir :
+il faudrait l'héberger, le maintenir, le sécuriser et le financer. C'est la même
+règle que pour les services d'extraction — on parle un standard, on n'exploite
+pas d'infrastructure.
+
+Mais ne rien fournir laisserait le corpus inexploité. Ce qui manque n'est pas un
+service : c'est **le chemin entre le corpus et le catalogue**. Trois niveaux, du
+plus immédiat au plus sérieux :
+
+| Niveau | Où | Pour quoi | Ce que ça vaut |
+|---|---|---|---|
+| **Amorçage** | sur l'appareil (`ml-lite`) | démarrer sans rien, éprouver une idée sur place | quelques dizaines d'exemples — imparfait, immédiat |
+| **Recette** | poste, Colab, SSP Cloud | le régime nominal | un vrai jeu de données, reproductible |
+| **Service** | une organisation qui enveloppe la recette | passage à l'échelle | Terrain sait déjà en parler (`exécution: service`) |
+
+**Ce que le projet doit livrer, c'est le deuxième niveau** — et il tient en deux
+choses :
+
+1. **Un export du corpus dans un format standard** (selon la tâche :
+   classification, détection), jamais un format maison. Même règle que pour les
+   contrats : si l'export demande un convertisseur pour entrer dans un outil
+   d'entraînement courant, il est raté.
+2. **Une recette d'entraînement de référence** — un script ou un carnet qui prend
+   l'export et rend un modèle. Exécutable là où l'utilisateur veut, sans rien
+   demander au projet.
+
+**Le point à ne pas manquer : ce que la recette produit n'est pas un fichier de
+poids, c'est un modèle ET son descripteur.** Des poids seuls, personne ne sait
+les brancher. La recette doit rendre une ligne prête pour `ML_Models` — exécution,
+tâche, entrée, sortie, rattachement — sans quoi il reste un travail
+d'interprétation à chaque fois, et c'est exactement ce qu'on cherche à supprimer.
+
+Les trois niveaux aboutissent donc au **même endroit** et sous la **même forme** :
+une entrée de catalogue. Terrain ne sait pas — et n'a pas à savoir — lequel des
+trois a produit le modèle qu'il exécute.
+
 ### Un modèle se décrit, il ne se code pas en dur
 
 Même exigence que pour les services : Terrain ne doit connaître **ni TensorFlow.js,
