@@ -829,6 +829,94 @@ Le second menu suit l'opt-in de TaskFlow : absent tant que personne n'en a besoi
 
 ---
 
+## Le socle d'abord, les briques ensuite
+
+### Le socle — sans lui, rien ne marche
+
+Sept pièces, et pas une de plus. Aucune n'est optionnelle, aucune ne suppose de
+capteur, de service ou de modèle.
+
+| | Pièce | Pourquoi elle est au socle |
+|---|---|---|
+| 1 | **Connexion** — instance, document, clé, mémorisées | une fois, jamais redemandée |
+| 2 | **Client Grist avec file** — idempotence par clé métier, deux queues ordonnées, verrou, quatre déclencheurs | copié de SURFAC²E ; c'est le seul vrai savoir-faire |
+| 3 | **Lecture d'un FormDef** depuis le document | ce que Terrain doit faire remplir |
+| 4 | **Moteur de rendu autonome** | sans DSFR ni API Grist : la leçon écrite par SURFAC²E |
+| 5 | **Écriture des réponses** dans la table | par la file, donc hors ligne |
+| 6 | **L'hôte** — registre déclaratif, `monter`/`demonter`, `horsLigne` déclaré | ce qui accueillera tout le reste |
+| 7 | **Service worker** — document réseau d'abord, reste en cache | sans quoi aucune correction n'atteint l'appareil |
+
+**Avec cela seul, Terrain est déjà utile** : remplir un formulaire sur place,
+sans réseau, et retrouver ses saisies au bureau. C'est le premier livrable, et il
+se suffit — pas de photo, pas de voix, pas de modèle, pas de carte.
+
+### Les briques — chacune se rattache sans que le socle bouge
+
+| Brique | Ce qu'elle apporte | Besoins |
+|---|---|---|
+| **Capteurs** | position, horodatage | — |
+| **Photo** | image en `Attachments` | caméra · *attention CORS* |
+| **Voix** | dictée transcrite | micro · réseau |
+| **Extraction** | plusieurs champs d'un coup, depuis un texte ou un document | réseau |
+| **Vision** | classe ou détections depuis une image | modèle préchargé |
+| **Annotation** | constitue le corpus | caméra |
+| **Carte** | Atlas monté comme module | données géographiques |
+
+Aucune n'est nécessaire aux autres. On peut n'en livrer aucune, ou une seule.
+
+### L'articulation — comment une brique s'attache
+
+**Par déclaration côté champ, jamais par du code côté application.** C'est
+l'extension « sources d'entrée » qui porte le lien :
+
+    champ « nature du désordre »  (type Choice)
+      └── source : vision, modèle « fissure-v3 »
+
+L'hôte lit le FormDef, et pour chaque champ qui déclare une source, charge la
+brique correspondante — import dynamique, comme les modules de SURFAC²E.
+
+**Le contrat d'une brique d'entrée**, minuscule et symétrique de celui des
+modules :
+
+```js
+{
+  id: 'vision',
+  besoins: ['camera'],          // permissions et ressources requises
+  produit: ['Choice', 'Text'],  // les types de champ qu'elle sait remplir
+  horsLigne: true,              // utilisable sans réseau ?
+  async produire(champ, contexte) {
+    return { valeur, confiance, origine };  // jamais écrit directement
+  }
+}
+```
+
+Trois règles qui découlent du reste et ne se négocient pas :
+
+- **Elle propose, elle n'écrit pas.** La valeur retournée passe par l'arbitrage
+  humain avant d'atteindre la table. C'est aussi ce qui permet de conserver
+  l'origine, donc de constituer le corpus.
+- **Elle est facultative en toutes circonstances.** Brique absente, permission
+  refusée, service injoignable, modèle non préchargé : le champ reste saisissable
+  au clavier. L'hôte n'a pas à le savoir à l'avance — il essaie, et retombe.
+- **`produit` est le seul contrôle de compatibilité.** Une brique ne se rattache
+  qu'à un champ dont elle sait produire le type. C'est ce qui empêche de brancher
+  un détecteur sur une date.
+
+### L'ordre dans lequel construire
+
+1. **Le socle** — un formulaire, une file, une table. Utile seul.
+2. **Capteurs, puis photo** — sans service ni modèle ; la photo tôt, parce
+   qu'elle porte le risque CORS et qu'il vaut mieux le lever avant tout le reste.
+3. **Voix et extraction** — les deux passent par un service compatible OpenAI,
+   donc un seul mécanisme pour les deux.
+4. **Vision et annotation** — ensemble, car l'une nourrit l'autre.
+5. **Carte** — en dernier, et seulement si un usage la réclame.
+
+Chaque étape est livrable et vérifiable seule. Aucune ne remet en cause la
+précédente : c'est précisément ce qu'un socle est censé garantir.
+
+---
+
 ## Ce qui reste à décider
 
 1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
