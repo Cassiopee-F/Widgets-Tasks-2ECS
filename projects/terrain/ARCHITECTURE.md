@@ -1,8 +1,12 @@
 # Terrain — note d'architecture
 
-> **État : cadrage. Aucun code écrit.** Cette note fixe ce qui a été établi le
-> 21 août 2026, en explorant trois dépôts existants. Elle sert à reprendre à
-> froid sans refaire le chemin.
+> **État : cadrage. Aucun code de Terrain n'est écrit.** Cette note fixe ce qui a
+> été établi les 21 et 22 août 2026, en explorant trois dépôts existants. Elle
+> sert à reprendre à froid sans refaire le chemin.
+>
+> Un seul chantier en est déjà sorti, parce qu'il ne dépendait d'aucune décision
+> et profite à tout l'écosystème : **les contrats sont désormais publiés et
+> atteignables** (voir plus bas).
 
 ---
 
@@ -103,8 +107,8 @@ Terrain est **consommateur** de contrats existants, jamais auteur de formats.
 
 | Contrat | Où il vit | Ce qu'il porte |
 |---|---|---|
-| **FormDef 1.0** | `projects/grist_forms/runtime/formdef.schema.json` | la définition d'un formulaire |
-| **Scene Manifest** | partagé qgis2grist ↔ Atlas | la restitution cartographique |
+| **FormDef 1.0** | `published/schemas/formdef-1.0.schema.json` | la définition d'un formulaire |
+| **Scene Manifest 0.2.2** | `published/schemas/scene-manifest-0.2.2.schema.json` | la restitution cartographique |
 
 **Quand le contrat manque quelque chose, on étend le contrat — on ne contourne
 pas dans Terrain.** Une extension s'accompagne d'un incrément de version
@@ -136,29 +140,29 @@ modèle ne puisse produire que du valide. Le pattern est déjà appliqué à
 l'intérieur de SURFAC²E, où `champs_attendus` devient un JSON Schema via
 `extraction.versSchema()` pour contraindre la réponse du service de lecture.
 
-**Constat au 21/08/2026 : il n'est pas appliqué aux contrats eux-mêmes.**
-
-| | État |
-|---|---|
-| `$id` de `formdef.schema.json` | `https://widgets-grist.local/…` — domaine fictif, non résolvable |
-| schéma servi publiquement | 404 sur les emplacements plausibles |
-| Scene Manifest | Markdown v0.2.2 + implémentation JS, **aucun JSON Schema** |
-
-Les deux contrats sont donc respectés par des humains qui lisent la doc, et
-inatteignables par un agent : une prose Markdown ne se met pas dans un
+**Constaté le 21/08/2026, corrigé le 22/08.** Les deux contrats étaient
+respectés par des humains lisant la documentation et **inatteignables par un
+agent** : l'`$id` de FormDef pointait sur `widgets-grist.local` — un domaine
+fictif —, aucun schéma n'était servi (404), et le Scene Manifest n'avait aucun
+JSON Schema, seulement une prose et du code. Or une prose ne se met pas dans un
 `response_format`, et un `$id` qui pointe dans le vide interdit toute résolution
 de référence.
 
-Trois gestes, peu coûteux puisqu'il s'agit de fichiers statiques et que
-`published/` est déjà un site :
+**C'est fait.** `published/schemas/` sert désormais les deux, à des adresses
+réelles et **versionnées**, vérifiées en ligne :
 
-1. donner à FormDef un `$id` réel, et le servir ;
-2. écrire le JSON Schema du Scene Manifest, à partir de
-   `projects/qgis2grist/docs/SCENE-MANIFEST-v0.2.2.md` et de
-   `projects/qgis2grist/lib/scene-manifest.js`, qui en portent déjà la
-   définition ;
-3. les publier à une adresse **stable et versionnée**, pour qu'un agent puisse
-   cibler une version précise plutôt que « la dernière ».
+| Contrat | Adresse |
+|---|---|
+| index | `…/Widgets-Grist/schemas/index.json` |
+| FormDef 1.0 | `…/schemas/formdef-1.0.schema.json` |
+| Scene Manifest 0.2.2 | `…/schemas/scene-manifest-0.2.2.schema.json` |
+
+Le schéma du Scene Manifest a été **dérivé de la documentation v0.2.2 et des clés
+réellement observées dans les fixtures** — il décrit ce qui est émis, non un
+idéal. Quatre tests le tiennent (`scripts/schemas.test.js`), dont un qui le
+confronte aux scènes réellement produites et un qui vérifie qu'il **refuse** ce
+qui n'est pas une scène — sans quoi un schéma tout permissif passerait le premier
+sans rien garantir.
 
 Conséquence directe pour Terrain : les deux extensions à porter au contrat
 (section répétable, sources d'entrée) doivent être écrites pour être
@@ -919,32 +923,61 @@ précédente : c'est précisément ce qu'un socle est censé garantir.
 
 ## Ce qui reste à décider
 
-1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
-   pas perturbé. Il sert de référence ; son code se copie et s'adapte, il ne se
-   partage pas. Ne pas rouvrir cette question sans décision explicite.
-2. ~~Le niveau « pro » de la reconnaissance.~~ **Tranché** : il n'y a **pas de
-   backend à construire**. Le « service » est une compatibilité, pas une
-   dépendance — voir la section précédente.
-3. ~~Où le modèle entraîné s'applique.~~ **Tranché** : là où le **formulaire le
-   déclare**. Le modèle est un attribut du champ, pas un mode de l'application —
-   voir « Le modèle appartient au formulaire » ci-dessus.
-4. **Le coût du modèle déclaratif** — *fortement réduit*. Déclaratif ne veut pas
-   dire « écrire du JSON » : `grist_forms/builder.html` (162 Ko) offre un
-   **wizard Créer / Brancher, des templates**, des conditions avec opérateurs,
-   les cascades Ref→Ref, la gestion d'audience et la publication intra-document.
-   La configuration se fait donc à l'interface, pas à la main.
-   Ce qui reste ouvert est plus étroit : **le parcours de démarrage bout en
-   bout**, d'un document vide à une première saisie sur le terrain. Et la piste
-   de la génération assistée — « décris ton métier, je fabrique le
-   formulaire » — reste valable comme raccourci, pas comme substitut.
+### Tranché — ne pas rouvrir sans décision explicite
 
-6. ~~Quel contrat de formulaire fait foi ?~~ **Tranché : FormDef.** Voir « Trois
-   contrats, pas deux » ci-dessus.
-5. **Le sort des démonstrateurs.** Un démonstrateur qui a fait sa preuve n'a pas
-   besoin de devenir un produit : il doit céder sa brique et disparaître.
-   Chercher à rendre chacun pertinent en tant qu'application produirait quatre
-   applications moyennes qui se disputent le même téléphone — c'est déjà ce qui
-   arrive.
+| | Question | Réponse |
+|---|---|---|
+| 1 | Le rapport à SURFAC²E | Il reste **indépendant** et n'est pas perturbé. Référence à copier, pas socle à partager. |
+| 2 | Le niveau « pro » de la reconnaissance | **Pas de backend.** Le service est une compatibilité — une adresse, une clé, un modèle. |
+| 3 | Où le modèle entraîné s'applique | **Là où le formulaire le déclare.** Attribut du champ, pas mode de l'application. |
+| 4 | Quel contrat de formulaire fait foi | **FormDef.** Survey Manifest est une projection en sortie. |
+| 5 | Terrain est-il un outil géographique | **Non.** Il part de n'importe quel formulaire Grist ; Atlas est une sortie optionnelle. |
+
+### Réduit, mais pas clos
+
+**Le coût du modèle déclaratif.** Déclaratif ne veut pas dire « écrire du JSON » :
+`grist_forms/builder.html` (162 Ko) offre un wizard Créer / Brancher, des
+templates, des conditions, les cascades Ref→Ref et l'audience. La configuration
+se fait à l'interface.
+
+Ce qui reste ouvert est plus étroit : **le parcours de démarrage bout en bout**,
+d'un document vide à une première saisie. La piste de la génération assistée —
+« décris ton métier, je fabrique le formulaire » — reste valable comme raccourci,
+pas comme substitut.
+
+### Ouvert
+
+**Le sort des démonstrateurs.** Un démonstrateur qui a fait sa preuve cède sa
+brique et disparaît — cela, c'est acquis. Reste le concret : que deviennent les
+URL de `Grist-AppStore`, son catalogue, et les monolithes `grist-widget*/` que les
+widgets migrés remplacent ? Redirections, archivage, ou le dépôt garde ses
+adresses ? Dépend d'une inconnue : **des PWA sont-elles installées quelque part ?**
+
+**Le format d'export du corpus.** COCO couvre la détection, et `ml-pro` le produit
+déjà. Rien n'est décidé pour la **classification** — dossiers par classe, CSV,
+autre ? Même règle que pour les contrats : un standard, jamais un format maison.
+
+**Où Terrain vit, précisément.** Le modèle Atlas suggère `projects/terrain/` pour
+la source et `packages/terrain-app/` pour l'empaquetage, avec les widgets dans
+`published/`. À confirmer avant la première ligne, parce que cela conditionne les
+scripts de promotion.
+
+**La convention de nommage des tables.** Le dépôt a une règle — « les tables d'un
+widget lui appartiennent, préfixées à son nom, et créées seulement si besoin ».
+Reste à fixer le préfixe et la liste : formulaires, corpus, catalogue de modèles,
+services. C'est ce qui décidera de l'empreinte de Terrain sur un document.
+
+**Le devenir des deux widgets déjà migrés.** `terrain-observations` et
+`terrain-detections` sont au sas, marqués « à refondre ». Refondus comment —
+réécrits, renommés, fusionnés en une seule vue de gestion ? Leur `prive: true`
+tient jusque-là.
+
+### Ce n'est pas une décision, c'est une vérification — et elle est prioritaire
+
+**Le CORS des pièces jointes.** `grist_forms` a buté dessus et l'a consigné ;
+Terrain enverra des photos. Si la voie PWA est fermée, seule l'application
+empaquetée reste — ce qui change la nature du livrable. **À lever avant d'écrire
+quoi que ce soit** : une demi-heure de test contre une vraie instance.
 
 ---
 
@@ -952,18 +985,31 @@ précédente : c'est précisément ce qu'un socle est censé garantir.
 
 Pour ne pas transmettre des suppositions comme des faits.
 
-**Vérifié le 21/08/2026, dans un navigateur ou par lecture du code :**
-l'entraînement embarqué (535 ms, 4/4) · les caches qui s'effacent mutuellement ·
-l'absence des scripts au cache de l'application voix · l'absence de référence au
-modèle entraîné dans les deux applications de saisie · l'absence de section
-répétable et de sources d'entrée dans `formdef.schema.json` · le registre de
-modules et le contrat `monter`/`demonter` de SURFAC²E.
+**Vérifié le 21/08, dans un navigateur ou par lecture du code :**
+l'entraînement embarqué (535 ms, 4/4 sur images jamais vues) · les caches qui
+s'effacent mutuellement · l'absence des scripts au cache de l'application voix ·
+l'absence de référence au modèle entraîné dans les deux applications de saisie ·
+l'absence de section répétable et de sources d'entrée dans `formdef.schema.json` ·
+le registre de modules et le contrat `monter`/`demonter` de SURFAC²E.
 
-**Non vérifié :** le comportement réel sur un téléphone (tout a été testé en
-émulation) · la transcription contre un vrai service, avec une vraie clé · le
-comportement de la file de SURFAC²E sous coupure réelle · si des PWA
-Grist-AppStore sont installées quelque part, ce qui déciderait du coût d'un
-changement d'URL.
+**Vérifié le 22/08 :** `ml-pro` n'entraîne pas — zéro `.fit(` — il annote et
+appelle `exportCOCO()` · `syncToGrist()` affiche « non implémenté » ·
+`syncModelsFromGrist()` existe mais n'est jamais appelé · **Atlas n'a aucune
+capacité de terrain** : zéro service worker, zéro géolocalisation, zéro capteur,
+zéro IndexedDB · `builder.html` fait 162 Ko et porte un wizard, des templates,
+des conditions, les cascades et l'audience · les deux schémas de
+`grist_forms/runtime` ne sont pas concurrents (`formDefToSurveyManifest` et son
+inverse) · les schémas publiés répondent 200 et leurs `$id` **se résolvent**.
+
+**Non vérifié, et qui compte :**
+
+| Point | Pourquoi il compte |
+|---|---|
+| **le CORS des pièces jointes** | documenté par `grist_forms`, jamais testé par nous. Peut invalider la voie PWA. **À lever en premier.** |
+| le comportement réel sur un téléphone | tout a été éprouvé en émulation |
+| la transcription contre un vrai service | avec une vraie clé, sur du vrai audio |
+| la file de SURFAC²E sous coupure réelle | on copie du code qu'on n'a pas vu tomber |
+| des PWA Grist-AppStore installées ? | décide du coût d'un changement d'URL |
 
 **Deux erreurs commises et corrigées pendant l'exploration**, à ne pas
 reproduire : avoir conclu que le chargement de MobileNet était cassé sur la foi
