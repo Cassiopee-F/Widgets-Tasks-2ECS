@@ -587,6 +587,25 @@ de données.** Un corpus d'exemples annotés, dans des tables Grist — photos e
 `Attachments`, étiquettes validées, position, date, auteur — exportable vers
 n'importe quel outil d'entraînement. Le modèle vient après, et d'ailleurs.
 
+### Un piège déjà rencontré : les photos et le CORS
+
+`grist_forms` a buté dessus et l'a consigné : *« `getAccessToken` OK ; `POST
+…/attachments` depuis une vue custom hors origine → CORS. Alternative :
+formulaire natif Grist sur colonne `Attachments`. »*
+
+Terrain envoie des photos — c'est le cœur de son usage. Il rencontrera donc la
+même barrière, **sauf par deux voies** :
+
+- **l'application empaquetée**, où `CapacitorHttp` émet hors du moteur web et
+  ignore le CORS. C'est déjà ce qui rend l'application Atlas nécessaire, pour la
+  même raison : `grist.numerique.gouv.fr` refuse l'en-tête `Authorization` au
+  préflight ;
+- **la PWA servie depuis la même origine** que l'instance, cas rare.
+
+À vérifier tôt : c'est le genre de mur qui ne se voit qu'au premier envoi réel,
+et qui condamnerait une architecture entière si on le découvrait tard. Le
+contournement existe et est éprouvé — encore faut-il l'avoir prévu.
+
 ### Ce que cela demande
 
 - **Conserver l'arbitrage, pas seulement son résultat.** Si l'agent corrige une
@@ -632,12 +651,15 @@ Le second menu suit l'opt-in de TaskFlow : absent tant que personne n'en a besoi
 3. ~~Où le modèle entraîné s'applique.~~ **Tranché** : là où le **formulaire le
    déclare**. Le modèle est un attribut du champ, pas un mode de l'application —
    voir « Le modèle appartient au formulaire » ci-dessus.
-4. **Le coût du modèle déclaratif.** Il déplace la complexité vers le bureau au
-   lieu de la supprimer : quelqu'un doit tenir les tables de configuration. Gain
-   net pour une équipe qui a un référent Grist ; pour un agent seul, il faut des
-   valeurs par défaut qui marchent sans rien configurer. Piste, cohérente avec
-   l'intention sur les agents : **faire générer la configuration** — « décris ton
-   métier, je fabrique le formulaire » plutôt qu'un jeu de tables à remplir.
+4. **Le coût du modèle déclaratif** — *fortement réduit*. Déclaratif ne veut pas
+   dire « écrire du JSON » : `grist_forms/builder.html` (162 Ko) offre un
+   **wizard Créer / Brancher, des templates**, des conditions avec opérateurs,
+   les cascades Ref→Ref, la gestion d'audience et la publication intra-document.
+   La configuration se fait donc à l'interface, pas à la main.
+   Ce qui reste ouvert est plus étroit : **le parcours de démarrage bout en
+   bout**, d'un document vide à une première saisie sur le terrain. Et la piste
+   de la génération assistée — « décris ton métier, je fabrique le
+   formulaire » — reste valable comme raccourci, pas comme substitut.
 
 6. ~~Quel contrat de formulaire fait foi ?~~ **Tranché : FormDef.** Voir « Trois
    contrats, pas deux » ci-dessus.
