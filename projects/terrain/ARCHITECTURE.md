@@ -906,6 +906,66 @@ Trois règles qui découlent du reste et ne se négocient pas :
   qu'à un champ dont elle sait produire le type. C'est ce qui empêche de brancher
   un détecteur sur une date.
 
+### Les interfaces à prévoir
+
+**Cinq écrans au socle**, et rien de plus :
+
+| Écran | Rôle | Vu combien de fois |
+|---|---|---|
+| **Connexion** | instance, document, clé | une fois, puis jamais |
+| **Que faire ?** | *Saisir* · *Outiller* (opt-in) | à chaque ouverture |
+| **Choisir** | quel formulaire, sur quel objet | avant chaque série |
+| **Formulaire** | le cœur — rendu depuis le FormDef | en permanence |
+| **Après** | c'est enregistré · suivant · terminer | après chaque saisie |
+
+**Deux bandeaux transverses**, présents partout et jamais masquants :
+
+- **l'état** : en ligne / hors ligne, *n* en attente, *n* refusées. Sur le
+  terrain, savoir si son travail est parti est la première question qu'on se pose ;
+- **la lecture seule**, quand les droits du document l'imposent — il pousse le
+  contenu, il ne le recouvre pas.
+
+### Le choix d'interface qui structure tout : la provenance doit se voir
+
+Une valeur proposée par un modèle et une valeur saisie par une personne **ne
+doivent pas se ressembler**. Sans cette distinction visuelle :
+
+- l'agent ne sait plus ce qu'il a vérifié, et valide en bloc — l'arbitrage
+  devient une formalité, ce qui ruine le principe « chaque étape propose, aucune
+  n'impose » ;
+- **le corpus est perdu** : on ne peut plus distinguer une correction d'une
+  saisie ordinaire, or c'est exactement ce qui fait la valeur d'un exemple
+  d'entraînement.
+
+Trois états à distinguer, dès le premier écran de formulaire : **proposé** (par
+une brique, avec sa confiance), **validé** (une personne l'a vu et accepté),
+**saisi** (tapé directement). C'est peu de chose à l'écran, et c'est ce qui rend
+la boucle d'apprentissage possible.
+
+### Ce qu'il faut anticiper dans la structure, même sans le faire
+
+Quatre choses qui coûtent cher si on les ajoute tard :
+
+- **Un champ peut avoir plusieurs sources.** Dicter *ou* photographier *ou*
+  taper : l'interface d'un champ n'est pas « un libellé et une saisie », c'est
+  « un libellé, une saisie, et zéro à plusieurs actions ».
+- **Un formulaire peut avoir des sections répétables** — c'est l'extension à
+  porter au contrat, et c'est ce que produit une détection. Prévoir « ajouter un
+  élément » et « retirer » dès le départ, même si rien ne les déclenche encore.
+- **Tout doit rester utilisable sans aucune brique.** Le clavier partout, en
+  toutes circonstances. Une interface conçue autour du micro devient inutilisable
+  le jour où le micro est refusé.
+- **La saisie est longue et interruptible.** Un relevé se fait debout, sous la
+  pluie, avec un appel entre deux champs. Rien ne doit se perdre parce que
+  l'application est passée en arrière-plan.
+
+### Ce que le terrain impose, et qu'un écran de bureau ignore
+
+Grandes cibles tactiles — on porte des gants. Fort contraste — il y a du soleil.
+Une main suffit — l'autre tient quelque chose. Peu de défilement — on perd le fil
+en marchant. Et une règle qui résume les autres : **rien d'important sous le
+pli**, parce qu'on ne fait pas défiler pour vérifier si son travail est parti.
+
 ### L'ordre dans lequel construire
 
 1. **Le socle** — un formulaire, une file, une table. Utile seul.
