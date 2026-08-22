@@ -656,10 +656,23 @@ async function syncToGrist() {
 }
 ```
 
-Le corpus reste en IndexedDB, sur l'appareil. Il ne remonte pas dans le document
-— donc il n'est ni partagé, ni sauvegardé, ni exploitable par l'équipe. **C'est
-le trou principal, et il est petit.** Le format est déjà bon, l'interface déjà
-faite ; il manque l'écriture vers Grist.
+Le corpus reste en IndexedDB, sur l'appareil : ni partagé, ni sauvegardé, ni
+exploitable par l'équipe — il disparaît avec le cache du navigateur.
+
+**Ce trou ne se comble pas dans `ml-pro` : il dit ce que Terrain doit apporter.**
+On ne rafistole pas les démonstrateurs, on construit **pour et dans Terrain**,
+pour deux raisons :
+
+- brancher correctement l'écriture demanderait d'importer dans `ml-pro` la
+  moitié de Terrain — client Grist, file, idempotence, verrou — soit du travail
+  perdu deux fois, dans un fichier destiné à disparaître ;
+- **un démonstrateur qu'on améliore devient un outil utilisé**, donc impossible à
+  archiver. C'est ainsi qu'on se retrouve avec quatre applications à maintenir.
+
+Ce que `ml-pro` apporte est donc une **preuve et un modèle**, pas une base de
+code : le format de sortie (COCO), l'ergonomie d'annotation, la détection de
+format au chargement. Le module « annoter » de Terrain naît avec le client Grist
+et sa file dès la première ligne.
 
 **Ce que le projet doit livrer, c'est le deuxième niveau** — et il tient en deux
 choses :
