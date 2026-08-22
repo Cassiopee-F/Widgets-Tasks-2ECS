@@ -47,8 +47,17 @@ les capteurs, la lecture d'un document. Le clavier reste le repli universel.
 
 Terrain **consomme** des contrats, il n'en invente pas :
 
-- **FormDef 1.0** — `projects/grist_forms/runtime/formdef.schema.json`
-- **Scene Manifest** — partagé entre qgis2grist et Atlas
+- **FormDef 1.0** — `projects/grist_forms/runtime/formdef.schema.json`. Le
+  contrat qui le concerne **toujours** : c'est de là que vient ce qu'il doit
+  faire remplir.
+- **Scene Manifest** — partagé entre qgis2grist et Atlas. Il ne s'applique que
+  **si** les données produites sont géographiques.
+
+**Terrain n'est pas un outil cartographique** et n'est pas un maillon de la
+chaîne QGIS → qgis2grist → Atlas, qui est spécialisée. Il part de n'importe quel
+formulaire Grist ; la position n'est qu'un attribut parmi d'autres, et quand elle
+manque, rien ne manque. Sa première étape, dans le cas courant, c'est **Form
+Builder**.
 
 Quand le contrat manque quelque chose, **on étend le contrat** avec un incrément
 de version. On ne contourne pas dans Terrain.

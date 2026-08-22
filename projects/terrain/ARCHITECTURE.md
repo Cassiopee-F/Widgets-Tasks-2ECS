@@ -45,6 +45,35 @@ d'un catalogue. C'est ce qui le rend générique — non pas parce qu'il aurait 
 la configuration se tient au bureau, dans le document. Ce qui a un coût, traité
 en question ouverte n° 4.
 
+### Terrain n'est pas un outil géographique
+
+À ne pas confondre avec la chaîne cartographique, qui est **spécialisée** :
+
+    QGIS ──► qgis2grist ──► Grist ──► Atlas          (données géographiques)
+
+**Terrain n'en est pas un maillon.** Il part de *n'importe quel* formulaire
+Grist : un inventaire de matériel, un relevé de compteurs, un audit de fissures
+sur un bâtiment n'ont aucun besoin de carte.
+
+    Form Builder ─────┐
+                      ├──► FormDef ──► Terrain ──► tables Grist ──► widgets bureau
+    qgis2grist ───────┘                                 │
+    (depuis QField)                                     └──► Atlas — SEULEMENT si
+                                                             données géographiques
+
+Trois conséquences à tenir :
+
+- **La première étape de Terrain, c'est Form Builder.** C'est de là que vient un
+  formulaire, dans le cas courant.
+- **`qgis2grist` n'est qu'un producteur de FormDef parmi d'autres** — le cas
+  particulier où le formulaire est déduit d'une couche QField.
+- **Atlas est une sortie optionnelle**, pas le débouché naturel. La position est
+  un attribut parmi d'autres ; quand elle est absente, rien ne manque.
+
+Ce qui vaut aussi pour le Scene Manifest : Terrain le respecte **s'il produit de
+la donnée cartographique**, et ne s'en préoccupe pas sinon. Le contrat qui le
+concerne toujours, c'est FormDef.
+
 ---
 
 ## Le principe : une chaîne, N façons de la remplir
