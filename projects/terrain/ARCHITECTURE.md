@@ -551,6 +551,76 @@ le référentiel.
 
 ---
 
+## Comment on bâtit : trois temps, deux lieux
+
+`ml-lite` et `ml-pro` sont des **démonstrateurs**. L'entraînement sur l'appareil
+fonctionne — mesuré : 16 exemples, 535 ms, 4 bonnes réponses sur 4 — mais un
+modèle *réellement valable* demande un jeu de données autrement plus conséquent.
+L'entraînement sérieux se fera donc ailleurs, sur des données accumulées.
+
+D'où la répartition, qui est la clé de l'architecture :
+
+| Temps | Où | Ce qui s'y passe |
+|---|---|---|
+| **Collecter** | terrain | remplir un formulaire, photographier, corriger une étiquette |
+| **Apprendre** | ailleurs (poste, serveur, SSP Cloud) | entraîner sur le jeu accumulé, publier au catalogue |
+| **Appliquer** | terrain | le modèle du catalogue pré-remplit les champs |
+
+**Terrain collecte et applique. Il n'entraîne pas** — sinon à titre d'amorçage,
+pour démarrer sans rien ou éprouver une idée sur place. C'est un mode, pas le
+régime nominal.
+
+### Le point qui rend tout cela gratuit
+
+**Annoter, c'est saisir.** Quand l'agent corrige « nature = fissure » sur sa
+photo, il produit d'un même geste :
+
+- une **donnée métier** — la ligne qu'on lui demandait ;
+- un **exemple d'entraînement** — la photo et son étiquette validée.
+
+Le jeu de données n'est donc pas un travail supplémentaire : c'est un
+sous-produit de la saisie ordinaire. Personne n'a à « faire de l'annotation » ;
+il suffit que le geste de correction soit conservé.
+
+Conséquence : **le premier livrable de Terrain n'est pas le modèle, c'est le jeu
+de données.** Un corpus d'exemples annotés, dans des tables Grist — photos en
+`Attachments`, étiquettes validées, position, date, auteur — exportable vers
+n'importe quel outil d'entraînement. Le modèle vient après, et d'ailleurs.
+
+### Ce que cela demande
+
+- **Conserver l'arbitrage, pas seulement son résultat.** Si l'agent corrige une
+  proposition, il faut savoir *que* c'était une correction — c'est ce qui
+  distingue un exemple utile d'une saisie ordinaire. Une colonne suffit.
+- **Un format d'export standard** pour le jeu de données, plutôt qu'un format
+  maison : c'est la même règle que pour les contrats. À choisir en fonction de la
+  tâche (classification, détection).
+- **L'entraînement reste un service**, au sens déjà tranché : une adresse, une
+  clé, un modèle. Terrain ne l'héberge pas.
+
+### L'agencement, pour que ce soit simple
+
+L'exigence est claire : **utilisable par quelqu'un qui n'a rien configuré**. Elle
+n'entre pas en contradiction avec tout ce qui précède, à une condition — que la
+complexité reste **au bureau**, et la simplicité **sur le terrain**.
+
+Sur le terrain, l'agent ne voit qu'une chose : un formulaire à remplir, avec des
+champs qui se pré-remplissent parfois. Il ne choisit pas de modèle, ne configure
+pas de service, ne connaît pas le catalogue. Il ne voit ni FormDef, ni JSON
+Schema, ni ML_Models.
+
+Deux entrées seulement, sur le modèle de l'hôte SURFAC²E :
+
+    connexion (une fois, mémorisée)
+      └── que faire ?
+           ├── Saisir     → choisir un formulaire → remplir
+           └── Outiller   → contribuer des exemples · ajuster une nomenclature
+                            (n'apparaît que si les tables de configuration existent)
+
+Le second menu suit l'opt-in de TaskFlow : absent tant que personne n'en a besoin.
+
+---
+
 ## Ce qui reste à décider
 
 1. ~~Le rapport à SURFAC²E.~~ **Tranché** : SURFAC²E reste indépendant et n'est
