@@ -942,6 +942,74 @@ une brique, avec sa confiance), **validé** (une personne l'a vu et accepté),
 **saisi** (tapé directement). C'est peu de chose à l'écran, et c'est ce qui rend
 la boucle d'apprentissage possible.
 
+### La position appartient à la capture, pas au formulaire
+
+Un point facile à manquer et coûteux à rattraper : **la position n'est pas un
+champ, c'est une propriété de chaque capture**. Une photo prise à l'entrée du
+bâtiment et une autre prise au fond de la parcelle n'ont pas la même position,
+alors qu'elles appartiennent à la même saisie.
+
+Le retour d'une brique porte donc son contexte de capture :
+
+```js
+{
+  valeur, confiance, origine,
+  capture: {
+    position: { lat, lon, alt },
+    precision: 8,          // en mètres — jamais omise, voir ci-dessous
+    horodatage,
+    satellites, fixStatus  // facultatif, utile au diagnostic
+  }
+}
+```
+
+**Trois règles, dont la première n'est pas négociable :**
+
+- **Jamais de position sans sa précision.** ±5 m et ±50 m ne se valent pas, et le
+  second est courant sous couvert forestier, en ville dense ou contre une façade.
+  Une position sans marge d'erreur est ininterprétable — et pire, elle inspire
+  une confiance qu'elle ne mérite pas. Le vocabulaire existe déjà et vient de
+  QField : `horizontal_accuracy`, `nr_used_satellites`, `fix_status`, `pdop`.
+- **Une position périmée est pire qu'une position absente.** Sous un tunnel ou à
+  l'intérieur, le dernier point connu peut dater de dix minutes. L'afficher comme
+  s'il était frais fabrique une donnée fausse. Horodater, et le dire quand c'est
+  vieux.
+- **L'absence de position n'empêche rien.** Même règle que pour les briques : on
+  saisit quand même, quitte à situer autrement — une adresse, un objet de
+  référence, rien du tout.
+
+**Deux niveaux à distinguer** : la position *de la saisie* — celle de référence,
+qu'on peut corriger à la main — et la position *de chaque capture*, qui la
+documente. Confondre les deux fait perdre l'information la plus fiable qu'on
+ait : là où l'agent se tenait quand il a appuyé.
+
+### Configurer un formulaire pour le terrain
+
+**Trois points de départ**, et le wizard de Form Builder en couvre déjà deux :
+
+| Départ | Comment | Ce qui existe |
+|---|---|---|
+| **Document existant**, tables déjà là | *Brancher* — le formulaire se pose sur une table | Form Builder |
+| **Nouveau document** | *Créer* — tables et formulaire ensemble, ou depuis un template | Form Builder |
+| **Depuis QField** | l'import déduit le formulaire d'une couche | `qgis2grist` : `qgis-form-to-formdef.js` + `terrain-provision.js` |
+
+**Et le catalogue de formulaires existe déjà** : `terrain-provision.js` crée une
+table `Formulaires` — `Nom`, `FormId`, `Titre`, `TableCible`, `Version`, `Def`
+(le FormDef lui-même), `Statut`, `UpdatedAt`. Terrain n'a donc rien à inventer
+pour savoir quels formulaires un document propose : **il lit cette table.**
+
+Ce qui reste à ajouter tient en deux choses :
+
+- **un marqueur « disponible sur le terrain »** — tous les formulaires d'un
+  document n'y sont pas destinés, et un agent ne doit pas avoir à trier. À voir
+  si le `Statut` existant suffit ou s'il faut une colonne ;
+- **les sources d'entrée**, qui vivent dans le `Def` — donc par l'extension du
+  contrat FormDef, et non par une colonne de plus.
+
+Rien de tout cela ne demande une interface de configuration propre à Terrain. La
+configuration se fait au bureau, avec les outils qui existent — c'est exactement
+ce qu'on voulait.
+
 ### Ce qu'il faut anticiper dans la structure, même sans le faire
 
 Quatre choses qui coûtent cher si on les ajoute tard :
