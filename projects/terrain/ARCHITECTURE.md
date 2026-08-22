@@ -165,6 +165,46 @@ Deux conséquences :
   capteur » est **déjà pratiquée**, mais en dur et par exclusion. L'extension
   consisterait à la déclarer plutôt qu'à la deviner.
 
+### Trois contrats, pas deux — et FormDef fait foi
+
+`projects/grist_forms/runtime/` contient deux schémas d'apparence proche. Ce ne
+sont pas des concurrents : `shared/survey-project.js` expose
+`formDefToSurveyManifest` et `surveyManifestToFormDef`. La répartition est écrite
+dans `projects/qgis2grist/docs/QFIELD-COMPLET-GRIST-IDEAL.md` :
+
+    Scene Manifest  ↔  carto               (qgis2grist)
+    FormDef         ↔  formulaires         (grist_forms)
+    Survey Manifest ↔  projection enquête  (formDefToSurveyManifest)
+
+**Terrain consomme FormDef.** Survey Manifest est une **projection optionnelle**,
+dérivée de FormDef et orientée questionnaire — son énumération de types contient
+`likert5`, ce qui dit assez qu'il vise le sondage et non la saisie métier. C'est
+une **sortie**, pas une entrée : la checklist de l'étude dit « export Survey
+Manifest **depuis** au moins un FormDef ».
+
+### Terrain reprend le hors-scope de « QField complet dans Grist »
+
+L'étude `QFIELD-COMPLET-GRIST-IDEAL.md` (27/07/2026) couvre la même famille de
+besoins, et déclare **explicitement hors scope** :
+
+> - « Offline-first terrain sans réseau »
+> - « Édition géométrie mobile — reste QGIS/QField ou éditeur carto dédié »
+> - « Remplacer QFieldSync / app Android »
+
+Son parcours « Terrain » passe par le **navigateur Grist mobile**, avec « sync
+live Grist (**pas offline QField**) ».
+
+Les deux travaux ne se recouvrent donc pas, ils s'emboîtent :
+
+| | Couvre |
+|---|---|
+| **QField complet dans Grist** | le bureau (import, FormDef, publication) et le terrain **connecté**, dans le navigateur |
+| **Terrain** | le terrain **déconnecté** : application dédiée, file d'attente, capteurs, entrées automatiques |
+
+À lire avant de commencer : cette étude porte déjà le FormDef idéal d'une couche,
+le Scene Manifest idéal, et une matrice de complétude. Son « pont manquant
+prioritaire — `qgisFormToFormDef` » a d'ailleurs été construit depuis.
+
 ### Atlas n'est pas seulement un widget
 
 Atlas a aussi pour visée d'être une **brique web réutilisable pour bâtir de la
@@ -529,14 +569,8 @@ le référentiel.
    l'intention sur les agents : **faire générer la configuration** — « décris ton
    métier, je fabrique le formulaire » plutôt qu'un jeu de tables à remplir.
 
-6. **Quel contrat de formulaire fait foi ?** `projects/grist_forms/runtime/`
-   contient **deux** schémas aux propriétés presque identiques —
-   `formdef.schema.json` et `survey-manifest.schema.json` (`manifest_version`,
-   `id`, `title`, `description`, `classification`, `sections`, `choices`), ce
-   dernier ayant même son canal `#survey-manifest`. Ancêtre, niveau au-dessus
-   regroupant plusieurs formulaires, ou variante qui a divergé ? **À clarifier
-   avant d'écrire la moindre ligne** : Terrain doit consommer l'un des deux, et
-   se tromper de contrat annulerait tout le bénéfice de n'en inventer aucun.
+6. ~~Quel contrat de formulaire fait foi ?~~ **Tranché : FormDef.** Voir « Trois
+   contrats, pas deux » ci-dessus.
 5. **Le sort des démonstrateurs.** Un démonstrateur qui a fait sa preuve n'a pas
    besoin de devenir un produit : il doit céder sa brique et disparaître.
    Chercher à rendre chacun pertinent en tant qu'application produirait quatre
