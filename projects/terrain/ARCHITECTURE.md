@@ -725,6 +725,45 @@ travail de développement** (`onnx` demande son runtime) ; **ajouter un modèle 
 une ligne dans une table**. La seconde opération doit rester à la portée de
 quelqu'un qui ne programme pas.
 
+### Piste — le catalogue de modèles comme service à part
+
+**Cadré, pas construit.** À ouvrir seulement après le premier maillon de Terrain.
+
+Terrain *exécute* des modèles ; tenir leur inventaire est un autre métier, avec
+un autre rythme. Un catalogue bouge quand un modèle paraît ou qu'une URL se
+périme — constaté le 21/08 : `tfhub.dev` redirige désormais vers Kaggle. Rien de
+tout cela n'a de raison d'être cadencé sur les versions de Terrain. Et d'autres
+que Terrain peuvent en vouloir : Atlas, un widget de bureau, un agent.
+
+**« Service » au sens des contrats déjà publiés** : une ressource décrite,
+versionnée, servie en fichier statique. Pas un serveur à héberger, sécuriser et
+financer — même règle que pour l'extraction et l'entraînement.
+
+Ce qui donne un **troisième contrat**, symétrique des deux autres :
+
+| Contrat | Décrit |
+|---|---|
+| **FormDef** | ce qu'il faut **saisir** |
+| **Scene Manifest** | ce qu'il faut **dresser** |
+| **Model Catalog** | ce qui peut **remplir** |
+
+Deux niveaux à ne pas confondre :
+
+- le **catalogue commun**, publié par le projet : des modèles open source décrits
+  une fois pour toutes, avec leurs cinq attributs ;
+- le **catalogue de document** (`ML_Models`) : ce que l'équipe emploie vraiment,
+  avec ses versions et sa justesse mesurée. On y recopie une entrée du commun,
+  et elle y vit ensuite sa vie propre.
+
+L'ébauche existe déjà : les trois modèles figés dans le HTML de `ml-pro`
+(EfficientDet-Lite0, Lite2, COCO-SSD) avec taille et nombre de classes. Il
+s'agirait de les sortir du HTML et de les décrire complètement.
+
+**Le coût à connaître avant de s'y engager** : une liste de modèles se périme, et
+la publier est un engagement d'entretien. Mieux vaut **peu de modèles vraiment
+vérifiés** qu'une longue liste dont la moitié ne charge plus — c'est exactement
+ce qui est arrivé à `tfhub.dev`.
+
 ### L'agencement, pour que ce soit simple
 
 L'exigence est claire : **utilisable par quelqu'un qui n'a rien configuré**. Elle
