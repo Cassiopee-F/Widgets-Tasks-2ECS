@@ -1029,6 +1029,47 @@ notion, il suffit d'y ajouter une ligne.
     ▸ Technique
         Source d'entrée : [aucune ▾] [voix] [photo] [vision : fissure-v3] …
 
+#### D'où vient « fissure-v3 » dans cette liste
+
+Du **catalogue du document**, la table `ML_Models`. Le builder la lit, comme il
+lit déjà les tables pour proposer une cible ou une référence. Rien de neuf dans
+le mécanisme.
+
+Mais il ne propose pas n'importe quoi : **seuls les modèles capables de remplir
+ce type de champ apparaissent**. C'est l'attribut *rattachement* du descripteur
+qui filtre — un champ `Choice` ne se voit proposer que des classifieurs, un champ
+liste que des détecteurs. Un détecteur ne peut pas être branché sur une date,
+non par convention mais parce que la liste ne le contiendra jamais.
+
+**Et si `ML_Models` n'existe pas, la source « Reconnaître » n'est pas proposée du
+tout.** Même opt-in que partout ailleurs dans ce dépôt : pas de table, pas de
+fonction, pas d'option qui traîne dans une interface pour ne rien faire.
+
+La table se remplit de trois façons, déjà décrites : à la main, depuis le
+catalogue commun (la piste *Model Catalog*), ou par une recette d'entraînement
+qui publie son descripteur. Et comme c'est une table Grist ordinaire, **elle se
+gère comme une table** — pas besoin d'un écran d'administration des modèles.
+
+#### Épingler une version, ou suivre la dernière ?
+
+La question se pose comme pour les schémas, mais **la réponse est l'inverse**, et
+c'est important de comprendre pourquoi.
+
+Pour un contrat, on épingle : un schéma qui change **casse** un contenu qui était
+valide, sans prévenir. Pour un modèle, non — un modèle qui s'améliore ne casse
+rien, il fait de **meilleures propositions**, et une personne les arbitre de
+toute façon avant qu'elles n'atteignent la table.
+
+Donc : **le formulaire référence un modèle par son nom** — `fissure` —, et c'est
+le catalogue qui désigne la version active. L'équipe promeut `v4` en une fois,
+pour tous les formulaires ; elle revient à `v3` d'un geste si `v4` déçoit.
+Épingler la version dans chaque formulaire obligerait à les reprendre un par un
+pour profiter d'un progrès.
+
+> **C'est l'arbitrage humain qui rend ce choix sûr.** Le jour où une valeur serait
+> écrite sans qu'une personne l'ait vue, il faudrait épingler — parce qu'un
+> changement de modèle changerait alors silencieusement les données.
+
 **Trois précautions**, parce qu'on toucherait à un widget publié :
 
 - **L'extension doit être invisible pour qui n'en a pas besoin.** Un formulaire
