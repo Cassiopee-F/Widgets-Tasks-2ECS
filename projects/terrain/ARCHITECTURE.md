@@ -1047,8 +1047,40 @@ fonction, pas d'option qui traîne dans une interface pour ne rien faire.
 
 La table se remplit de trois façons, déjà décrites : à la main, depuis le
 catalogue commun (la piste *Model Catalog*), ou par une recette d'entraînement
-qui publie son descripteur. Et comme c'est une table Grist ordinaire, **elle se
-gère comme une table** — pas besoin d'un écran d'administration des modèles.
+qui publie son descripteur.
+
+#### Gérer les modèles : deux endroits, chacun pour ce qu'il sait faire
+
+« Gérer » recouvre six opérations qui n'ont pas le même lieu naturel :
+
+| Opération | Où | Pourquoi là |
+|---|---|---|
+| **Ajouter** une entrée | table Grist | c'est une ligne |
+| **Lister**, comparer | table Grist | c'est une vue |
+| **Promouvoir** une version | table Grist | changer une valeur |
+| **Retirer** | table Grist | supprimer une ligne |
+| **Essayer** un modèle | **Terrain**, mode *Outiller* | il faut une caméra et de vraies images |
+| **Précharger** avant de partir | **Terrain**, automatique | le formulaire déclare, l'app télécharge |
+
+**Les quatre premières ne demandent aucune interface.** Une table Grist les fait
+mieux qu'un widget : tri, filtres, historique, droits, tout est déjà là.
+
+**La cinquième ne peut pas se faire au bureau**, et c'est le point intéressant :
+on essaie un modèle *là où il servira*, sur de vraies images de fissures, pas au
+bureau sur des photos d'illustration. C'est exactement ce que `ml-pro` sait déjà
+faire — charger, activer, voir ce que ça donne en direct — et c'est ce qui
+justifie le second menu de Terrain.
+
+> **Le choix de conception qui évite d'avoir à écrire un widget** : décrire un
+> modèle par des **colonnes plates** — `nom`, `version`, `execution`, `tache`,
+> `entree`, `sortie`, `rattachement`, `url`, `active` — et non par un JSON dans
+> une colonne. Un JSON s'édite mal à la main, et impose alors une interface pour
+> le rendre supportable. Des colonnes plates se trient, se filtrent, se
+> comparent, et se remplissent sans rien de plus que Grist.
+
+Un widget de gestion pourra se justifier plus tard, si un inventaire devient
+gros. Il n'est pas nécessaire pour commencer, et le prévoir maintenant coûterait
+un écran de plus à concevoir, à tester et à maintenir.
 
 #### Épingler une version, ou suivre la dernière ?
 
