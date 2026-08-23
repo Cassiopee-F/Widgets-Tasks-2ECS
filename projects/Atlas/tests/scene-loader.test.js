@@ -344,3 +344,60 @@ describe('grist-sync', () => {
     assert.ok(layer.geojson.features[1].properties._fill_color);
   });
 });
+
+describe('une couche non chargée le dit', () => {
+  // Le défaut réparé ici : une couche qui échoue disparaissait exactement comme
+  // une couche qu'on aurait choisi de ne pas mettre. Le manifest restait valide,
+  // la carte s'affichait, et seule la console gardait trace de l'amputation.
+
+  const docQuiRefuse = {
+    fetchTable: async (t) => { throw new Error(`table absente : ${t}`); },
+  };
+
+  it('signale une table illisible, avec son nom et son origine', async () => {
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'batiments', name: 'Bâtiments', source: { table: 'Batiments' } }],
+    };
+    const { layers, echecs } = await loadSceneManifestLayers(docQuiRefuse, manifest, null);
+    assert.equal(layers.length, 0, 'aucune couche ne peut être chargée');
+    assert.equal(echecs.length, 1, 'et l’échec doit être rapporté');
+    assert.equal(echecs[0].nom, 'Bâtiments');
+    assert.match(echecs[0].origine, /table Grist/);
+    assert.match(echecs[0].raison, /table absente/);
+  });
+
+  it('distingue une origine déclarée d’un identifiant pris pour une table', async () => {
+    // Cas nominal des scènes venues d'ailleurs : pas de `source.table`, donc le
+    // repli sur `ml.id` fait chercher une table qui n'a jamais existé. Le
+    // message doit dire que le nom a été *déduit*, sinon on cherche une table
+    // absente au lieu d'une origine non gérée.
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'routes__bd_topo_', name: 'Routes', geojson_path: '/data/routes.geojson' }],
+    };
+    const { echecs } = await loadSceneManifestLayers(docQuiRefuse, manifest, null);
+    assert.equal(echecs.length, 1);
+    assert.match(echecs[0].origine, /déduite de l'identifiant|deduite de l'identifiant/,
+      'le message doit dire que le nom de table a été déduit, faute de source');
+  });
+
+  it('signale une couche sans la moindre origine', async () => {
+    const manifest = { version: '0.2.2', layers: [{ name: 'Orpheline' }] };
+    const { echecs } = await loadSceneManifestLayers(docQuiRefuse, manifest, null);
+    assert.equal(echecs.length, 1);
+    assert.match(echecs[0].origine, /aucune origine/);
+  });
+
+  it('ne signale rien quand tout se charge', async () => {
+    const doc = {
+      fetchTable: async () => ({ id: [1], geometry_json: ['{"type":"Point","coordinates":[5,43]}'] }),
+    };
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'points', name: 'Points', geometry_type: 'point', source: { table: 'Points' } }],
+    };
+    const { echecs } = await loadSceneManifestLayers(doc, manifest, null);
+    assert.deepEqual(echecs, [], 'une scène complète ne doit produire aucun signalement');
+  });
+});

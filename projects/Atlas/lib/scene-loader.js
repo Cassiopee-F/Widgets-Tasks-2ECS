@@ -95,12 +95,30 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
   }
 
   const atlasLayers = [];
+  /**
+   * Les couches qu'on n'a pas su charger.
+   *
+   * Sans cette liste, une couche qui echoue disparait exactement comme une
+   * couche qu'on aurait choisi de ne pas mettre : le manifest est valide, la
+   * carte s'affiche, et rien ne dit qu'elle est incomplete. Un console.warn ne
+   * previent que celui qui a la console ouverte — c'est-a-dire personne sur le
+   * terrain.
+   */
+  const echecs = [];
   const primaryBounds = [];
   const fallbackBounds = [];
 
   for (const ml of manifest.layers) {
     const tableName = ml.source?.table || ml.id;
-    if (!tableName) continue;
+    if (!tableName) {
+      // Ni source ni identifiant : rien ne dit ou chercher.
+      echecs.push({
+        nom: ml.name || ml.displayName || '(couche sans nom)',
+        origine: 'aucune origine declaree',
+        raison: 'la couche ne porte ni source ni identifiant',
+      });
+      continue;
+    }
 
     // Couche déclarée masquée : on ne télécharge rien. La table sera lue au
     // moment de l'allumer (materializeDeferredLayer via _loadRows).
@@ -111,7 +129,19 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       try {
         colData = await docApi.fetchTable(tableName);
       } catch (e) {
-        console.warn('[Atlas scene-loader] table absente:', tableName, e.message);
+        // Le repli `ml.source?.table || ml.id` transforme une origine absente
+        // en nom de table : une couche venue d'ailleurs — fichier, URL, tuiles —
+        // echoue donc ici avec son identifiant pris pour un nom de table. Le
+        // message doit permettre de distinguer les deux cas.
+        const declaree = ml.source?.table
+          ? `table Grist « ${ml.source.table} »`
+          : `table Grist « ${tableName} » (deduite de l'identifiant, faute de source declaree)`;
+        console.warn('[Atlas scene-loader] couche non chargee:', tableName, e.message);
+        echecs.push({
+          nom: ml.name || ml.displayName || tableName,
+          origine: declaree,
+          raison: e.message || 'lecture impossible',
+        });
         continue;
       }
     }
@@ -228,6 +258,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     manifest,
     projectName: manifest.title || widgetConfig?.meta?.source_file || 'Import QGIS',
     bounds,
+    echecs,
   };
 }
 

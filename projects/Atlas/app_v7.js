@@ -4626,9 +4626,13 @@ async function loadFromSceneManifest() {
         _sceneManifest = manifest;
         _widgetConfig = await loadQgisWidgetConfig(grist.docApi);
         const prefs = await loadLayerPrefs(grist.docApi);
-        const { layers, projectName, bounds: rawBounds } = await loadSceneManifestLayers(
+        const { layers, projectName, bounds: rawBounds, echecs } = await loadSceneManifestLayers(
             grist.docApi, manifest, _widgetConfig
         );
+        // Une scene amputee doit le dire. Elle s'affichait jusqu'ici comme une
+        // scene complete : rien ne distinguait une couche en echec d'une couche
+        // qu'on avait choisi de ne pas mettre.
+        signalerCouchesManquantes(echecs);
         for (const layer of layers) {
             applyLayerPrefs(layer, prefs);
             if (layer.visible !== false && layer._deferredLoad) {
@@ -5960,3 +5964,27 @@ async function demarrer() {
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);
 else demarrer();
+
+/**
+ * Dire ce qui n'a pas pu être chargé.
+ *
+ * Le silence était le vrai défaut : une couche en échec disparaissait comme une
+ * couche volontairement absente, et seul un `console.warn` en gardait trace —
+ * c'est-à-dire personne, sur le terrain comme ailleurs. On préfère un message
+ * qui nomme la couche et l'origine attendue : c'est ce qui permet de distinguer
+ * « je ne sais pas lire cette origine » de « cette table n'existe pas ».
+ */
+function signalerCouchesManquantes(echecs) {
+    if (!echecs || !echecs.length) return;
+    for (const e of echecs) console.warn('[Atlas] couche non chargée —', e.nom, '·', e.origine, '·', e.raison);
+
+    const n = echecs.length;
+    const titre = n === 1
+        ? `Couche non chargée : ${echecs[0].nom}`
+        : `${n} couches non chargées`;
+    // Le détail au-delà de deux noms encombrerait plus qu'il n'informerait ; la
+    // console porte la liste complète.
+    const detail = echecs.slice(0, 2).map((e) => `${e.nom} (${e.origine})`).join(' · ')
+        + (n > 2 ? ` … et ${n - 2} autre${n - 2 > 1 ? 's' : ''}` : '');
+    showToast(`${titre} — ${detail}`, 'warning');
+}
