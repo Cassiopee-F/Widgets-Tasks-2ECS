@@ -2579,19 +2579,29 @@ function dockPillId(layer, field) {
 function listDockPills() {
     const pills = [];
     const vcs = STATE.viewerControls || createDefaultViewerControls();
-    const edit = !CONFIG.viewMode;
 
-    if (edit || getViewerControl(vcs, 'sun')?.exposed) {
+    // L'interrupteur gouverne la pastille, en edition comme en lecture.
+    //
+    // Il ne le faisait qu'en lecture : en edition les trois pastilles
+    // d'environnement s'affichaient quoi qu'il arrive, et le panneau annoncait
+    // « desactive » pendant que la carte montrait le contraire. Un reglage qui
+    // ne fait rien de visible est pire qu'un reglage absent — on doute de ce
+    // qu'on vient de faire.
+    //
+    // L'auteur ne perd aucun acces : le soleil, la vue et les fonds gardent
+    // leur module dans le rail lateral. La pastille dit ce que le LECTEUR
+    // verra ; c'est bien ce que le libelle promet sous chaque interrupteur.
+    if (getViewerControl(vcs, 'sun')?.exposed) {
         pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
     }
     // Icônes du dock : s'en tenir aux emoji, avec leur sélecteur de variante
     // (U+FE0F). Un glyphe symbolique rare — ici `▦` U+25A6 — n'existe pas dans
     // les polices système courantes, et un emoji sans sélecteur bascule en
     // rendu texte : dans les deux cas la pastille s'affiche vide, sans erreur.
-    if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
+    if (getViewerControl(vcs, 'view3d')?.exposed) {
         pills.push({ id: 'view3d', kind: 'env', icon: '🏙️', label: '2D / 3D' });
     }
-    if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
+    if (getViewerControl(vcs, 'basemap')?.exposed) {
         pills.push({ id: 'basemap', kind: 'env', icon: '🗺️', label: 'Fonds' });
     }
     for (const { layer, c } of collectPublishedControls()) {
