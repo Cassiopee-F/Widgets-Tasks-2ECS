@@ -40,6 +40,7 @@ import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
   syncFeatureColorsFromSymbolization,
+  expressionCouleurDeclarative,
   applyDeclarativeToLayer,
   normalizePropertyValue,
   parsePropertyNumber,
@@ -446,7 +447,16 @@ function layerPaintColor(layer) {
     if (layer.source === 'qgis2grist' || layer._declarative) {
         const sym = initSymbolization(layer).color;
         const fb = sym.value || sym.defaultColor || layer.color || '#808080';
-        return ['coalesce', ['get', '_fill_color'], fb];
+        // `_fill_color` garde la priorité : c'est ce qu'écrit la symbolisation
+        // choisie dans l'interface, et l'utilisateur prime sur le manifest.
+        // Derrière, l'expression déclarative plutôt qu'une couleur unique — sans
+        // elle, une couche dont on ne détient pas les entités (URL, tuiles)
+        // n'aurait aucun `_fill_color` et se peindrait d'un seul ton, sans que
+        // rien ne le signale.
+        const declaratif = expressionCouleurDeclarative(
+            layer._declarative, fb, layer._fields || null
+        );
+        return ['coalesce', ['get', '_fill_color'], declaratif || fb];
     }
     return colorExpression(layer, layer.color);
 }

@@ -370,6 +370,69 @@ export function colorFnFromDeclarative(decl, fallback = '#808080', fieldNames = 
 }
 
 /**
+ * La même symbologie, mais dite à MapLibre au lieu d'être peinte à la main.
+ *
+ * `colorFnFromDeclarative` ci-dessus calcule une couleur **par entité**, en
+ * JavaScript, et l'écrit dans `_fill_color`. Cela suppose de détenir les
+ * entités — ce qui n'est plus vrai d'une couche servie par URL ou par tuiles :
+ * le champ n'existe pas dans les données, et toute la couche prend alors la
+ * couleur de repli, sans que rien ne le signale.
+ *
+ * Une expression, elle, est évaluée par le moteur sur ce qu'il rend, quelle que
+ * soit l'origine — et sans que le contrat ait à déclarer quoi que ce soit de
+ * plus : les bornes sont déjà dans les `stops`.
+ *
+ * @returns {any[]|null} expression MapLibre, ou null si le déclaratif ne permet
+ *   pas d'en construire une — l'appelant retombe alors sur sa couleur de repli.
+ */
+export function expressionCouleurDeclarative(decl, fallback = '#808080', fieldNames = null) {
+  if (!decl) return null;
+  if (decl.kind === 'single') return decl.color || fallback;
+
+  let field = decl.field;
+  if (fieldNames?.length) field = resolveGristFieldName(fieldNames, field) || field;
+  if (!field || !decl.stops?.length) return null;
+
+  if (decl.kind === 'categorized') {
+    const expr = ['match', ['get', field]];
+    for (const st of decl.stops) {
+      // Une catégorie peut se désigner par sa valeur brute ou par son libellé —
+      // `registerStopColors` en tient compte, l'expression doit en faire autant.
+      const valeurs = [...new Set([st.value, st.label].filter(
+        (v) => v !== undefined && v !== null && v !== ''))];
+      if (!valeurs.length) continue;
+      // MapLibre refuse un tableau vide et accepte une valeur seule ou plusieurs.
+      expr.push(valeurs.length === 1 ? valeurs[0] : valeurs, st.color || fallback);
+    }
+    // 'match' exige au moins un couple, plus la valeur par défaut.
+    if (expr.length < 4) return null;
+    expr.push(fallback);
+    return expr;
+  }
+
+  if (decl.kind === 'graduated') {
+    const stops = [...decl.stops]
+      .filter((st) => Number.isFinite(Number(st.lower ?? st.upper)))
+      .sort((a, b) => Number(a.lower ?? -Infinity) - Number(b.lower ?? -Infinity));
+    if (!stops.length) return null;
+
+    // 'step' rend la couleur de base sous le premier seuil, puis change à
+    // chaque borne inférieure. Les classes d'une graduation étant contiguës,
+    // les bornes basses suffisent — les hautes seraient redondantes.
+    const expr = ['step', ['to-number', ['get', field], -Infinity], stops[0].color || fallback];
+    for (const st of stops.slice(1)) {
+      const seuil = Number(st.lower);
+      if (!Number.isFinite(seuil)) continue;
+      expr.push(seuil, st.color || fallback);
+    }
+    if (expr.length < 3) return null;
+    return expr;
+  }
+
+  return null;
+}
+
+/**
  * Applique StyleDeclarative sur layer.style.symbolization Atlas (crée si absent).
  */
 export function applyDeclarativeToLayer(layer, declarative) {

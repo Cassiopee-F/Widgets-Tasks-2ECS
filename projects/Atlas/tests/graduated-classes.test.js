@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classBounds, graduatedStops, recolorStops } from '../lib/declarative-style.js';
+import {
+  classBounds, graduatedStops, recolorStops,
+  expressionCouleurDeclarative, colorFnFromDeclarative,
+} from '../lib/declarative-style.js';
 
 const VERTS = ['#e5f5e0', '#a1d99b', '#41ab5d', '#238b45', '#005a32'];
 const BLEUS = ['#deebf7', '#9ecae1', '#4292c6', '#2171b5', '#084594'];
@@ -98,4 +101,78 @@ test('chaque classe porte bornes, couleur et opacité', () => {
 
 test('palette vide : aucune classe plutôt qu’un rendu faux', () => {
   assert.deepEqual(graduatedStops(1, 134, [], 'log'), []);
+});
+
+
+/* ---------- la symbologie dite a MapLibre, sans detenir les entites ---------- */
+
+test('single : la couleur, sans expression inutile', () => {
+  assert.equal(expressionCouleurDeclarative({ kind: 'single', color: '#123456' }), '#123456');
+  assert.equal(expressionCouleurDeclarative(null), null, 'sans declaratif, rien a dire');
+});
+
+test('categorized : un match sur le champ, valeur et libelle acceptes', () => {
+  const decl = {
+    kind: 'categorized', field: 'bee_species',
+    stops: [
+      { value: 'Apis Mellifera Mellifera', label: 'European honey bee', color: '#de7300' },
+      { value: 'Buckfast', color: '#1f78b4' },
+    ],
+  };
+  const e = expressionCouleurDeclarative(decl, '#808080');
+  assert.equal(e[0], 'match');
+  assert.deepEqual(e[1], ['get', 'bee_species']);
+  // Une categorie designee par sa valeur OU son libelle : les deux doivent peindre pareil.
+  assert.deepEqual(e[2], ['Apis Mellifera Mellifera', 'European honey bee']);
+  assert.equal(e[3], '#de7300');
+  assert.equal(e[4], 'Buckfast', 'une seule valeur reste scalaire');
+  assert.equal(e[5], '#1f78b4');
+  assert.equal(e[e.length - 1], '#808080', 'et une valeur par defaut ferme le match');
+});
+
+test('graduated : un step sur les bornes basses, dans l’ordre', () => {
+  const decl = {
+    kind: 'graduated', field: 'lg_route_m',
+    stops: [
+      { lower: 800, upper: 2000, color: '#238b45' },
+      { lower: 0, upper: 50, color: '#f7fcf5' },
+      { lower: 50, upper: 200, color: '#c7e9c0' },
+    ],
+  };
+  const e = expressionCouleurDeclarative(decl, '#808080');
+  assert.equal(e[0], 'step');
+  // Les stops arrivent dans le desordre : l'expression doit les trier, sinon
+  // MapLibre rejette des seuils non croissants et la couche perd sa couleur.
+  assert.deepEqual(e.slice(3), [50, '#c7e9c0', 800, '#238b45']);
+  assert.equal(e[2], '#f7fcf5', 'la classe la plus basse sert de couleur de base');
+});
+
+test('l’expression peint comme la fonction : les deux ne doivent pas diverger', () => {
+  // colorFnFromDeclarative peint entite par entite, l'expression laisse
+  // MapLibre le faire. Un ecart entre les deux donnerait deux Atlas selon
+  // l'origine de la couche — exactement ce qu'on veut eviter.
+  const decl = {
+    kind: 'categorized', field: 'type',
+    stops: [{ value: 'a', color: '#aa0000' }, { value: 'b', color: '#00bb00' }],
+  };
+  const fn = colorFnFromDeclarative(decl, '#808080');
+  const e = expressionCouleurDeclarative(decl, '#808080');
+  const parMatch = (v) => {
+    for (let i = 2; i < e.length - 1; i += 2) {
+      const cles = Array.isArray(e[i]) ? e[i] : [e[i]];
+      if (cles.includes(v)) return e[i + 1];
+    }
+    return e[e.length - 1];
+  };
+  for (const v of ['a', 'b', 'inconnu']) {
+    assert.equal(parMatch(v), fn({ type: v }), `divergence sur « ${v} »`);
+  }
+});
+
+test('un declaratif inexploitable ne rend rien, plutot qu’une expression fausse', () => {
+  assert.equal(expressionCouleurDeclarative({ kind: 'categorized', field: 'x', stops: [] }), null);
+  assert.equal(expressionCouleurDeclarative({ kind: 'categorized', stops: [{ value: 'a', color: '#f00' }] }), null,
+    'sans champ, on ne peut pas interroger l’entite');
+  assert.equal(expressionCouleurDeclarative({ kind: 'graduated', field: 'v', stops: [{ color: '#f00' }] }), null,
+    'des bornes non numeriques ne font pas un step');
 });
