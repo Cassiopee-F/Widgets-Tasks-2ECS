@@ -1,3 +1,16 @@
+// ############################################################
+// ARCHIVE — NE PAS MODIFIER. Ce fichier est la v6, figee au
+// 26 mai 2026. La source vivante est `app_v7.js`, que le script
+// de promotion copie en `published/atlas/app.js` — d'ou
+// l'homonymie, et le piege : servir `projects/Atlas/index.html`
+// charge CE fichier, pas la v7. Pour voir la version courante,
+// ouvrir `index_v7.html`.
+//
+// Conserve parce qu'il porte la derniere implementation de
+// l'export QGIS et du modele 3D par piece jointe, perdus au
+// passage en v7 (cf. CLAUDE.md).
+// ############################################################
+
 // ============================================================
 // Atlas — Maquette 3D Territoriale (MapLibre + three.js)
 // Refonte UX/UI "Atlas" du widget Grist (cf. design canvas).
