@@ -16,6 +16,8 @@ import {
   detectDocMode,
   loadLatestSceneManifest,
   loadSceneManifestLayers,
+  origineDeCouche,
+  boundsDuManifest,
 } from '../lib/scene-loader.js';
 import {
   isBasemapLayer,
@@ -399,5 +401,102 @@ describe('une couche non chargée le dit', () => {
     };
     const { echecs } = await loadSceneManifestLayers(doc, manifest, null);
     assert.deepEqual(echecs, [], 'une scène complète ne doit produire aucun signalement');
+  });
+});
+
+
+describe('une couche peut porter ses données ailleurs que dans le document', () => {
+  // Forme exacte que le producteur amont (qgis-sspcloud) écrit, transmise par
+  // Interop-Carto le 23/08 : la cascade externalise selon le volume — inline
+  // sous 500 Ko, une URL au-delà, des tuiles pour les très grosses.
+
+  const refuseTout = { fetchTable: async (t) => { throw new Error(`table absente : ${t}`); } };
+
+  it('reconnaît les quatre origines, et signale celle qui est déduite', () => {
+    assert.deepEqual(origineDeCouche({ geojson: 'https://hub/f/abc' }),
+      { nature: 'url', valeur: 'https://hub/f/abc' });
+    assert.equal(origineDeCouche({ geojson: { type: 'FeatureCollection', features: [] } }).nature, 'inline');
+    assert.deepEqual(origineDeCouche({ source_type: 'pmtiles', tiles_url: 'https://hub/t.pmtiles' }),
+      { nature: 'tuiles', valeur: 'https://hub/t.pmtiles' });
+    assert.deepEqual(origineDeCouche({ source: { table: 'Batiments' } }),
+      { nature: 'table', valeur: 'Batiments' });
+    // Le repli historique doit se dire tel quel : c'est ce qui distingue
+    // « table absente » de « origine non déclarée ».
+    assert.equal(origineDeCouche({ id: 'routes' }).deduite, true);
+  });
+
+  it('charge une couche par URL sans toucher au document', async () => {
+    const manifest = {
+      version: '0.2.2',
+      layers: [{
+        id: 'routes__bd_topo_', name: 'Routes', geometry_type: 'line',
+        geojson: 'https://hub/published/x/features/routes-a1b2',
+        bbox: [5.36, 43.28, 5.44, 43.34], n_features: 1420,
+      }],
+    };
+    const { layers, echecs } = await loadSceneManifestLayers(refuseTout, manifest, null);
+    assert.equal(layers.length, 1, 'la couche doit être créée');
+    assert.deepEqual(echecs, [], 'et sans signalement');
+    assert.equal(layers[0].geojson, 'https://hub/published/x/features/routes-a1b2',
+      'l’URL passe telle quelle à MapLibre');
+    assert.equal(layers[0]._distant, true);
+    assert.deepEqual(layers[0]._bboxDeclaree, [[5.36, 43.28], [5.44, 43.34]]);
+  });
+
+  it('cadre la scène sur l’emprise déclarée, faute d’entités à parcourir', async () => {
+    const manifest = {
+      version: '0.2.2',
+      layers: [{
+        id: 'z', name: 'Zone', geometry_type: 'polygon',
+        geojson: 'https://hub/z', bbox: [1, 2, 3, 4],
+      }],
+    };
+    const { bounds } = await loadSceneManifestLayers(refuseTout, manifest, null);
+    assert.deepEqual(bounds, [[1, 2], [3, 4]]);
+  });
+
+  it('signale une couche distante sans emprise plutôt que de cadrer au hasard', async () => {
+    // Une emprise inventée ne lève aucune alerte : on regarde simplement au
+    // mauvais endroit en croyant que la donnée manque.
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'sans', name: 'Sans emprise', geojson: 'https://hub/s' }],
+    };
+    const { layers, echecs, bounds } = await loadSceneManifestLayers(refuseTout, manifest, null);
+    assert.equal(layers.length, 1, 'la couche est tout de même rendue');
+    assert.equal(bounds, null, 'mais la scène ne se cadre pas');
+    assert.match(echecs[0].raison, /emprise/);
+  });
+
+  it('reconnaît les tuiles et dit qu’elles ne sont pas encore prises en charge', async () => {
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'bati', name: 'Bâtiments', source_type: 'pmtiles',
+                 tiles_url: 'https://hub/bati.pmtiles', bbox: [1, 2, 3, 4] }],
+    };
+    const { layers, echecs } = await loadSceneManifestLayers(refuseTout, manifest, null);
+    assert.equal(layers.length, 0);
+    assert.match(echecs[0].raison, /pas encore prise en charge/);
+    assert.match(echecs[0].origine, /tuiles/);
+  });
+
+  it('ne change rien au chemin Grist existant', async () => {
+    const doc = { fetchTable: async () => ({ id: [1], geometry_json: ['{"type":"Point","coordinates":[5,43]}'] }) };
+    const manifest = {
+      version: '0.2.2',
+      layers: [{ id: 'p', name: 'Points', geometry_type: 'point', source: { table: 'Points' } }],
+    };
+    const { layers, echecs } = await loadSceneManifestLayers(doc, manifest, null);
+    assert.equal(layers.length, 1);
+    assert.equal(layers[0].sourceTable, 'Points');
+    assert.ok(!layers[0]._distant, 'une couche du document n’est pas distante');
+    assert.deepEqual(echecs, []);
+  });
+
+  it('lit une emprise mal formée comme une absence, jamais comme un zéro', () => {
+    assert.equal(boundsDuManifest({ bbox: [1, 2] }), null);
+    assert.equal(boundsDuManifest({ bbox: ['a', 2, 3, 4] }), null);
+    assert.equal(boundsDuManifest({}), null);
+    assert.deepEqual(boundsDuManifest({ bbox: [1, 2, 3, 4] }), [[1, 2], [3, 4]]);
   });
 });
