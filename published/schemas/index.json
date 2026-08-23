@@ -13,7 +13,9 @@
       ],
       "lu_par": [
         "grist_forms (runtime)"
-      ]
+      ],
+      "empreinte": "sha256:4e23f4100ab3fe8c",
+      "octets": 9056
     },
     {
       "nom": "Scene Manifest",
@@ -25,8 +27,11 @@
       ],
       "lu_par": [
         "Atlas"
-      ]
+      ],
+      "empreinte": "sha256:3fd18b1c9db7aae2",
+      "octets": 10633
     }
   ],
-  "note": "Chaque adresse porte sa version : ciblez une version précise plutôt que « la dernière », sinon un contenu valide cesse de l'être sans que rien ne vous en avertisse."
+  "note": "Chaque adresse porte sa version : ciblez une version précise plutôt que « la dernière », sinon un contenu valide cesse de l'être sans que rien ne vous en avertisse.",
+  "verifier_une_copie": "Chaque contrat porte une empreinte du fichier servi. Pour savoir si une copie locale a divergé, comparer son empreinte à celle-ci — il n'est pas nécessaire de rapatrier le schéma. L'empreinte change à chaque modification du contrat, y compris une correction de description."
 }

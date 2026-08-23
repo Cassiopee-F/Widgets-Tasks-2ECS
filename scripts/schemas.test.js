@@ -156,4 +156,25 @@ test('FormDef publié reste identique à celui que lit le widget', () => {
     'le schéma servi et le schéma lu par le widget doivent rester le même');
 });
 
+test('l’index porte une empreinte juste de chaque contrat', () => {
+  // Un consommateur qui garde une copie locale n'a pas d'autre moyen de savoir
+  // qu'elle a divergé — sauf à rapatrier le schéma entier à chaque usage.
+  // L'empreinte doit donc suivre le fichier servi, sinon elle ment.
+  const crypto = require('crypto');
+  const idx = lire(path.join(SCHEMAS, 'index.json'));
+  assert.ok(idx.contrats?.length, 'l’index doit lister des contrats');
+
+  for (const c of idx.contrats) {
+    const nom = c.schema.split('/').pop();
+    const chemin = path.join(SCHEMAS, nom);
+    assert.ok(fs.existsSync(chemin), `${nom} : cité par l’index mais absent`);
+
+    const contenu = fs.readFileSync(chemin);
+    const attendu = 'sha256:' + crypto.createHash('sha256').update(contenu).digest('hex').slice(0, 16);
+    assert.equal(c.empreinte, attendu,
+      `${nom} : empreinte périmée — l’index n’a pas été régénéré après modification`);
+    assert.equal(c.octets, contenu.length, `${nom} : taille périmée`);
+  }
+});
+
 module.exports = { valider };
