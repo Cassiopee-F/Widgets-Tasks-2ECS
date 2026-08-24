@@ -1,7 +1,9 @@
 # Atlas — la scène qui vient d'ailleurs, et les entités qu'on n'a plus
 
-> **État : cadré, non commencé.** Écrit le 25/08/2026, après la vérification en
-> navigateur du chemin distant (banc `tests/manuel/couche-distante.html`).
+> **État au 25/08/2026 : chantier A fait et éprouvé en navigateur ; B entamé
+> (famille 2) ; C non commencé.** Écrit après la vérification du chemin distant
+> (banc `tests/manuel/couche-distante.html`), complété le soir même par ce que
+> le branchement a révélé — voir « Ce que le branchement a appris » en fin de §A.
 >
 > Prolonge [CADRAGE-SECONDE-ORIGINE.md](CADRAGE-SECONDE-ORIGINE.md), dont il
 > reprend les étapes 3 et 5. L'ordre y était proposé à l'inverse ; ce document
@@ -156,6 +158,42 @@ la voie quand on veut à la fois la scène et les données du document — et l�
 **Ce qui se teste** : la scène de Sète, ouverte à l'URL, sans aucun document —
 et le banc du 25/08 devient superflu.
 
+## A.6 Ce que le branchement a appris
+
+**Fait** (commit `5580d29`) : la scène de Sète s'ouvre à son adresse, les
+bâtiments distants se peignent par hauteur, titre et cadrage viennent du
+manifeste, les deux couches non chargées se déclarent.
+
+**Deux écarts assumés par rapport au plan ci-dessus.**
+
+`http://localhost` est admis en plus de `https:`. Les navigateurs classent
+`localhost` parmi les contextes sécurisés — rien ne s'interpose. Le refuser
+n'ajouterait aucune sûreté et rendrait impossible la mise au point d'une scène
+avant publication, donc **pousserait à publier pour essayer**.
+
+**Pas de validation contre le schéma dans le navigateur**, contrairement au point
+A.5.2. L'argument qui l'emporte : elle écrirait dans la console de qui *regarde*
+la scène, alors que le besoin est chez qui l'*écrit* — et celui-là dispose déjà
+du CLI et du schéma publié à une adresse stable. La garde de forme, elle, reste
+obligatoire : elle est certaine et ne peut pas échouer pour une mauvaise raison.
+
+**Deux défauts trouvés, tous deux plus larges que le chantier** — ils étaient là
+avant, invisibles parce que l'ordre d'exécution en documentait le contraire :
+
+- `_mapSyncAfter` était un **slot unique** là où deux appelants attendent. Le
+  second effaçait le premier en silence. Dans un document Grist, l'ouverture est
+  lente et le style a le temps d'être prêt : l'ordre était favorable. Une scène
+  chargée par URL arrive avant le style, et le cadrage du manifeste se perdait.
+  C'est une file désormais.
+- la légende graduée tirait son dégradé d'une **rampe nommée** alors que la carte
+  est peinte avec les couleurs déclaratives : du Viridis annoncé sous une carte
+  verte. Une légende qui ne décrit pas la carte est pire qu'aucune.
+
+**Reste non éprouvé** : la garde du gabarit de popup. L'inspection au clic ne
+fonctionne pas encore sur une couche distante (famille 3 ci-dessous), donc le
+gabarit n'est pas atteignable — la garde est posée d'avance et devra être
+vérifiée quand l'inspection passera par MapLibre.
+
 ---
 
 # B. Le découplage des entités locales
@@ -223,8 +261,9 @@ dédupliquer, ou elle mentira dans l'autre sens.
 
 ## B.3 L'ordre
 
-1. **Les comptes** (famille 2) — le plus petit, et il supprime tout de suite le
-   « 0 objet » mensonger.
+1. ~~**Les comptes** (famille 2)~~ — **fait** (`5580d29`). `layerVisibleCount`
+   rend `null` quand personne ne sait ; `formatLayerCount` affiche « ≈400 »
+   quand le manifeste déclare sans qu'on ait vérifié, et « — » sinon.
 2. **Les contrôles** (`getUniqueValues`, `detectFieldType`) — sans eux une scène
    externe est décorative. Les valeurs sont dans `style.declarative.stops`.
 3. **L'inspection au clic** (famille 3, lecture seule) — bascule sur

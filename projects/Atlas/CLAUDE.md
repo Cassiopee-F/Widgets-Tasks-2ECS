@@ -524,11 +524,54 @@ Lus par `lib/view-mode.js`.
 
 | Paramètre | Lu par | Effet |
 |---|---|---|
+| `?scene=<url>` | `lib/scene-externe.js` | **charge la scène à cette adresse, et coupe l'accès au document** |
 | `?vitrine=1` | `lib/data-client.js` | « la page qui m'encadre est une présentation, pas un document » — sans lui, Atlas encadré croit avoir un document à interroger |
 | `?mode=…` | `lib/view-mode.js` | force le mode lecture, pour tester |
 | `?no3d` | `app_v7.js` | coupe les modèles 3D (appareil modeste) |
 | `?models=…` | `app_v7.js` | source du catalogue 3D |
 | `?nav` | `index_v7.html` | barre de navigation inter-vues |
+
+### `?scene=` — deux régimes de confiance, pas un réglage
+
+Une scène lue dans le document est **de confiance** : pour l'y mettre, il fallait
+déjà pouvoir écrire dans le document. Une scène chargée par `?scene=` ne l'est
+pas — n'importe qui peut fabriquer l'adresse et la faire ouvrir. Atlas ne lui
+donne donc **pas le document** : `grist.ready()` n'est jamais appelé, `docApi`
+n'existe pas, aucune préférence ni aucun récit ne s'écrit.
+
+Trois conséquences à connaître avant de toucher à ce chemin :
+
+- une couche `source.table` d'une scène externe **tombe en échec déclaré**, avec
+  un message qui envoie la publier. Ce n'est pas une limite, c'est la règle ;
+- le `popup_template` est rendu **comme du texte**. Il est injecté tel quel
+  (`app_v7.js`, `buildViewPopupHtml`) : les valeurs sont échappées, le gabarit
+  ne l'est pas. Venu d'une adresse, il s'exécuterait dans une iframe qui tient
+  les droits de la personne sur son document ;
+- seuls `https:` et `http://localhost` sont admis. `data:` et `blob:` portent un
+  contenu **sans origine** — inattribuable, irrévocable ; `http:` distant
+  laisserait un tiers réécrire la scène en chemin. `localhost` est un contexte
+  sécurisé au sens du navigateur, et le refuser pousserait à publier pour
+  essayer.
+
+Cadrage complet : `docs/CADRAGE-SCENE-EXTERNE-ET-DECOUPLAGE.md`.
+
+### Deux pièges vérifiés en branchant `?scene=`
+
+**`_mapSyncAfter` est une file, pas un slot.** Deux appelants attendent que le
+style redevienne utilisable — `onStyleReady`, qui cadre depuis les entités
+locales, et `mountLoadedLayers`, qui cadre depuis ce que le manifeste déclare.
+Avec une variable unique, le second effaçait le premier **sans rien dire**. Dans
+un document Grist l'ordre était favorable (l'ouverture est lente, le style a le
+temps d'être prêt) ; une scène chargée par URL arrive avant le style, et c'est le
+cadrage du manifeste qui se perdait — la carte s'ouvrait sur la position par
+défaut, ce qui ressemble à un choix.
+
+**`layerVisibleCount` rend `null` quand on ne sait pas.** Il rendait `|| 0`, donc
+zéro pour une couche vide **comme** pour une couche dont Atlas ne détient pas les
+entités. Zéro est un nombre plausible : « 0 obj. » se lit comme un renseignement
+et envoie chercher pourquoi la donnée est vide. `formatLayerCount` affiche
+« ≈400 » quand le manifeste déclare sans qu'on ait vérifié, et « — » quand
+personne ne sait.
 
 **La règle qui découle des trois couches** : `vitrine=1` ne se pose que si l'on
 embarque **le widget seul**. Si l'on embarque un **document** Grist, Atlas y est
