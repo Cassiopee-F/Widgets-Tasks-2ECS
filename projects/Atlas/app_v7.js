@@ -4,6 +4,7 @@
 // Fork propre depuis app_v6.js — v6 reste inchangée.
 // ============================================================
 
+import { urlSceneDepuisParam, chargerSceneExterne } from './lib/scene-externe.js?v=20260825a';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
@@ -142,6 +143,13 @@ const CONFIG = {
     defaultPitch: 55,
     defaultBearing: -18,
     grist: { ready: false },
+    /**
+     * La scène chargée par `?scene=`, ou null.
+     *
+     * Sa seule présence coupe l'accès au document : c'est la règle, et elle
+     * n'a qu'un endroit (cf. docs/CADRAGE-SCENE-EXTERNE-ET-DECOUPLAGE.md §A).
+     */
+    sceneExterne: null,
     /** 'scene-manifest' | 'maquette' | null */
     docMode: null,
     // Un cycle recharge et reconvertit chaque table visible : à 5 s, une scène
@@ -1909,16 +1917,33 @@ function syncAllLayersToMap() {
 
 /** Attend que MapLibre soit prêt à peindre avant de monter les sources GeoJSON. */
 let _mapSyncTimer = null;
-let _mapSyncAfter = null;
+/**
+ * Les rappels à jouer quand le style redevient utilisable — **une file, pas un
+ * slot**.
+ *
+ * Deux appelants peuvent attendre en même temps : `onStyleReady` qui cadre
+ * depuis les entités locales, et `mountLoadedLayers` qui cadre depuis ce que le
+ * manifeste déclare. Avec une variable unique, le second effaçait le premier
+ * sans rien dire. Dans un document Grist l'ordre était favorable — l'ouverture
+ * du document est lente, le style a le temps d'être prêt — et le défaut ne se
+ * voyait pas ; une scène chargée par URL arrive avant le style, et c'est le
+ * cadrage du manifeste qui se perdait. La carte s'ouvrait alors sur la position
+ * par défaut, ce qui ressemble à un choix.
+ */
+let _mapSyncAfter = [];
 function scheduleMapLayersSync(afterSync) {
     if (!map) return;
-    if (typeof afterSync === 'function') _mapSyncAfter = afterSync;
+    if (typeof afterSync === 'function') _mapSyncAfter.push(afterSync);
     const run = () => {
         clearTimeout(_mapSyncTimer);
         syncAllLayersToMap();
-        const cb = _mapSyncAfter;
-        _mapSyncAfter = null;
-        if (typeof cb === 'function') cb();
+        const files = _mapSyncAfter;
+        _mapSyncAfter = [];
+        // Un rappel qui lève ne doit pas emporter les suivants : ils viennent
+        // d'appelants sans rapport entre eux.
+        for (const cb of files) {
+            try { cb(); } catch (e) { console.warn('[Atlas] rappel de montage :', e); }
+        }
         // 2e passe : premier idle parfois trop tôt (style OSM / globe / pitch)
         _mapSyncTimer = setTimeout(() => {
             if (!mapStyleUsable()) return;
@@ -2060,8 +2085,36 @@ async function persistStory(immediate = false) {
     });
 }
 
+/**
+ * Le nombre d'entités d'une couche — **`null` quand on ne le sait pas**.
+ *
+ * `|| 0` rendait zéro dans deux situations que rien ne distinguait ensuite :
+ * une couche réellement vide, et une couche dont Atlas ne détient pas les
+ * entités. Or zéro est un nombre parfaitement plausible : « 0 obj. » se lit
+ * comme un renseignement, pas comme une ignorance, et on cherche alors pourquoi
+ * la donnée est vide au lieu de comprendre qu'elle est ailleurs.
+ */
 function layerVisibleCount(layer) {
-    return filteredGeoJSON(layer)?.features?.length || 0;
+    const n = filteredGeoJSON(layer)?.features?.length;
+    if (Number.isFinite(n) && n > 0) return n;
+    // Rien en local : soit la couche est distante et le manifeste sait peut-être
+    // compter à sa place, soit elle est vraiment vide et zéro est la réponse.
+    if (layer?._distant) return Number.isFinite(layer._nFeaturesDeclare) ? layer._nFeaturesDeclare : null;
+    return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Le compte tel qu'il s'affiche.
+ *
+ * Un compte déclaré par le manifeste et non vérifié s'annonce comme tel — le
+ * « ≈ » dit qu'on rapporte au lieu de constater. Un compte inconnu ne s'affiche
+ * pas du tout : mieux vaut un blanc qu'un chiffre faux.
+ */
+function formatLayerCount(layer) {
+    const n = layerVisibleCount(layer);
+    if (n == null) return '—';
+    const approx = layer?._distant && !filteredGeoJSON(layer)?.features?.length;
+    return (approx ? '≈' : '') + n;
 }
 
 /**
@@ -2409,7 +2462,7 @@ function renderLayersPanel(mode) {
                     <span class="layer-swatch" style="background:${l.color}"></span>
                     <div class="layer-info">
                         <div class="layer-name">${l.name}</div>
-                        <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
+                        <div class="layer-meta"><span>${formatLayerCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
                     </div>
                     ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">${icTrait(IC.rafraichir)}</button>` : ''}
                     <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">${icTrait(IC.cible)}</button>
@@ -2440,7 +2493,7 @@ function renderLayersPanelLecture() {
                 <span class="layer-swatch" style="background:${l.color}"></span>
                 <div class="layer-info">
                     <div class="layer-name">${l.name}</div>
-                    <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
+                    <div class="layer-meta"><span>${formatLayerCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
                 </div>
                 <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">${icTrait(IC.cible)}</button>
             </div>`;
@@ -3166,7 +3219,7 @@ function isLegendFocused(layerId, field, value) {
 
 function buildLayerLegendHtml(layer) {
     const sym = initSymbolization(layer).color;
-    const total = layerVisibleCount(layer);
+    const total = formatLayerCount(layer);
     const lid = escLegend(layer.id);
     const clickable = CONFIG.viewMode ? ' legend-clickable' : '';
 
@@ -3187,8 +3240,15 @@ function buildLayerLegendHtml(layer) {
     }
 
     if (sym.mode === 'graduated' && sym.field) {
-        const ramp = COLOR_PALETTES[sym.colorRamp || sym.palette || 'Viridis'] || COLOR_PALETTES.Viridis;
-        const grad = `linear-gradient(90deg, ${ramp[0]}, ${ramp[ramp.length - 1]})`;
+        // Les couleurs du style déclaratif priment sur la rampe nommée — c'est
+        // déjà la règle pour peindre la carte (cf. applyLayerStyle). La légende
+        // s'en écartait : elle annonçait un dégradé Viridis sous une carte
+        // verte. Une légende qui ne décrit pas la carte est pire qu'aucune.
+        const stopsDecl = (layer._declarative?.kind === 'graduated' ? layer._declarative.stops : null) || [];
+        const ramp = stopsDecl.length
+            ? stopsDecl.map((st) => st.color).filter(Boolean)
+            : (COLOR_PALETTES[sym.colorRamp || sym.palette || 'Viridis'] || COLOR_PALETTES.Viridis);
+        const grad = `linear-gradient(90deg, ${ramp.join(', ')})`;
         const focused = isLegendFocused(layer.id, null, null) ? ' legend-focused' : '';
         return `<div class="legend-group"><div class="legend-row${clickable}${focused}" data-legend="layer" data-layer-id="${lid}"><span class="swatch legend-grad" style="background:${grad}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
     }
@@ -3844,6 +3904,18 @@ function buildViewPopupHtml(layer, feature, idx) {
     const title = formatPopupValue(props.name || props._label || props.label)
         || layer.name || `Objet #${(idx ?? 0) + 1}`;
 
+    // Le gabarit est du HTML posé tel quel — c'est voulu, et sans danger quand
+    // il vient d'une table du document : l'y mettre demandait déjà le droit
+    // d'écrire. Venu d'une adresse, il s'exécuterait dans une iframe qui tient
+    // les droits de la personne sur son document. En scène externe, le gabarit
+    // est donc rendu **comme du texte** : sa mise en forme est perdue, ses
+    // valeurs restent.
+    if (typeof template === 'string' && template.trim() && CONFIG.sceneExterne) {
+        const texte = template.replace(/\{([^}]+)\}/g,
+            (_, key) => formatPopupValue(props[key.trim()]) ?? '');
+        return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>`
+             + `<div class="atlas-popup-row">${escapeHtml(texte)}</div></div>`;
+    }
     if (typeof template === 'string' && template.trim()) {
         let html = template;
         html = html.replace(/\{([^}]+)\}/g, (_, key) => escapeHtml(formatPopupValue(props[key.trim()])));
@@ -4530,6 +4602,15 @@ function wireMobileNav() {
 }
 
 async function initGrist() {
+    // Une scène venue d'une adresse n'est pas de confiance : n'importe qui peut
+    // fabriquer l'URL et la faire ouvrir, alors qu'une scène lue dans le
+    // document a forcément été posée par quelqu'un qui pouvait y écrire.
+    // Atlas ne lui donne donc pas le document — `grist.ready()` n'est jamais
+    // appelé, `docApi` n'existe pas, et rien ne s'écrit nulle part.
+    if (CONFIG.sceneExterne) {
+        console.info('[Atlas] scène externe — le document n’est pas ouvert');
+        return;
+    }
     if (typeof grist === 'undefined') { console.log('Grist indisponible — mode standalone'); return; }
     const search = typeof location !== 'undefined' ? location.search : '';
     // Les droits transmis par Grist font autorité ; ?mode= ne peut que restreindre.
@@ -4691,6 +4772,57 @@ async function loadFromSceneManifest() {
     } catch (e) {
         console.warn('loadFromSceneManifest:', e);
         showToast('Scene Manifest : ' + e.message, 'error');
+    }
+}
+
+/**
+ * Monter une scène venue d'une adresse.
+ *
+ * Le jumeau de `loadFromSceneManifest`, moins tout ce qui touche au document :
+ * ni préférences, ni récit enregistré, ni sondage. La différence tient au
+ * premier argument passé au chargeur — `null` au lieu de `docApi` —, et c'est
+ * cette absence qui fait tomber les couches `source.table` dans les échecs
+ * déclarés, avec le message qui envoie les publier.
+ */
+async function monterSceneExterne(manifest) {
+    try {
+        const { layers, projectName, bounds: rawBounds, echecs } =
+            await loadSceneManifestLayers(null, manifest, null);
+        signalerCouchesManquantes(echecs);
+
+        STATE.layers.push(...layers);
+        // Pas de préférences enregistrées ici : l'ordre est celui que le
+        // manifeste déclare, et il n'y a rien d'autre pour le contredire.
+        STATE.layers = sortByRank(STATE.layers, Object.fromEntries(
+            STATE.layers.filter((l) => Number.isFinite(l._rank)).map((l) => [l.sourceTable || l.id, l._rank])
+        ));
+        layers.forEach((layer) => {
+            (layer.controls || []).forEach((c) => repairSelectControlFromManifest(layer, c));
+            sanitizeBrokenSelectFilters(layer);
+            prepareLayerFilters(layer);
+        });
+        if (projectName) {
+            STATE.projectName = projectName;
+            const el = $('project-name');
+            if (el) el.textContent = projectName;
+        }
+        mountLoadedLayers(boundsFromVisibleLayers(layers) || rawBounds);
+
+        if (!layers.length) {
+            showToast('Scène chargée, mais aucune couche affichable', 'warning');
+        } else {
+            showToast(`Scène externe · ${layers.length} couche(s)`, 'success');
+        }
+
+        // Pas de validation contre le schéma ici, et c'est délibéré : elle
+        // écrirait dans la console de qui *regarde* la scène, alors que le
+        // besoin est chez qui l'*écrit*. Celui-là dispose déjà de l'outil —
+        // `node scripts/valider-schema.js <schema> <scene>` — et du schéma
+        // publié à une adresse stable. Les échecs par couche, eux, sont
+        // déclarés ci-dessus : c'est ce qui manquait vraiment.
+    } catch (e) {
+        console.warn('monterSceneExterne:', e);
+        showToast('Scène externe : ' + e.message, 'error');
     }
 }
 
@@ -5936,6 +6068,7 @@ async function init() {
     initMap();
     probeLocalModels();
     await initGrist();
+    if (CONFIG.sceneExterne) await monterSceneExterne(CONFIG.sceneExterne);
     applyViewModeChrome();
     updateMobileLayout();
     // Autosave : standalone uniquement — pas en doc Grist (Scene Manifest charge déjà les couches)
@@ -5968,6 +6101,30 @@ async function init() {
  * eprouve reste rigoureusement inchange.
  */
 async function demarrer() {
+    // La scène externe se décide avant tout le reste : elle change le régime
+    // d'Atlas, pas seulement ce qu'il affiche. Ni accueil (il n'y a rien à
+    // demander, la scène est nommée) ni document (elle n'est pas de confiance).
+    const { url: urlScene, refus } = urlSceneDepuisParam(
+        typeof location !== 'undefined' ? location.search : '');
+    if (refus) {
+        // Un refus muet enverrait chercher un bug d'Atlas là où il y a une
+        // adresse mal formée. Il s'affiche, et la page s'ouvre quand même.
+        console.warn('[Atlas]', refus);
+        setTimeout(() => showToast(refus, 'error'), 0);
+    }
+    if (urlScene) {
+        const { manifest, echec } = await chargerSceneExterne(urlScene);
+        if (echec) {
+            console.error('[Atlas] scène externe :', echec);
+            // Rendre la main plutôt que laisser une page morte : Atlas s'ouvre
+            // vide, mais il dit pourquoi — et il reste utilisable.
+            setTimeout(() => showToast(echec, 'error'), 0);
+        } else {
+            CONFIG.sceneExterne = manifest;
+            CONFIG.viewMode = true;   // rien à écrire : il n'y a pas de document
+            return init();
+        }
+    }
     try {
         const { capacites } = await import('./lib/data-client.js?v=20260821b');
         if (capacites().mode === 'grist') return init();

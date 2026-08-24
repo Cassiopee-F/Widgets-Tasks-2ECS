@@ -319,6 +319,21 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       continue;
     }
 
+    // Scène externe : Atlas n'a pas le document, et c'est délibéré (cf.
+    // docs/CADRAGE-SCENE-EXTERNE-ET-DECOUPLAGE.md §A). Sans cette garde,
+    // l'appel tomberait sur `null.fetchTable` et l'échec porterait un message
+    // de moteur — « Cannot read properties of null » — qui n'envoie nulle part.
+    // Ici, il envoie au seul geste utile : publier la couche en amont.
+    if (!docApi) {
+      echecs.push({
+        nom: ml.name || ml.displayName || tableName,
+        origine: `table du document « ${tableName} »`,
+        raison: 'scène externe : Atlas ne lit pas les tables du document dans ce mode — '
+              + 'cette couche doit être publiée en amont pour être visible ici',
+      });
+      continue;
+    }
+
     // Couche déclarée masquée : on ne télécharge rien. La table sera lue au
     // moment de l'allumer (materializeDeferredLayer via _loadRows).
     const deferCold = shouldDeferCold(ml);
