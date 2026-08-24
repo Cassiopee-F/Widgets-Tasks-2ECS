@@ -17,6 +17,7 @@ Ce dossier contient les **patterns de code réutilisables** pour le développeme
 | [bridge.md](bridge.md) | GristBridge pour iframes sandboxées |
 | [patterns.md](patterns.md) | Patterns UI : modales, filtres, toasts, **respect des droits** |
 | [vitrine.md](vitrine.md) | ⭐ **Publier** : package.json, vitrine.json, manifeste, forum |
+| [echecs-silencieux.md](echecs-silencieux.md) | ⚠️ **Les trois formes d'échec muet** et ce qui les évite |
 
 ## Usage rapide
 
