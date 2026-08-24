@@ -3,12 +3,69 @@ import assert from 'node:assert/strict';
 import {
   classBounds, graduatedStops, recolorStops,
   expressionCouleurDeclarative, colorFnFromDeclarative,
+  applyGraduatedColorsToFeatures,
 } from '../lib/declarative-style.js';
 
 const VERTS = ['#e5f5e0', '#a1d99b', '#41ab5d', '#238b45', '#005a32'];
 const BLEUS = ['#deebf7', '#9ecae1', '#4292c6', '#2171b5', '#084594'];
 
 /* ---------- bornes ---------- */
+
+/**
+ * Le sous-ensemble d'expressions MapLibre que produit `expressionCouleurDeclarative`.
+ *
+ * Ecrit ici plutot que de tirer MapLibre en dependance de test : le depot n'en
+ * a aucune, et l'enjeu n'est pas de reimplementer le moteur mais de verifier
+ * qu'une entite tombe dans la bonne classe. Les regles reproduites sont celles
+ * de la specification : `coalesce` rend la premiere valeur non nulle,
+ * `to-number` essaie chaque argument jusqu'a une conversion reussie.
+ */
+function evaluer(expr, props, lie = {}) {
+  if (!Array.isArray(expr)) return expr;
+  const [op, ...args] = expr;
+  if (op === 'let') {
+    const porte = { ...lie };
+    for (let i = 0; i < args.length - 1; i += 2) porte[args[i]] = evaluer(args[i + 1], props, lie);
+    return evaluer(args[args.length - 1], props, porte);
+  }
+  if (op === 'var') return lie[args[0]];
+  if (op === 'get') return props[args[0]] ?? null;
+  if (op === 'coalesce') {
+    for (const a of args) { const v = evaluer(a, props, lie); if (v !== null && v !== undefined) return v; }
+    return null;
+  }
+  if (op === 'to-number') {
+    for (const a of args) {
+      const v = evaluer(a, props, lie);
+      if (v === null || v === undefined || v === false) return 0;
+      if (v === true) return 1;
+      const n = Number(v);
+      if (Number.isFinite(n) && String(v).trim() !== '') return n;
+    }
+    throw new Error('to-number : aucune conversion possible');
+  }
+  if (op === 'step') {
+    const v = evaluer(args[0], props, lie);
+    let sortie = args[1];
+    for (let i = 2; i < args.length; i += 2) { if (v >= args[i]) sortie = args[i + 1]; else break; }
+    return sortie;
+  }
+  if (op === 'case') {
+    for (let i = 0; i < args.length - 1; i += 2) { if (evaluer(args[i], props, lie)) return evaluer(args[i + 1], props, lie); }
+    return evaluer(args[args.length - 1], props, lie);
+  }
+  if (op === '<') return evaluer(args[0], props, lie) < evaluer(args[1], props, lie);
+  if (op === '<=') return evaluer(args[0], props, lie) <= evaluer(args[1], props, lie);
+  if (op === 'match') {
+    const v = evaluer(args[0], props, lie);
+    for (let i = 1; i < args.length - 1; i += 2) {
+      const cles = Array.isArray(args[i]) ? args[i] : [args[i]];
+      if (cles.includes(v)) return args[i + 1];
+    }
+    return args[args.length - 1];
+  }
+  throw new Error(`operateur non couvert par l’evaluateur de test : ${op}`);
+}
 
 test('linéaire : des classes d’égale largeur', () => {
   const b = classBounds(0, 100, 4, 'linear');
@@ -130,7 +187,7 @@ test('categorized : un match sur le champ, valeur et libelle acceptes', () => {
   assert.equal(e[e.length - 1], '#808080', 'et une valeur par defaut ferme le match');
 });
 
-test('graduated : un step sur les bornes basses, dans l’ordre', () => {
+test('graduated : les classes triees, hautes inclusives, hors-classe au repli', () => {
   const decl = {
     kind: 'graduated', field: 'lg_route_m',
     stops: [
@@ -140,11 +197,65 @@ test('graduated : un step sur les bornes basses, dans l’ordre', () => {
     ],
   };
   const e = expressionCouleurDeclarative(decl, '#808080');
-  assert.equal(e[0], 'step');
+  assert.equal(e[0], 'let', 'la valeur n’est convertie qu’une fois par entite');
   // Les stops arrivent dans le desordre : l'expression doit les trier, sinon
-  // MapLibre rejette des seuils non croissants et la couche perd sa couleur.
-  assert.deepEqual(e.slice(3), [50, '#c7e9c0', 800, '#238b45']);
-  assert.equal(e[2], '#f7fcf5', 'la classe la plus basse sert de couleur de base');
+  // une valeur serait rattachee a la premiere classe declaree, pas a la sienne.
+  assert.equal(evaluer(e, { lg_route_m: 30 }), '#f7fcf5');
+  assert.equal(evaluer(e, { lg_route_m: 120 }), '#c7e9c0');
+  assert.equal(evaluer(e, { lg_route_m: 1500 }), '#238b45');
+
+  // La borne partagee appartient a la classe du dessous, comme dans QGIS.
+  assert.equal(evaluer(e, { lg_route_m: 50 }), '#f7fcf5');
+  assert.equal(evaluer(e, { lg_route_m: 200 }), '#c7e9c0');
+
+  // Sous la premiere borne, au-dessus de la derniere, et dans le trou entre
+  // 200 et 800 : hors classification.
+  assert.equal(evaluer(e, { lg_route_m: -1 }), '#808080');
+  assert.equal(evaluer(e, { lg_route_m: 5000 }), '#808080');
+  assert.equal(evaluer(e, { lg_route_m: 500 }), '#808080', 'un trou dans la classification');
+});
+
+test('une valeur hors classification prend le repli, pas la classe la plus basse', () => {
+  // Mesure sur la scene de Sete : 400 batiments, 399 avec une hauteur de 1,4 a
+  // 20,2 m, et un seul portant la chaine 'NULL'. Peint comme la classe basse,
+  // il se lirait comme un batiment bas — une donnee absente deguisee en mesure.
+  const decl = {
+    kind: 'graduated', field: 'hauteur',
+    stops: [{ lower: 0, upper: 5, color: '#f7fcf5' },
+            { lower: 5, upper: 10, color: '#74c476' },
+            { lower: 10, upper: 25, color: '#00441b' }],
+  };
+  const e = expressionCouleurDeclarative(decl, '#FF00FF');
+  const peindre = (props) => evaluer(e, props);
+  assert.equal(e[0], 'let', 'la valeur n’est convertie qu’une fois par entite');
+
+  assert.equal(peindre({ hauteur: 3 }), '#f7fcf5');
+  assert.equal(peindre({ hauteur: 7 }), '#74c476');
+  assert.equal(peindre({ hauteur: 20.2 }), '#00441b');
+  assert.equal(peindre({ hauteur: '12.5' }), '#00441b', 'un nombre en texte reste un nombre');
+
+  assert.equal(peindre({ hauteur: 'NULL' }), '#FF00FF', 'la chaine NULL n’est pas une hauteur');
+  assert.equal(peindre({ nature: 'Indifferenciee' }), '#FF00FF', 'attribut absent');
+  assert.equal(peindre({ hauteur: null }), '#FF00FF', 'attribut a null');
+  assert.equal(peindre({ hauteur: -3 }), '#FF00FF', 'sous la premiere borne : hors classification');
+});
+
+test('l’expression graduee survit a un aller-retour JSON', () => {
+  // Elle est reenregistree dans Atlas_LayerPrefs et dans l'export de scene.
+  // Un repere non fini (-Infinity) s'y ecrit `null`, que to-number convertit
+  // en 0 : au rechargement, toutes les entites muettes tomberaient dans la
+  // classe qui contient zero. Le defaut ne se verrait qu'a la seconde ouverture.
+  const decl = {
+    kind: 'graduated', field: 'h',
+    stops: [{ lower: 0, upper: 10, color: '#111111' },
+            { lower: 10, upper: 100, color: '#222222' }],
+  };
+  const e = expressionCouleurDeclarative(decl, '#FF00FF');
+  const apres = JSON.parse(JSON.stringify(e));
+  assert.deepEqual(apres, e, 'aucune valeur non representable en JSON');
+  assert.equal(evaluer(apres, { h: 'NULL' }), '#FF00FF');
+  assert.equal(evaluer(apres, { h: 0 }), '#111111', 'zero reste dans sa classe');
+  assert.ok(JSON.stringify(e).indexOf('null') === -1, 'aucun repere perdu a la serialisation');
 });
 
 test('l’expression peint comme la fonction : les deux ne doivent pas diverger', () => {
@@ -175,4 +286,30 @@ test('un declaratif inexploitable ne rend rien, plutot qu’une expression fauss
     'sans champ, on ne peut pas interroger l’entite');
   assert.equal(expressionCouleurDeclarative({ kind: 'graduated', field: 'v', stops: [{ color: '#f00' }] }), null,
     'des bornes non numeriques ne font pas un step');
+});
+
+test('gradue : l’expression et la peinture par entite classent pareil', () => {
+  // `applyGraduatedColorsToFeatures` pose `_fill_color` sur chaque entite ;
+  // `layerPaintColor` fait passer cette valeur AVANT l'expression. Les deux
+  // chemins servent donc la meme couche selon qu'elle est peinte ou non, et
+  // un ecart donnerait deux couleurs pour la meme donnee — le genre de defaut
+  // qu'on attribue a la donnee plutot qu'au code.
+  // Bornes prises sur les scenes reelles : contigues, la haute de l'une egale
+  // la basse de la suivante. C'est la que les deux chemins peuvent diverger.
+  const stops = [{ lower: 0, upper: 5, color: '#f7fcf5' },
+                 { lower: 5, upper: 10, color: '#74c476' },
+                 { lower: 10, upper: 25, color: '#00441b' }];
+  const valeurs = [0, 3, 5, 9.9, 10, 20.2, -3, 'NULL', null, undefined, '7'];
+  const layer = {
+    _declarative: { kind: 'graduated', field: 'hauteur', stops },
+    style: { symbolization: { color: { mode: 'graduated', field: 'hauteur', defaultColor: '#FF00FF' } } },
+    geojson: { features: valeurs.map((v) => ({ properties: v === undefined ? {} : { hauteur: v } })) },
+  };
+  applyGraduatedColorsToFeatures(layer, []);
+
+  const e = expressionCouleurDeclarative(layer._declarative, '#FF00FF');
+  layer.geojson.features.forEach((f, i) => {
+    assert.equal(evaluer(e, f.properties), f.properties._fill_color,
+      `divergence sur ${JSON.stringify(valeurs[i])}`);
+  });
 });

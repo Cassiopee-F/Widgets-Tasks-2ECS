@@ -134,6 +134,19 @@ Réglages portés par `style.symbolization` (persistés dans `Atlas_LayerPrefs`)
 - **Les couleurs du déclaratif priment sur la rampe nommée**
   (`sequentialPaletteForSym`). Sans cela `applyLayerStyle` recoloriait les couches
   `qgis2grist` depuis `colorRamp` et effaçait la symbologie du récit.
+- **Une valeur hors classification prend le repli, jamais une classe.**
+  `expressionCouleurDeclarative` est un `case`, pas un `step` : `step` ne compare
+  qu'en `>=`, or les classes d'une graduation sont **hautes inclusives** (règle
+  de QGIS, et celle qu'applique `stops.find()` côté peinture par entité). Une
+  valeur posée sur une borne partagée — 50 entre `[0,50]` et `[50,200]`, cas
+  courant puisque les bornes sont rondes — changeait de classe selon qu'Atlas
+  détient ses entités ou non. Corollaires : un attribut absent, à `null` ou
+  portant la chaîne `'NULL'` (fréquent en sortie de base — un bâtiment sur 400
+  à Sète) tombe au repli au lieu de se lire comme une mesure basse ; et le
+  repère hors-classe est **fini**, car `-Infinity` s'écrit `null` en JSON et
+  `to-number(null)` vaut **0** — une expression réenregistrée dans
+  `Atlas_LayerPrefs` aurait reclassé toutes les entités muettes dans la classe
+  qui contient zéro, à la seconde ouverture seulement.
 - **Classes graduées bornées** : si les `stops` portent `lower`/`upper`, ils sont
   appliqués tels quels ; l’étalement linéaire min→max n’est qu’un repli. Sur une
   distribution asymétrique (mailles à 1–2 bâtiments, maximum à 134) l’étalement
