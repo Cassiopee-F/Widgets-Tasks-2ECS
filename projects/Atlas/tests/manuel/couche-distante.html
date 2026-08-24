@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Banc — couche distante et symbologie graduée</title>
+<script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;font:13px/1.5 system-ui,sans-serif;background:#12140f;color:#e8e4d8}
+  #map{position:absolute;inset:0}
+  #rap{position:absolute;top:0;right:0;width:340px;max-height:100%;overflow:auto;
+       background:rgba(18,20,15,.94);padding:14px 16px;border-left:1px solid #2f3328;z-index:2}
+  h1{font-size:13px;margin:0 0 10px;letter-spacing:.06em;text-transform:uppercase;color:#9aa38a}
+  table{border-collapse:collapse;width:100%;margin:8px 0;font-variant-numeric:tabular-nums}
+  td{padding:2px 6px 2px 0;vertical-align:top}
+  .sw{display:inline-block;width:11px;height:11px;border:1px solid #0006;vertical-align:-1px}
+  .ok{color:#7ec87e} .ko{color:#e07a7a} .att{color:#e0c07a}
+  code{color:#b9c4a6;font-size:11.5px;word-break:break-all}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="rap">Chargement…</div>
+<script type="module">
+import { expressionCouleurDeclarative } from '../../lib/declarative-style.js';
+
+// L'adresse publiee par le hub qgis-sspcloud. C'est le chemin « url » de la
+// cascade amont : Atlas ne detient pas les entites, MapLibre va les chercher.
+const URL_COUCHE = 'https://user-nic01asfr-qgis.user.lab.sspcloud.fr/published/nic01asfr/features/d48616a3d824-b-timents__bd_to-ed3abcd5';
+
+// Bornes prises sur la mesure reelle : 399 hauteurs de 1,4 a 20,2 m, et une
+// entite qui porte la chaine 'NULL'. Le repli est volontairement criard : on
+// veut la voir, pas la deviner.
+const REPLI = '#ff00d4';
+const DECL = { kind:'graduated', field:'hauteur', stops:[
+  { lower:0,  upper:5,  color:'#f7fcf5' },
+  { lower:5,  upper:10, color:'#a1d99b' },
+  { lower:10, upper:15, color:'#41ab5d' },
+  { lower:15, upper:25, color:'#00441b' },
+]};
+const expr = expressionCouleurDeclarative(DECL, REPLI);
+const journal = [];
+function centreDe(f){
+  const pts=[]; (function creuser(c){ if(typeof c[0]==='number') pts.push(c); else c.forEach(creuser); })(f.geometry.coordinates);
+  return [pts.reduce((a,p)=>a+p[0],0)/pts.length, pts.reduce((a,p)=>a+p[1],0)/pts.length];
+}
+const dire = (c,t)=>journal.push(`<div class="${c}">${t}</div>`);
+
+const m = new maplibregl.Map({
+  container:'map', center:[3.70,43.40], zoom:12, pitch:45,
+  // Sans lui, le tampon est vide des la fin de l'image : on ne pourrait pas
+  // lire ce qui a ete peint, seulement recompter ce qu'on croit avoir dit.
+  preserveDrawingBuffer:true,
+  style:{version:8, sources:{osm:{type:'raster',
+    tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256,
+    // OSM ne sert pas au-dela de z19 : sans `maxzoom`, MapLibre reclame des
+    // tuiles inexistantes en boucle et n'atteint jamais l'etat `idle`.
+    // A retenir pour les couches de service externe : le manifest amont porte
+    // `min_zoom`/`max_zoom`, et ce n'est pas une indication mais une borne.
+    maxzoom:19, attribution:'© OpenStreetMap'}},
+    layers:[{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.45}}]}
+});
+
+m.on('error', (e)=>{ dire('ko','erreur MapLibre : '+(e.error?.message||e.type)); rendre(); });
+
+m.on('load', async () => {
+  // 1. le chemin distant : `data` recoit une URL, pas un objet.
+  m.addSource('bati', { type:'geojson', data:URL_COUCHE });
+  m.addLayer({ id:'bati', type:'fill-extrusion', source:'bati', paint:{
+    'fill-extrusion-color': expr,
+    'fill-extrusion-height': ['*', 3, ['to-number', ['coalesce',['get','hauteur'],'-'], 1]],
+    'fill-extrusion-opacity': .9 }});
+
+  // 2. la meme donnee lue ici, pour comparer ce que MapLibre peint a ce que
+  //    la classification prevoit. Sans ce second regard, on verifierait que
+  //    l'expression est coherente avec elle-meme.
+  let attendu = null;
+  try {
+    const g = await (await fetch(URL_COUCHE)).json();
+    attendu = { _features: [] };
+    g.features.forEach((f, i) => {
+      // Marquer chaque entite pour pouvoir en isoler une seule ensuite : le
+      // GeoJSON n'a pas d'identifiant stable sur lequel filtrer.
+      f.properties = { ...(f.properties||{}), _sonde: i };
+      const h = Number(f.properties.hauteur);
+      const cl = Number.isFinite(h) ? DECL.stops.find(s=>h>=s.lower && h<=s.upper) : null;
+      const c = cl?.color || REPLI;
+      attendu[c] = (attendu[c]||0)+1;
+      attendu._features.push({ _sonde:i, hauteur:f.properties.hauteur, _centre:centreDe(f) });
+    });
+    // La couche est remontee depuis la donnee marquee, pour que le filtre de
+    // sonde ait prise. Le chemin par URL reste teste au-dessus.
+    m.getSource('bati').setData(g);
+    dire('ok', `lecture directe : ${g.features.length} entites — le CORS passe`);
+  } catch (e) { dire('ko','lecture directe impossible : '+e.message); }
+
+  // Lire la couleur reellement peinte, plutot que de recompter les proprietes.
+  // C'est la seule mesure qui distingue « l'expression est coherente avec
+  // elle-meme » de « MapLibre l'applique comme prevu ».
+  window.__sonder = (predicat) => new Promise((resolve) => {
+    const cible = (attendu?._features || []).find(predicat);
+    if (!cible) return resolve({ erreur: 'entite introuvable' });
+    // Sonder sur une couche `fill` et non `fill-extrusion` : l'extrusion
+    // recoit l'eclairage MapLibre (`light`), qui modifie la couleur des faces
+    // meme a hauteur nulle. Le pixel lu serait alors reconnaissable mais pas
+    // comparable — on verifierait une ressemblance, pas une egalite.
+    if (!m.getLayer('sonde')) {
+      m.addLayer({ id:'sonde', type:'fill', source:'bati',
+                   paint:{ 'fill-color': expr, 'fill-opacity': 1 } });
+    }
+    m.setFilter('sonde', ['==', ['get','_sonde'], cible._sonde]);
+    m.setLayoutProperty('sonde', 'visibility', 'visible');
+    m.setLayoutProperty('bati', 'visibility', 'none');
+    // Le fond masque : on veut lire la couleur du batiment, pas celle d'un
+    // pixel que le raster aurait teinte si le polygone ne couvrait pas le
+    // centre exact. S'il ne le couvre pas, on veut le voir en noir.
+    m.setLayoutProperty('osm', 'visibility', 'none');
+    // A plat et sans relief : le sommet du volume decalerait le pixel vise.
+    m.jumpTo({ center: cible._centre, zoom: 19, pitch: 0, bearing: 0 });
+    // `idle` n'est pas fiable ici : une seule tuile en echec le repousse
+    // indefiniment. On attend deux images rendues puis on lit.
+    let images = 0;
+    const surRendu = () => {
+      if (++images < 3) return;
+      m.off('render', surRendu);
+      const c = m.getCanvas();
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      const px = new Uint8Array(4);
+      gl.readPixels(Math.round(c.width/2), Math.round(c.height/2), 1, 1,
+                    gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const hex = '#' + [...px.slice(0,3)].map(v=>v.toString(16).padStart(2,'0')).join('');
+      m.setLayoutProperty('osm', 'visibility', 'visible');
+      m.setLayoutProperty('sonde', 'visibility', 'none');
+      m.setLayoutProperty('bati', 'visibility', 'visible');
+      resolve({ hauteur: cible.hauteur, peint: hex, centre: cible._centre });
+    };
+    m.on('render', surRendu);
+    m.triggerRepaint();
+  });
+
+  m.once('idle', () => {
+    const vues = m.querySourceFeatures('bati');
+    const compte = {};
+    for (const f of vues) {
+      const h = Number(f.properties?.hauteur);
+      const cl = Number.isFinite(h) ? DECL.stops.find(s=>h>=s.lower && h<=s.upper) : null;
+      compte[cl?.color || REPLI] = (compte[cl?.color||REPLI]||0)+1;
+    }
+    // Une entite chevauchant plusieurs tuiles est rendue plusieurs fois par
+    // querySourceFeatures : compter sans dedupliquer donnerait 1210 pour 400.
+    const uniques = new Set(vues.map(f=>f.properties?._sonde)).size;
+    dire(uniques ? 'ok' : 'ko', `source montee : ${uniques} entites distinctes visibles`);
+    rendre(attendu, compte);
+  });
+});
+
+function rendre(attendu, compte){
+  const lignes = [];
+  for (const s of [...DECL.stops, {color:REPLI, lower:'—', upper:'hors classe'}]) {
+    lignes.push(`<tr><td><span class="sw" style="background:${s.color}"></span></td>
+      <td>${s.lower === '—' ? 'hors classification' : s.lower+' – '+s.upper+' m'}</td>
+      <td style="text-align:right">${attendu?.[s.color] ?? '·'}</td></tr>`);
+  }
+  document.getElementById('rap').innerHTML = `
+    <h1>Couche distante · Sète</h1>
+    ${journal.join('')}
+    <table>${lignes.join('')}</table>
+    <div style="color:#9aa38a;margin-top:10px">Colonne : entités par classe, comptées sur la donnée lue directement.</div>
+    <div style="margin-top:12px"><code>${JSON.stringify(expr)}</code></div>`;
+  window.__banc = { journal, attendu, compte, expr };
+}
+</script>
+</body>
+</html>
