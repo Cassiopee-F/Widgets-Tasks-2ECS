@@ -1,0 +1,41 @@
+{
+  "version": "0.2.2",
+  "manifest_version": "V0.2",
+  "manifest_id": "e0037213-0a26-4aca-8ef9-3691aaf7d3be",
+  "title": "Scene Manifest",
+  "provenance": {
+    "producer": "qgis-sspcloud/hub",
+    "project_qgs": "/data/.autosave.qgz",
+    "study_id": "a2a6c8bd6e0d",
+    "project_id": "6176fcf5b381"
+  },
+  "layers": [
+    {
+      "id": "bâtiments__bd_topo_",
+      "name": "Bâtiments (BD TOPO)",
+      "order": 0,
+      "geometry_type": "polygon",
+      "visible": true,
+      "style": {"qml_source": null,
+                "declarative": {"kind": "single", "color": "#1d70b8", "opacity": 1}},
+      "source": {"type": "fichier", "classe": "atelier"},
+      "bbox": [3.6896821, 43.3996534, 3.7064534, 43.4102051],
+      "geojson_path": "/data/studies/a2a6c8bd6e0d/projects/6176fcf5b381/scene_layers/bâtiments__bd_topo_.geojson",
+      "n_features": 400,
+      "geojson_size_bytes": 549878,
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "openstreetmap",
+      "name": "OpenStreetMap",
+      "order": 1,
+      "geometry_type": "raster",
+      "visible": true,
+      "style": {"qml_source": null,
+                "declarative": {"kind": "single", "color": "#d64d00", "opacity": 1}},
+      "source": {"type": "xyz", "classe": "externe",
+                 "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"},
+      "bbox": [-180, -85.0511288, 180, 85.0511288]
+    }
+  ]
+}

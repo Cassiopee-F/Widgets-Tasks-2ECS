@@ -49,6 +49,12 @@ export const QGIS_WIDGETS_TABLE = 'QgisWidgets';
  *
  * @returns {{nature: 'table'|'inline'|'url'|'tuiles', valeur: any, deduite?: boolean}}
  */
+/** Services qu'un navigateur peut interroger lui-même, sans rien matérialiser. */
+export const SERVICES_EXTERNES = new Set(['xyz', 'wms', 'wmts', 'wfs']);
+
+/** Types qui désignent le document lui-même, et non une origine extérieure. */
+const TYPES_DOCUMENT = new Set(['grist', 'table']);
+
 export function origineDeCouche(ml) {
   if (ml?.source_type === 'pmtiles' && ml?.tiles_url) {
     return { nature: 'tuiles', valeur: ml.tiles_url };
@@ -63,7 +69,34 @@ export function origineDeCouche(ml) {
   if (typeof ml?.data_url === 'string' && ml.data_url) {
     return { nature: 'url', valeur: ml.data_url };
   }
+
+  // La table du document prime sur tout : c'est l'origine historique, et elle
+  // peut s'accompagner d'un `type` — « grist », « table » — qui ne doit pas
+  // détourner la lecture.
   if (ml?.source?.table) return { nature: 'table', valeur: ml.source.table };
+
+  // Origine déclarée par le producteur amont : { type, classe, url? }.
+  //
+  // `classe` vaut ce qui décide du diagnostic quand on échoue : « externe »
+  // désigne un service qu'on peut interroger soi-même, « atelier » une donnée
+  // qui n'existe que dans l'environnement de production — une base sans adresse
+  // joignable depuis un navigateur, un fichier sur un volume. Une couche
+  // d'atelier qui arrive jusqu'ici n'a pas été matérialisée : c'est un défaut
+  // amont, pas une limite d'Atlas, et il faut pouvoir le dire.
+  const st = ml?.source?.type;
+  if (st && !TYPES_DOCUMENT.has(st)) {
+    const classe = ml.source.classe || (SERVICES_EXTERNES.has(st) ? 'externe' : 'atelier');
+    return {
+      nature: SERVICES_EXTERNES.has(st) ? 'service' : 'atelier',
+      valeur: ml.source.url || ml.geojson_path || st,
+      service: st,
+      classe,
+    };
+  }
+  // Un chemin de fichier sans adresse : lisible par le producteur, pas par nous.
+  if (typeof ml?.geojson_path === 'string' && ml.geojson_path) {
+    return { nature: 'atelier', valeur: ml.geojson_path, service: 'fichier', classe: 'atelier' };
+  }
   // Dernier recours, et c'est une déduction : l'identifiant tenu pour un nom de
   // table. On le signale, pour que l'échec dise « origine non déclarée » plutôt
   // que « table absente ».
@@ -246,6 +279,31 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
         nom: ml.name || ml.displayName || ml.id || '(couche sans nom)',
         origine: `tuiles ${String(origine.valeur).slice(0, 60)}`,
         raison: 'origine reconnue mais pas encore prise en charge (protocole pmtiles absent)',
+      });
+      continue;
+    }
+
+    // Service externe : joignable, mais Atlas ne sait pas encore le monter.
+    // C'est une limite d'Atlas, et le message doit le dire — sinon on cherche
+    // une faute chez le producteur.
+    if (origine.nature === 'service') {
+      echecs.push({
+        nom: ml.name || ml.displayName || ml.id || '(couche sans nom)',
+        origine: `service ${origine.service} — ${String(origine.valeur).slice(0, 60)}`,
+        raison: `service externe joignable, pas encore pris en charge par Atlas`,
+      });
+      continue;
+    }
+
+    // Couche d'atelier : elle n'aurait pas dû arriver jusqu'ici. La donnée
+    // n'existe que dans l'environnement de production — un volume, une base
+    // sans adresse publique. Aucune clé n'y changerait rien : c'est une
+    // question de topologie, pas de droits.
+    if (origine.nature === 'atelier') {
+      echecs.push({
+        nom: ml.name || ml.displayName || ml.id || '(couche sans nom)',
+        origine: `${origine.service || 'atelier'} — ${String(origine.valeur).slice(0, 60)}`,
+        raison: 'couche d’atelier non matérialisée : inaccessible depuis un navigateur — à publier en amont',
       });
       continue;
     }

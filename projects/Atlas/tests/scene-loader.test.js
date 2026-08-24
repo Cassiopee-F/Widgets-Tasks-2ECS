@@ -4,6 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { fetchTableToRows, rowsToGeoJSON, boundsFromGeoJSON, inferGeometryTypeFromGeoJSON, resolveSceneGeometryType } from '../lib/grist-rows.js';
 import {
   manifestGeometryType,
@@ -370,13 +371,13 @@ describe('une couche non chargée le dit', () => {
   });
 
   it('distingue une origine déclarée d’un identifiant pris pour une table', async () => {
-    // Cas nominal des scènes venues d'ailleurs : pas de `source.table`, donc le
-    // repli sur `ml.id` fait chercher une table qui n'a jamais existé. Le
-    // message doit dire que le nom a été *déduit*, sinon on cherche une table
-    // absente au lieu d'une origine non gérée.
+    // Le repli sur `ml.id` ne concerne plus qu'une couche qui ne déclare RIEN —
+    // ni source, ni chemin, ni adresse. On cherche alors une table qui n'a
+    // jamais existé, et le message doit dire que le nom a été *déduit*, sinon
+    // on cherche une table absente au lieu d'une origine non gérée.
     const manifest = {
       version: '0.2.2',
-      layers: [{ id: 'routes__bd_topo_', name: 'Routes', geojson_path: '/data/routes.geojson' }],
+      layers: [{ id: 'routes__bd_topo_', name: 'Routes', geometry_type: 'line' }],
     };
     const { echecs } = await loadSceneManifestLayers(docQuiRefuse, manifest, null);
     assert.equal(echecs.length, 1);
@@ -498,5 +499,48 @@ describe('une couche peut porter ses données ailleurs que dans le document', ()
     assert.equal(boundsDuManifest({ bbox: ['a', 2, 3, 4] }), null);
     assert.equal(boundsDuManifest({}), null);
     assert.deepEqual(boundsDuManifest({ bbox: [1, 2, 3, 4] }), [[1, 2], [3, 4]]);
+  });
+});
+
+describe('une scène produite par un autre producteur', () => {
+  // Scène réelle de qgis-sspcloud (Sète, 400 bâtiments BD TOPO), transmise par
+  // Interop-Carto le 24/08 et NON retouchée. Un contrat validé contre un seul
+  // producteur ne prouve pas grand-chose : celle-ci vient d'une chaîne qui ne
+  // connaît pas Atlas, et c'est ce qui lui donne sa valeur de test.
+  const scene = JSON.parse(fs.readFileSync(
+    new URL('./fixtures/scene-manifest-sspcloud-sete.json', import.meta.url), 'utf8'));
+
+  const refuseTout = { fetchTable: async () => { throw new Error('table absente'); } };
+
+  it('distingue ce qu’Atlas ne sait pas faire de ce que l’amont n’a pas fait', async () => {
+    const { layers, echecs } = await loadSceneManifestLayers(refuseTout, scene, null);
+    assert.equal(layers.length, 0, 'aucune des deux origines n’est encore servie');
+    assert.equal(echecs.length, 2);
+
+    const bati = echecs.find((e) => /Bâtiments/.test(e.nom));
+    const osm = echecs.find((e) => /OpenStreetMap/.test(e.nom));
+
+    // Une couche d'atelier qui arrive jusqu'ici n'a pas été matérialisée :
+    // aucune clé n'y changerait rien, c'est une question de topologie.
+    assert.match(bati.raison, /atelier non matérialisée|à publier en amont/);
+    // Un service externe, lui, est joignable : l'obstacle est chez nous.
+    assert.match(osm.raison, /pas encore pris en charge par Atlas/);
+    assert.match(osm.origine, /xyz/);
+  });
+
+  it('lit les origines déclarées, sans retomber sur l’identifiant', () => {
+    const [bati, osm] = scene.layers.map((l) => origineDeCouche(l));
+    assert.equal(bati.nature, 'atelier');
+    assert.equal(osm.nature, 'service');
+    assert.equal(osm.service, 'xyz');
+    // Le repli sur `ml.id` ne doit plus s'appliquer : ces couches déclarent leur
+    // origine, même si Atlas ne sait pas encore la servir.
+    assert.ok(!bati.deduite && !osm.deduite);
+  });
+
+  it('sait où regarder : chaque couche porte son emprise', () => {
+    for (const l of scene.layers) {
+      assert.ok(Array.isArray(l.bbox) && l.bbox.length === 4, `${l.name} sans bbox`);
+    }
   });
 });
