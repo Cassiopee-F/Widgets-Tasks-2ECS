@@ -604,6 +604,27 @@ pas de propriétaire. Ce qu'un lecteur déplace y est éphémère par nature.
 La règle : **on écrit là où il y a un propriétaire, et on ne prétend pas en
 inventer un quand il n'y en a pas.**
 
+### `inline` n'est pas `distant` — le manifeste peut porter ses données
+
+`geojson` accepte **un objet autant qu'une adresse**. Avec un objet, la scène est
+autonome en données : les entités voyagent avec elle, et la couche est aussi
+complète qu'une couche lue dans une table.
+
+> **`_distant` doit donc rester faux pour `inline`.** Le drapeau commande une
+> dizaine de comportements — filtrage par expression, sol constant au lieu du sol
+> par entité, compte déclaré préfixé « ≈ », clic en consultation au lieu de la
+> sélection. Le poser sur une couche qui porte ses entités revient à **l'amputer
+> de ce qu'elle n'a pas perdu**, sans que rien à l'écran ne dise pourquoi.
+
+Même raison pour l'emprise : une couche `inline` **ne réclame pas de `bbox`**,
+la sienne se calcule. Lui en réclamer une signalerait un manque qui n'en est pas
+un — et un avertissement qui se trompe occupe la place d'un avertissement qui a
+raison.
+
+La fabrique s'appelle `coucheHorsTable` et non plus `coucheDistante` : elle sert
+les deux cas, et un nom qui ment est le troisième visage de
+`skills/echecs-silencieux.md`.
+
 ### Contrôles d'une couche distante — le manifeste répond, MapLibre filtre
 
 Deux dérivations lisaient les entités locales, et deux réponses par défaut

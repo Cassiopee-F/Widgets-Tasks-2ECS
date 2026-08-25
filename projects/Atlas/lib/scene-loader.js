@@ -221,7 +221,7 @@ export function boundsDuManifest(ml) {
  * Ce que le manifest déclare prend le relais ; `_distant` permet au reste du
  * code de savoir qu'il ne faut pas compter sur les entités.
  */
-function coucheDistante(ml, origine, widgetConfig) {
+function coucheHorsTable(ml, origine, widgetConfig) {
   const nom = ml.name || ml.displayName || ml.id || 'couche';
   const cfgLayer = configLayerMeta(widgetConfig, ml.id || nom);
   const declarative = ml.style?.declarative || cfgLayer?.style?.declarative || null;
@@ -252,8 +252,13 @@ function coucheDistante(ml, origine, widgetConfig) {
     _profile: ml.profile || 'A',
     _deferredRows: null,
     _deferredLoad: false,
-    // Atlas ne détient pas les entités de cette couche.
-    _distant: true,
+    // Atlas ne détient pas les entités de cette couche — **sauf si elles sont
+    // dans le manifeste**. Une couche `inline` les porte avec elle : elle est
+    // aussi complète qu'une couche lue dans une table, et doit rester éditable,
+    // calée sur le relief entité par entité, et comptée pour de vrai. Le
+    // drapeau commande une dizaine de comportements ; le poser à tort revient
+    // à amputer une couche qui n'a rien perdu.
+    _distant: origine.nature !== 'inline',
     _origine: origine.nature,
     _bboxDeclaree: boundsDuManifest(ml),
     _zoom: bornesZoomDeclarees(ml),
@@ -344,7 +349,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
     // passe pas par le document. MapLibre sait recevoir une URL comme source,
     // donc il n'y a rien à télécharger ici — seulement à laisser passer.
     if (origine.nature === 'inline' || origine.nature === 'url') {
-      const couche = coucheDistante(ml, origine, widgetConfig);
+      const couche = coucheHorsTable(ml, origine, widgetConfig);
       atlasLayers.push(couche);
       const bd = boundsDuManifest(ml);
       if (bd) {
@@ -354,10 +359,15 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
           || couche.geometryType === 'LineString';
         if (couche.visible && areal) primaryBounds.push(bd);
         else fallbackBounds.push(bd);
-      } else {
+      } else if (origine.nature !== 'inline') {
         // Sans emprise, la couche s'affichera mais ne pourra pas être cadrée :
         // il faut le dire, sinon on regarde au mauvais endroit en croyant que
         // la donnée manque.
+        //
+        // Une couche `inline` échappe à cette règle : ses entités sont là, donc
+        // son emprise se calcule. Lui réclamer une `bbox` reviendrait à signaler
+        // un manque qui n'en est pas un — et un avertissement qui se trompe
+        // occupe la place d'un avertissement qui a raison.
         echecs.push({
           nom: ml.name || ml.displayName || ml.id || '(couche sans nom)',
           origine: `${origine.nature} ${String(origine.valeur).slice(0, 60)}`,

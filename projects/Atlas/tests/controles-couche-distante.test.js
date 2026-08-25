@@ -6,7 +6,10 @@ import {
 } from '../lib/controls.js';
 import { evaluer } from './aide-expressions.js';
 import { applyManifestControlsToLayer } from '../lib/manifest-binding.js';
-import { nFeaturesDeclare, champsDeclares, bornesZoomDeclarees } from '../lib/scene-loader.js';
+import {
+  nFeaturesDeclare, champsDeclares, bornesZoomDeclarees,
+  loadSceneManifestLayers, boundsFromVisibleLayers,
+} from '../lib/scene-loader.js';
 import { extrusionExpressions } from '../lib/terrain-base.js';
 
 /**
@@ -257,4 +260,52 @@ test('le sol d’une couche distante est constant, pas nul', () => {
 
   assert.deepEqual(extrusionExpressions(0, 12, false, 47.5), { base: 0, height: 12 },
     'sans relief, aucun décalage — ni constant ni par entité');
+});
+
+/* ---------- une couche portée par le manifeste n'est pas une couche distante ---------- */
+
+const geoInline = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', properties: { h: 5 },
+      geometry: { type: 'Polygon', coordinates: [[[3.69, 43.40], [3.70, 43.40], [3.70, 43.41], [3.69, 43.41], [3.69, 43.40]]] } },
+    { type: 'Feature', properties: { h: 22 },
+      geometry: { type: 'Polygon', coordinates: [[[3.71, 43.40], [3.72, 43.40], [3.72, 43.41], [3.71, 43.41], [3.71, 43.40]]] } },
+  ],
+};
+const sceneAvec = (couche) => ({ version: '0.2.2', layers: [couche] });
+
+test('une couche « inline » détient ses entités, donc n’est pas distante', async () => {
+  // Le drapeau `_distant` commande une dizaine de comportements : filtrage par
+  // expression, sol constant au lieu du sol par entité, compte déclaré et
+  // préfixé « ≈ », clic en consultation au lieu de la sélection. Le poser sur
+  // une couche qui porte ses entités revient à l'amputer de ce qu'elle n'a pas
+  // perdu — et rien à l'écran ne dirait pourquoi.
+  const { layers, echecs } = await loadSceneManifestLayers(null,
+    sceneAvec({ id: 'b', name: 'B', geometry_type: 'polygon',
+                visibility: { defaultVisible: true }, geojson: geoInline }), null);
+
+  assert.equal(layers.length, 1);
+  assert.equal(layers[0]._distant, false, 'ses entités sont là : elle est détenue');
+  assert.equal(layers[0].geojson.features.length, 2);
+  assert.deepEqual(echecs, [], 'et rien ne lui manque');
+});
+
+test('une couche « inline » ne réclame pas de bbox — la sienne se calcule', async () => {
+  // Réclamer une emprise déclarée à une couche dont on a les entités signale un
+  // manque qui n'en est pas un. Un avertissement qui se trompe occupe la place
+  // d'un avertissement qui a raison.
+  const { layers } = await loadSceneManifestLayers(null,
+    sceneAvec({ id: 'b', name: 'B', geometry_type: 'polygon',
+                visibility: { defaultVisible: true }, geojson: geoInline }), null);
+  assert.deepEqual(boundsFromVisibleLayers(layers), [[3.69, 43.40], [3.72, 43.41]]);
+});
+
+test('une couche par URL, elle, reste distante et réclame son emprise', async () => {
+  const { layers, echecs } = await loadSceneManifestLayers(null,
+    sceneAvec({ id: 'b', name: 'B', geometry_type: 'polygon',
+                visibility: { defaultVisible: true }, geojson: 'https://h.fr/c.geojson' }), null);
+  assert.equal(layers[0]._distant, true);
+  assert.equal(echecs.length, 1);
+  assert.match(echecs[0].raison, /emprise déclarée|bbox/);
 });
