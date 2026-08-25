@@ -5219,11 +5219,25 @@ function loadProject() {
 }
 function exportProject() {
     if (!STATE.layers.length) { showToast('Aucune couche à exporter', 'warning'); return; }
-    const combined = { type: 'FeatureCollection', features: STATE.layers.flatMap((l) => l.geojson?.features || []) };
+    // Une couche distante — ou de tuiles — n'a rien à exporter : ses entités
+    // sont ailleurs. Un fichier vide est un export **réussi** jusqu'à ce qu'on
+    // l'ouvre ; mieux vaut ne rien produire et dire pourquoi.
+    const exportables = STATE.layers.filter((l) => l.geojson?.features?.length);
+    const absentes = STATE.layers.filter((l) => !l.geojson?.features?.length);
+    if (!exportables.length) {
+        showToast(absentes.some((l) => l._distant)
+            ? 'Rien à exporter : Atlas ne détient pas ces couches, seulement leurs adresses'
+            : 'Rien à exporter : aucune couche ne porte d’entités', 'warning');
+        return;
+    }
+    const combined = { type: 'FeatureCollection', features: exportables.flatMap((l) => l.geojson.features) };
     const blob = new Blob([JSON.stringify(combined, null, 2)], { type: 'application/geo+json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'atlas_export.geojson'; a.click(); URL.revokeObjectURL(url);
-    showToast('Export GeoJSON', 'success');
+    // Un export partiel qui se tait ressemble à un export complet.
+    showToast(absentes.length
+        ? `Export GeoJSON — ${exportables.length} couche(s) ; ${absentes.length} non détenue(s), absente(s) du fichier`
+        : 'Export GeoJSON', absentes.length ? 'warning' : 'success');
 }
 
 // ============================================================
