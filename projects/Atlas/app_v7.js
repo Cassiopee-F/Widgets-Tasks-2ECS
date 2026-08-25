@@ -4156,6 +4156,14 @@ function finalizeNewLayer(layer) {
     else openModule('couches');
     saveLayerToGrist(layer, true);
 }
+/**
+ * Cadrer sur une couche — depuis ses entités, ou depuis ce qu'elle déclare.
+ *
+ * Une couche distante n'a pas ses entités ici : MapLibre les a, Atlas non. Son
+ * emprise vient alors du manifeste (`bbox`), qui est justement là pour ça.
+ *
+ * @returns {boolean} vrai si le cadrage a eu lieu.
+ */
 function fitToLayer(layer) {
     const bounds = new maplibregl.LngLatBounds();
     let any = false;
@@ -4164,7 +4172,15 @@ function fitToLayer(layer) {
         const coords = g.type === 'Point' ? [g.coordinates] : g.coordinates.flat(g.type.includes('Multi') ? 2 : 1);
         coords.forEach((c) => { if (Array.isArray(c) && typeof c[0] === 'number') { bounds.extend(c); any = true; } });
     });
-    if (any) map.fitBounds(bounds, { padding: 80, maxZoom: 18, duration: 800 });
+    if (any) {
+        map.fitBounds(bounds, { padding: 80, maxZoom: 18, duration: 800 });
+        return true;
+    }
+    if (layer._bboxDeclaree) {
+        map.fitBounds(layer._bboxDeclaree, { padding: 80, maxZoom: 18, duration: 800 });
+        return true;
+    }
+    return false;
 }
 
 function wireDrop() {
@@ -4694,8 +4710,15 @@ async function initGristTables() {
 function mountLoadedLayers(bounds) {
     updateRailBadge();
     if (!map) return;
+    // Le cadrage se pose **tout de suite**, hors de la file d'attente du style.
+    // `fitBounds` n'a besoin que de la carte, pas de ses tuiles ; et surtout,
+    // celui qui monte les couches connaît les bornes du manifeste, alors que le
+    // rappel d'`onStyleReady` ne sait que les calculer depuis les entités
+    // locales — qu'une couche distante n'a pas. Les laisser tous deux dans la
+    // file les mettrait en concurrence : le premier servi poserait
+    // `_initialViewportApplied` et l'autre n'aurait plus la main.
+    applyInitialViewport(bounds || computeLayersBounds());
     scheduleMapLayersSync(() => {
-        applyInitialViewport(bounds || computeLayersBounds());
         const remount = () => {
             if (!mapStyleUsable()) return;
             syncAllLayersToMap();
@@ -5525,13 +5548,28 @@ const A = {
     zoomLayer(id, e) {
         if (e) e.stopPropagation();
         const l = STATE.layers.find((x) => x.id === id);
-        if (!l?.geojson?.features?.length) { showToast('Couche vide', 'warning'); return; }
+        // « Couche vide » était dit d'une couche distante, qui ne l'est pas :
+        // ses entités sont ailleurs, pas absentes. Le message envoyait chercher
+        // une donnée manquante au lieu d'une emprise non déclarée. On ne décide
+        // qu'après avoir essayé — `fitToLayer` sait aussi cadrer sur la `bbox`
+        // du manifeste.
+        if (!l) return;
+        if (!l.geojson?.features?.length && !l._distant) {
+            showToast('Couche vide', 'warning');
+            return;
+        }
         if (l.visible === false) {
             l.visible = true;
             syncLayerToMapState(l);
         }
-        fitToLayer(l);
-        showToast(`Zoom sur « ${l.name} »`, 'info');
+        // Annoncer un zoom qui n'a pas eu lieu serait pire que se taire : on
+        // chercherait ce qui empêche de voir la couche là où elle n'est pas.
+        if (fitToLayer(l)) {
+            showToast(`Zoom sur « ${l.name} »`, 'info');
+        } else {
+            showToast(`« ${l.name} » : pas d'emprise connue — le manifeste ne déclare pas de bbox`,
+                'warning');
+        }
     },
     deleteLayer(id, e) {
         e.stopPropagation();

@@ -573,6 +573,35 @@ et envoie chercher pourquoi la donnée est vide. `formatLayerCount` affiche
 « ≈400 » quand le manifeste déclare sans qu'on ait vérifié, et « — » quand
 personne ne sait.
 
+### Non-régression vérifiée en Grist réel (25/08/2026)
+
+Document `nrRTKiyiz1suJ3NF1QcbqK` (espace *Widgets*), Atlas servi en **https
+local** — un document en HTTPS refuse une iframe en `http://localhost`
+(contenu mixte), d'où le certificat auto-signé pour l'essai. Une seule scène
+portant **les deux origines à la fois** :
+
+| Couche | Ce qui est vérifié |
+|---|---|
+| `Batiments_locaux` (table) | chemin nominal intact — 5 objets lus et peints |
+| Bâtiments BD TOPO (URL) | chemin distant — « ≈400 obj. », symbologie appliquée |
+
+`Atlas_LayerPrefs` est bien créée et écrite : l'écriture des préférences n'a pas
+régressé.
+
+**Effet de bord constaté, non corrigé** : la présence d'une couche distante fait
+créer `Maquette_Layers`. Une couche distante n'a pas de `sourceTable`, donc
+`saveLayerPref` la traite comme une couche de maquette. Ce n'est pas un défaut de
+`?scene=` — c'est la seconde origine qui rencontre le « sweet spot opt-in ». À
+arbitrer : où rangent leurs préférences des couches qu'Atlas ne détient pas ?
+
+### `fitToLayer` cadre aussi sur ce qui est déclaré
+
+« Couche vide » était dit d'une couche distante, **qui ne l'est pas** : ses
+entités sont ailleurs, pas absentes. Le message envoyait chercher une donnée
+manquante au lieu d'une emprise non déclarée. `fitToLayer` retombe désormais sur
+`_bboxDeclaree` et **retourne un booléen** — l'appelant n'annonce plus un zoom qui
+n'a pas eu lieu, et dit à la place que le manifeste ne déclare pas de `bbox`.
+
 **La règle qui découle des trois couches** : `vitrine=1` ne se pose que si l'on
 embarque **le widget seul**. Si l'on embarque un **document** Grist, Atlas y est
 réellement dans Grist — le poser lui ferait ignorer le document qu'il a sous la
