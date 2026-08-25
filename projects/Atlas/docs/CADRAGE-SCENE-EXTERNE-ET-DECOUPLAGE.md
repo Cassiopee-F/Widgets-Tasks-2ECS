@@ -1,7 +1,7 @@
 # Atlas — la scène qui vient d'ailleurs, et les entités qu'on n'a plus
 
-> **État au 25/08/2026 : chantiers A et B faits et éprouvés — en navigateur et
-> dans un document Grist réel ; C non commencé.** Écrit après la vérification du chemin distant
+> **État au 25/08/2026 : les trois chantiers sont faits et éprouvés** — en
+> navigateur et dans un document Grist réel. Écrit après la vérification du chemin distant
 > (banc `tests/manuel/couche-distante.html`), complété le soir même par ce que
 > le branchement a révélé — voir « Ce que le branchement a appris » en fin de §A.
 >
@@ -284,18 +284,25 @@ dédupliquer, ou elle mentira dans l'autre sens.
    qui répondent : le producteur sait à quelle échelle sa couche est lisible.
    Atlas les ignorait depuis toujours.
 
-Reste au titre de B, non traité et non bloquant : **l'index de recherche**
-(`indexFeatures`) et **l'export**, qui produit un fichier vide au lieu de dire
-qu'il n'a rien.
+~~L'export~~ est traité : rien n'est produit quand rien n'est exportable, et le
+message distingue « Atlas ne détient pas ces couches » de « aucune couche ne
+porte d'entités ». Reste **l'index de recherche** (`indexFeatures`), non
+bloquant : une couche distante n'est pas trouvable par la recherche d'objet.
 
 Chaque étape est livrable seule et se vérifie sur la scène de Sète.
 
 ---
 
-# C. Les couches de service externe
+# C. Les couches de service externe — **fait pour `xyz`**
 
-Petit, et sans enjeu d'architecture : `xyz` est une source `raster`, le patron
-existe déjà (`app_v7.js:1259`, source `raster-dem` avec `tiles`).
+Une couche `xyz` devient une source `raster` : MapLibre va chercher les images
+au gabarit d'adresse, **rien ne transite par Atlas**. Le drapeau `_raster` la
+tient à l'écart de tout ce qui suppose du vectoriel. Le dernier échec déclaré de
+la scène de Sète disparaît : son fond OpenStreetMap est peint, avec son opacité
+et son attribution.
+
+`wms`, `wmts` et `wfs` restent des échecs déclarés — et `wfs` relèvera du chemin
+URL déjà écrit, pas d'un nouveau.
 
 **Le renseignement du 25/08, qui vaut plus que le chantier lui-même** :
 `tile.openstreetmap.org` **ne sert pas au-delà de z19**. Sans `maxzoom` sur la
