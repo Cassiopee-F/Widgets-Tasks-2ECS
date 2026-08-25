@@ -589,10 +589,20 @@ portant **les deux origines à la fois** :
 régressé.
 
 **Effet de bord constaté, non corrigé** : la présence d'une couche distante fait
-créer `Maquette_Layers`. Une couche distante n'a pas de `sourceTable`, donc
-`saveLayerPref` la traite comme une couche de maquette. Ce n'est pas un défaut de
-`?scene=` — c'est la seconde origine qui rencontre le « sweet spot opt-in ». À
-arbitrer : où rangent leurs préférences des couches qu'Atlas ne détient pas ?
+créer `Maquette_Layers`. `saveLayerPref` exige `source === 'qgis2grist'` **et**
+`sourceTable` ; une couche distante n'a ni l'un ni l'autre, donc elle retombe sur
+la table de maquette, qui n'est pas faite pour ça.
+
+**La réponse est arrêtée** (cadrage §« Ce qui reste indéterminé ») : indexer sur
+`sourceTable || id` et reformuler le garde en « cette couche vient du manifeste
+du document ». **Jamais l'URL comme clé** — elle change quand un jeton expire, et
+les préférences seraient perdues au renouvellement ; l'`id` du manifeste est
+stable par construction.
+
+Et dans une **scène externe**, on n'écrit rien : il n'y a pas de document, donc
+pas de propriétaire. Ce qu'un lecteur déplace y est éphémère par nature.
+La règle : **on écrit là où il y a un propriétaire, et on ne prétend pas en
+inventer un quand il n'y en a pas.**
 
 ### Contrôles d'une couche distante — le manifeste répond, MapLibre filtre
 

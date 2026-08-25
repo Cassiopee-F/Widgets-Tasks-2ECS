@@ -326,9 +326,32 @@ tard.
 
 ## Ce qui reste indéterminé
 
-- **L'état d'une scène externe.** Sans document, où va ce que la personne
-  règle ? Dans l'URL (partageable, limité), en `localStorage` (persistant, non
-  partageable), ou nulle part. Non tranché — et ça ne bloque pas A.
+- ~~**L'état d'une scène externe.**~~ **Tranché le 25/08** — et la question en
+  cachait deux, qui ne se répondent pas pareil.
+
+  **Une couche distante dans un document** : il y a un document, donc un
+  propriétaire, donc un endroit — `Atlas_LayerPrefs`, comme les autres. Ce qui
+  bloque aujourd'hui est purement une **clé** : la table s'indexe sur
+  `source_table`, et le garde de `saveLayerPref` exige `source === 'qgis2grist'`
+  **et** `sourceTable`. Une couche distante n'a ni l'un ni l'autre, donc elle
+  retombe sur `Maquette_Layers`, qui n'est pas faite pour ça. Correction : clé
+  `sourceTable || id`, et garde reformulée en « cette couche vient du manifeste
+  du document ».
+
+  > **Ne pas prendre l'URL comme clé.** Elle change — les jetons du hub amont
+  > expirent, on l'a vécu — et les préférences seraient perdues au premier
+  > renouvellement. L'`id` du manifeste est stable par construction.
+
+  **Une couche distante dans une scène externe** : pas de document, et c'est
+  délibéré. On n'écrit **rien**, parce que c'est ce qu'est une scène externe —
+  une *présentation*. L'auteur a composé, le lecteur consulte ; ce qu'il déplace
+  est éphémère par nature, comme le zoom d'une carte. L'exception qui méritera
+  l'URL le jour venu : ce qui vaut d'être **transmis** — une étape de récit, un
+  filtre — parce que là le lecteur ne règle pas son confort, il montre quelque
+  chose à quelqu'un.
+
+  La règle qui rend l'asymétrie non arbitraire : **on écrit là où il y a un
+  propriétaire, et on ne prétend pas en inventer un quand il n'y en a pas.**
 - **Le récit d'une scène externe.** `Atlas_Story` est une table. Un récit
   pourrait venir du manifeste lui-même (`story` y est déjà prévu), ce qui serait
   cohérent — mais alors il est en lecture seule, et le bouton « capturer » doit
