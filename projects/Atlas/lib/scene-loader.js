@@ -111,6 +111,37 @@ export function origineDeCouche(ml) {
  * distante s'afficherait sans qu'on sache où regarder. Le producteur amont la
  * fournit depuis QGIS, seule source possible pour un raster ou un service.
  */
+/**
+ * Le nombre d'entites que la couche declare.
+ *
+ * Deux cles coexistent et il faut lire les deux : `featureCount` est celle du
+ * contrat 0.2.2, `n_features` celle qu'ecrit la cascade de publication amont.
+ * N'en lire qu'une, c'est le pont rompu classique — le producteur ecrit d'un
+ * cote, le consommateur lit de l'autre, et chacun fonctionne parfaitement
+ * chez soi.
+ */
+export function nFeaturesDeclare(ml) {
+  for (const v of [ml?.n_features, ml?.featureCount]) {
+    if (Number.isFinite(v)) return v;
+  }
+  return null;
+}
+
+/**
+ * Les champs declares par le manifeste, au format attendu par Atlas.
+ *
+ * `gType` porte le type Grist de la colonne (`Numeric`, `Int`, `Text`, `Bool`,
+ * `Choice`, `Date`...). Le conserver evite de rededuire le type en lisant les
+ * entites — ce qu'une couche distante interdit.
+ */
+export function champsDeclares(ml) {
+  const f = ml?.fields;
+  if (!Array.isArray(f) || !f.length) return [];
+  return f
+    .filter((c) => c && (c.name || c.id))
+    .map((c) => ({ name: c.name || c.id, label: c.label || c.name || c.id, gType: c.gType || c.type }));
+}
+
 export function boundsDuManifest(ml) {
   const b = ml?.bbox;
   if (!Array.isArray(b) || b.length < 4) return null;
@@ -143,7 +174,7 @@ function coucheDistante(ml, origine, widgetConfig) {
     id: 'layer-scene-' + String(ml.id || nom).replace(/[^a-zA-Z0-9_-]/g, '_'),
     name: nom,
     color: fallbackColor,
-    visible: defaultLayerVisible(ml, ml.n_features ?? 0),
+    visible: defaultLayerVisible(ml, nFeaturesDeclare(ml) ?? 0),
     geometryType,
     source: origine.nature === 'url' ? 'url' : 'manifest',
     sourceTable: null,
@@ -153,7 +184,11 @@ function coucheDistante(ml, origine, widgetConfig) {
     style: { mode: 'mapbox', polygonMode: geometryType === 'Polygon' ? 'flat' : undefined },
     _modelCat: 'furniture',
     _declarative: declarative,
-    _fields: cfgLayer?.fields || [],
+    // La config widget qgis2grist n'existe pas pour une couche distante : ses
+    // champs viennent alors du manifeste, qui les declare (`fields[]`, avec le
+    // type Grist en `gType`). Sans cela l'inspecteur de symbologie n'a aucun
+    // champ a proposer, et la couche ne peut pas etre symbolisee.
+    _fields: cfgLayer?.fields || champsDeclares(ml),
     _gristColumns: [],
     _manifestLayer: ml,
     _profile: ml.profile || 'A',
@@ -163,7 +198,7 @@ function coucheDistante(ml, origine, widgetConfig) {
     _distant: true,
     _origine: origine.nature,
     _bboxDeclaree: boundsDuManifest(ml),
-    _nFeaturesDeclare: Number.isFinite(ml.n_features) ? ml.n_features : null,
+    _nFeaturesDeclare: nFeaturesDeclare(ml),
   };
 
   applyDeclarativeToLayer(layer, declarative);
@@ -370,7 +405,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
 
     const layerMeta = {
       geomType: atlasGeomToBridge(geometryType),
-      fields: cfgLayer?.fields || [],
+      fields: cfgLayer?.fields || champsDeclares(ml),
       geometryFields: ml.source?.geometry_fields || null,
       opacityFn: opacityFnFromDeclarative(declarative, cfgLayer?.fields || []),
       _color: fallbackColor,
@@ -422,7 +457,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       style: { mode: 'mapbox', polygonMode: geometryType === 'Polygon' ? 'flat' : undefined },
       _modelCat: 'furniture',
       _declarative: declarative,
-      _fields: cfgLayer?.fields || [],
+      _fields: cfgLayer?.fields || champsDeclares(ml),
       _gristColumns: deferCold ? [] : Object.keys(colData).filter((k) => k !== 'id'),
       _manifestLayer: ml,
       _profile: ml.profile || 'A',

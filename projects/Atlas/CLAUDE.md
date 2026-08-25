@@ -624,6 +624,31 @@ Vérifié à l'écran sur la scène de Sète : le curseur s'ouvre sur 10 → 20,
 (les bornes déclarées, non mesurables ici), et le pousser à 18,98 ne laisse que
 les bâtiments les plus hauts.
 
+### Symboliser une couche qu'on ne détient pas
+
+L'inspecteur annonçait « 0 objets », proposait « — Champ — » et concluait
+« ⚠️ Pas de valeurs numériques ». Trois affirmations, toutes fausses, et aucune
+ne se présentait comme une ignorance.
+
+| Source | Ce qu'elle apporte |
+|---|---|
+| `fields[]` du manifeste (`name`, `label`, **`gType`**) | les champs et leur type Grist — `_fields` ne venait que de la config widget qgis2grist, absente ici |
+| `style.declarative.field` et `controls[].field` | un repli quand `fields[]` manque : la scène nomme les champs dont elle se sert |
+| `controls[].dataMin`/`dataMax` | « Valeurs déclarées : 1,4 → 20,2 » au lieu de « pas de valeurs » |
+
+> **`gType` fait autorité sur l'échantillon.** C'est ce que la colonne *est*, pas
+> ce que ses valeurs ont l'air d'être — et il répond même quand il n'y a rien à
+> échantillonner. Sans lui, `detectFieldType` rendait « text » par défaut, ce qui
+> **retire le champ des choix d'une symbologie graduée**.
+
+### Le compte se lit sous deux clés, et il en existe deux
+
+`featureCount` est la clé du **contrat 0.2.2** ; `n_features` celle qu'écrit la
+cascade de publication amont. Atlas ne lisait que la seconde : un producteur
+parfaitement conforme aurait affiché « — ». C'est le pont rompu classique — le
+producteur écrit d'un côté, le consommateur lit de l'autre, et chacun fonctionne
+très bien chez soi (cf. `skills/echecs-silencieux.md`).
+
 ### `fitToLayer` cadre aussi sur ce qui est déclaré
 
 « Couche vide » était dit d'une couche distante, **qui ne l'est pas** : ses

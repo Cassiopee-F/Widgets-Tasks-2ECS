@@ -422,7 +422,20 @@ function getNumericRange(layer, field) {
     if (!count) return { min: 0, max: 100, count: 0 };
     return { min, max, count };
 }
+/**
+ * Types Grist qui portent un nombre.
+ *
+ * `gType` vient du manifeste (`fields[].gType`) : c'est ce que la colonne EST,
+ * pas ce que ses valeurs ont l'air d'etre. Il fait donc autorite sur l'echantillon
+ * — et il repond meme quand il n'y a aucune entite a echantillonner.
+ */
+const G_TYPES_NUMERIQUES = new Set(['Numeric', 'Int', 'Integer', 'Any']);
+
 function detectFieldType(layer, field) {
+    const declare = (layer?._fields || []).find((f) => f.name === field || f.label === field);
+    if (declare?.gType && declare.gType !== 'Any') {
+        return G_TYPES_NUMERIQUES.has(declare.gType) ? 'numeric' : 'text';
+    }
     const propKey = resolveFeaturePropertyKey(layer, field);
     let num = 0, total = 0;
     (layer.geojson?.features || []).slice(0, 200).forEach((f) => {
@@ -430,7 +443,17 @@ function detectFieldType(layer, field) {
         if (v == null) return; total++;
         if (Number.isFinite(parsePropertyNumber(v))) num++;
     });
-    if (!total) return 'text';
+    if (!total) {
+        // Aucune entite ici. « text » serait un verdict, alors qu'on n'a rien
+        // regarde — et il ferait disparaitre le champ des choix d'une
+        // symbologie graduee. Le style declaratif, lui, dit sur quel champ il
+        // gradue : c'est une mesure, donc un nombre.
+        const decl = layer?._declarative;
+        if (decl?.kind === 'graduated' && (decl.field === field)) return 'numeric';
+        const ctl = (layer?.controls || []).find((c) => c.field === field);
+        if (ctl && (ctl.type === 'range' || ctl.type === 'time')) return 'numeric';
+        return 'text';
+    }
     return num / total > 0.7 ? 'numeric' : 'text';
 }
 
@@ -540,6 +563,15 @@ function getLayerFields(layer) {
     (layer.geojson?.features || []).slice(0, 200).forEach((f) => {
         if (f.properties) Object.keys(f.properties).forEach((k) => { if (!k.startsWith('_')) keys.add(k); });
     });
+    if (!keys.size) {
+        // Pas d'entites a inspecter : la scene nomme quand meme les champs
+        // dont elle se sert — celui de la symbologie, ceux des controles. Une
+        // liste vide laisserait l'inspecteur proposer « — Champ — » et rien
+        // d'autre, donc rendrait la couche insymbolisable.
+        const decl = layer?._declarative;
+        if (decl?.field) keys.add(decl.field);
+        for (const c of (layer?.controls || [])) if (c?.field) keys.add(c.field);
+    }
     return Array.from(keys).sort().map((k) => ({ id: k, type: detectFieldType(layer, k) }));
 }
 function paletteColor(name, i, total) {
@@ -3441,7 +3473,7 @@ function renderSymbologyInspector(layer) {
     $('insp-head').innerHTML = `
         <div class="insp-eyebrow"><span class="layer-swatch" style="background:${layer.color}"></span>Symboliser${is3D ? ' · <span style="color:var(--accent2)">3D</span>' : ''}</div>
         <div class="insp-title">${layer.name}</div>
-        <div class="insp-sub">${layer.geojson?.features?.length || 0} objets · ${layer.geometryType}</div>
+        <div class="insp-sub">${formatLayerCount(layer)} objets · ${layer.geometryType}</div>
         ${modelChip}
         ${isPoint ? `<button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.editLayerObjects('${layer.id}')">✏️ Éditer les objets un par un</button>` : ''}`;
     $('insp-tabs').innerHTML = tabs.map((t) => `<button class="insp-tab ${inspSymTab === t ? 'active' : ''}" onclick="A.setSymTab('${t}')">${t}</button>`).join('');
@@ -3510,9 +3542,32 @@ function categoriesPreview(layer, c) {
         return `<div class="cat-row"><span class="cat-swatch" style="background:${col}" onclick="A.pickCatColor('${layer.id}','${String(v.value).replace(/'/g, "\\'")}', this)"></span><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></div>`;
     }).join('')}${vals.length > 30 ? `<div class="range-info" style="margin-top:6px">+ ${vals.length - 30} autres</div>` : ''}</div>`;
 }
+/** Bornes qu'un contrôle du manifeste déclare pour un champ, s'il y en a un. */
+function bornesDeclarees(layer, field) {
+    const c = (layer?.controls || []).find((x) => x.field === field);
+    const lo = Number.isFinite(c?.dataMin) ? c.dataMin : c?.min;
+    const hi = Number.isFinite(c?.dataMax) ? c.dataMax : c?.max;
+    return (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) ? { min: lo, max: hi } : null;
+}
+
 function rangeInfo(layer, field) {
     const r = getNumericRange(layer, field);
-    if (!r.count) return '<div class="range-info">⚠️ Pas de valeurs numériques</div>';
+    if (!r.count) {
+        // « Pas de valeurs numériques » est un constat, et il est faux ici : on
+        // n'a rien pu regarder. Le manifeste, lui, declare peut-etre les bornes
+        // observees a la production — c'est ce qui permet de graduer une couche
+        // qu'on ne detient pas.
+        const b = bornesDeclarees(layer, field);
+        if (b) {
+            return `<div class="range-info" style="margin-top:6px">Valeurs déclarées : `
+                 + `<strong>${b.min}</strong> → <strong>${b.max}</strong></div>`;
+        }
+        if (layer?._distant) {
+            return '<div class="range-info">Valeurs inconnues — la couche est distante '
+                 + 'et le manifeste ne déclare pas de bornes pour ce champ.</div>';
+        }
+        return '<div class="range-info">⚠️ Pas de valeurs numériques</div>';
+    }
     return `<div class="range-info" style="margin-top:6px">Valeurs : <strong>${r.min.toFixed(1)}</strong> → <strong>${r.max.toFixed(1)}</strong> (${r.count} obj.)</div>`;
 }
 

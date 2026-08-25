@@ -6,6 +6,7 @@ import {
 } from '../lib/controls.js';
 import { evaluer } from './aide-expressions.js';
 import { applyManifestControlsToLayer } from '../lib/manifest-binding.js';
+import { nFeaturesDeclare, champsDeclares } from '../lib/scene-loader.js';
 
 /**
  * Une couche dont Atlas ne détient pas les entités.
@@ -187,4 +188,38 @@ test('un select activé mais rien coché ne restreint rien', () => {
 test('aucun contrôle actif : pas d’expression, donc pas de filtre à retirer', () => {
   const l = distante([{ field: 'nature', type: 'select', active: false, values: ['A'] }]);
   assert.equal(expressionFiltreControles(l), null);
+});
+
+/* ---------- ce que la couche déclare d'elle-même ---------- */
+
+test('le compte se lit sous les deux clés, et il en existe deux', () => {
+  // `featureCount` est la clé du contrat 0.2.2 ; `n_features` celle qu'écrit la
+  // cascade de publication amont. N'en lire qu'une, c'est le pont rompu
+  // classique : chacun fonctionne parfaitement de son côté.
+  assert.equal(nFeaturesDeclare({ n_features: 400 }), 400);
+  assert.equal(nFeaturesDeclare({ featureCount: 400 }), 400);
+  assert.equal(nFeaturesDeclare({ featureCount: 0 }), 0, 'zéro déclaré est une réponse');
+  assert.equal(nFeaturesDeclare({}), null, 'rien déclaré n’est pas zéro');
+  assert.equal(nFeaturesDeclare({ n_features: 'beaucoup' }), null);
+});
+
+test('les champs déclarés remontent avec leur type Grist', () => {
+  const f = champsDeclares({ fields: [
+    { name: 'hauteur', label: 'Hauteur (m)', gType: 'Numeric' },
+    { name: 'nature', gType: 'Choice' },
+    { id: 'code' },
+    null,
+    { label: 'sans nom' },
+  ] });
+  assert.deepEqual(f, [
+    { name: 'hauteur', label: 'Hauteur (m)', gType: 'Numeric' },
+    { name: 'nature', label: 'nature', gType: 'Choice' },
+    { name: 'code', label: 'code', gType: undefined },
+  ]);
+});
+
+test('une couche sans fields déclarés ne fabrique pas de champs', () => {
+  assert.deepEqual(champsDeclares({}), []);
+  assert.deepEqual(champsDeclares({ fields: [] }), []);
+  assert.deepEqual(champsDeclares(null), []);
 });
