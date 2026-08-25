@@ -649,6 +649,51 @@ parfaitement conforme aurait affiché « — ». C'est le pont rompu classique �
 producteur écrit d'un côté, le consommateur lit de l'autre, et chacun fonctionne
 très bien chez soi (cf. `skills/echecs-silencieux.md`).
 
+### Inspecter, poser, borner — sans détenir les entités
+
+**Le clic passe par la feature que MapLibre rend.** `showViewFeaturePopup` prend
+un quatrième argument : sur une couche détenue on préfère toujours la feature
+source, qui porte la géométrie entière — MapLibre, lui, rend des géométries
+découpées par tuile ; sur une couche distante il n'y a pas de source, et la
+feature rendue **est** tout ce qu'on aura. Elle porte les attributs, qui sont ce
+que la fiche montre.
+
+**Une couche distante n'entre jamais en mode sélection.** Il n'y a ni ligne Grist
+à écrire ni feature source à modifier : l'inspecteur d'édition s'ouvrirait sur un
+objet qu'on ne peut pas enregistrer, et un « Enregistrer » qui échoue est pire
+que son absence. Le clic y ouvre la fiche, en consultation, même en édition.
+
+> C'est ce qui a permis d'**éprouver la garde du gabarit de popup** : scène
+> chargée par URL, `popup_template` contenant `<img src=x onerror=…>`, clic sur
+> un bâtiment. Le gabarit ressort en texte (`&lt;img …&gt;`), aucune balise n'est
+> créée, le script ne s'exécute pas.
+
+**Le relief : une altitude par couche, pas zéro.** `extrusionExpressions` accepte
+un `solConstant`. Sans lui, `['coalesce', ['get','_sol'], 0]` retombait au niveau
+de la mer : sur un relief à 50 m, **toute la couche disparaissait sous le sol** —
+elle est là, elle est peinte, et on ne la voit pas. L'altitude est sondée au
+centre de la `bbox` déclarée. C'est approximatif (le relief varie sur une
+emprise) et c'est assumé : cela sépare « mal calée » de « disparue ».
+
+### Les bornes de zoom du manifeste sont appliquées
+
+`visibility.minZoom`/`maxZoom` étaient **ignorées** — seul `defaultVisible`
+agissait. C'est la réponse au repli en points sur une couche distante :
+`pointFallbackZoom` déduit le seuil de bascule de la **taille réelle** des
+entités, qu'on n'a pas.
+
+> **Ne pas l'estimer depuis `bbox` et `featureCount`.** Mesuré sur Sète :
+> `√(aire_bbox / n)` donne 165 m par entité là où les bâtiments en font 20 — les
+> entités ne remplissent pas leur emprise. Un seuil faux ferait basculer au
+> mauvais moment, sans que rien ne le signale.
+
+Le producteur, lui, sait à quelle échelle sa couche est lisible. `poserBornesZoom`
+combine les deux sources et retient **le minimum le plus restrictif**, pour qu'une
+couche ne remonte pas au-dessus de l'échelle où son producteur la dit lisible.
+Trois orthographes sont lues (`visibility.minZoom`, `visibility.min_zoom`,
+`min_zoom` de la cascade de tuiles) : n'en lire qu'une serait un pont rompu de
+plus.
+
 ### `fitToLayer` cadre aussi sur ce qui est déclaré
 
 « Couche vide » était dit d'une couche distante, **qui ne l'est pas** : ses

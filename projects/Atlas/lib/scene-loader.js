@@ -142,6 +142,28 @@ export function champsDeclares(ml) {
     .map((c) => ({ name: c.name || c.id, label: c.label || c.name || c.id, gType: c.gType || c.type }));
 }
 
+/**
+ * Les bornes de zoom que la couche declare.
+ *
+ * Le producteur sait a quelle echelle sa couche est lisible : c'est exactement
+ * ce que le repli en points devinait a partir de la taille des entites — et
+ * qu'il ne peut plus deviner quand Atlas ne les detient pas. Atlas ignorait ces
+ * bornes ; une couche fine restait alors peinte en vue regionale, sous-pixel,
+ * donc invisible sans que rien ne le signale.
+ *
+ * Trois orthographes coexistent selon la source (`visibility.minZoom` du
+ * binding Atlas, `min_zoom` de la cascade de tuiles). Les lire toutes coute
+ * trois lignes ; n'en lire qu'une, c'est un pont rompu de plus.
+ */
+export function bornesZoomDeclarees(ml) {
+  const v = (ml && typeof ml.visibility === 'object') ? ml.visibility : {};
+  const prem = (...c) => { for (const x of c) if (Number.isFinite(x)) return x; return null; };
+  return {
+    minzoom: prem(v.minZoom, v.min_zoom, ml?.min_zoom),
+    maxzoom: prem(v.maxZoom, v.max_zoom, ml?.max_zoom),
+  };
+}
+
 export function boundsDuManifest(ml) {
   const b = ml?.bbox;
   if (!Array.isArray(b) || b.length < 4) return null;
@@ -198,6 +220,7 @@ function coucheDistante(ml, origine, widgetConfig) {
     _distant: true,
     _origine: origine.nature,
     _bboxDeclaree: boundsDuManifest(ml),
+    _zoom: bornesZoomDeclarees(ml),
     _nFeaturesDeclare: nFeaturesDeclare(ml),
   };
 
@@ -458,6 +481,7 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
       _modelCat: 'furniture',
       _declarative: declarative,
       _fields: cfgLayer?.fields || champsDeclares(ml),
+      _zoom: bornesZoomDeclarees(ml),
       _gristColumns: deferCold ? [] : Object.keys(colData).filter((k) => k !== 'id'),
       _manifestLayer: ml,
       _profile: ml.profile || 'A',

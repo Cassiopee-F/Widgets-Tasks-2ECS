@@ -6,7 +6,8 @@ import {
 } from '../lib/controls.js';
 import { evaluer } from './aide-expressions.js';
 import { applyManifestControlsToLayer } from '../lib/manifest-binding.js';
-import { nFeaturesDeclare, champsDeclares } from '../lib/scene-loader.js';
+import { nFeaturesDeclare, champsDeclares, bornesZoomDeclarees } from '../lib/scene-loader.js';
+import { extrusionExpressions } from '../lib/terrain-base.js';
 
 /**
  * Une couche dont Atlas ne détient pas les entités.
@@ -222,4 +223,38 @@ test('une couche sans fields déclarés ne fabrique pas de champs', () => {
   assert.deepEqual(champsDeclares({}), []);
   assert.deepEqual(champsDeclares({ fields: [] }), []);
   assert.deepEqual(champsDeclares(null), []);
+});
+
+/* ---------- ce qui reste hors de portée sans les entités ---------- */
+
+test('les bornes de zoom se lisent sous leurs trois orthographes', () => {
+  // `visibility.minZoom` vient du binding Atlas, `min_zoom` de la cascade de
+  // tuiles. N'en lire qu'une, c'est un pont rompu de plus.
+  assert.deepEqual(bornesZoomDeclarees({ visibility: { minZoom: 11, maxZoom: 18 } }),
+    { minzoom: 11, maxzoom: 18 });
+  assert.deepEqual(bornesZoomDeclarees({ visibility: { min_zoom: 11 } }),
+    { minzoom: 11, maxzoom: null });
+  assert.deepEqual(bornesZoomDeclarees({ min_zoom: 9, max_zoom: 14 }),
+    { minzoom: 9, maxzoom: 14 });
+  assert.deepEqual(bornesZoomDeclarees({ visibility: true }), { minzoom: null, maxzoom: null },
+    'une visibilité booléenne ne déclare pas de zoom');
+  assert.deepEqual(bornesZoomDeclarees({}), { minzoom: null, maxzoom: null });
+  assert.deepEqual(bornesZoomDeclarees({ visibility: { minZoom: 0 } }), { minzoom: 0, maxzoom: null },
+    'zéro est une borne valide, pas une absence');
+});
+
+test('le sol d’une couche distante est constant, pas nul', () => {
+  // Sans `_sol` par entité, l'expression retombait sur 0 — le niveau de la mer.
+  // Sur un relief à 50 m, toute la couche disparaissait sous le sol : elle est
+  // là, elle est peinte, et on ne la voit pas.
+  const surRelief = extrusionExpressions(0, 12, true, 47.5);
+  assert.deepEqual(surRelief.base.slice(0, 2), ['+', 47.5],
+    'l’altitude de couche entre en dur dans l’expression');
+
+  const parEntite = extrusionExpressions(0, 12, true, null);
+  assert.deepEqual(parEntite.base[1], ['coalesce', ['get', '_sol'], 0],
+    'une couche détenue garde son altitude par entité');
+
+  assert.deepEqual(extrusionExpressions(0, 12, false, 47.5), { base: 0, height: 12 },
+    'sans relief, aucun décalage — ni constant ni par entité');
 });

@@ -44,9 +44,16 @@ export const DECALAGE_ANTI_SCINTILLEMENT = 0.5;
  * @param {number|Array} height épaisseur au-dessus de la base
  * @param {boolean} surTerrain false = comportement d'origine, ancré au niveau de la mer
  */
-export function extrusionExpressions(base, height, surTerrain) {
+export function extrusionExpressions(base, height, surTerrain, solConstant = null) {
   if (!surTerrain) return { base, height };
-  const sol = ['coalesce', ['get', TERRAIN_BASE_PROP], 0];
+  // Une couche dont Atlas ne detient pas les entites n'a pas de `_sol` par
+  // objet : le `coalesce` retomberait sur 0, donc au niveau de la mer, et sur
+  // un relief a 50 m toute la couche disparaitrait sous le sol. Une altitude
+  // unique pour la couche est approximative — le relief varie sur une emprise —
+  // mais elle place les objets a portee de vue au lieu de les enfouir.
+  const sol = Number.isFinite(solConstant)
+    ? solConstant
+    : ['coalesce', ['get', TERRAIN_BASE_PROP], 0];
   const eps = DECALAGE_ANTI_SCINTILLEMENT;
   return {
     base: ['+', sol, eps, base],

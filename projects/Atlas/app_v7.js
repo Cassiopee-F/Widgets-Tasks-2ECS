@@ -1435,6 +1435,22 @@ function sourceData(layer) { return filteredGeoJSON(layer); }
 /** Id de la source/couche de repli en points (cf. lib/point-fallback.js). */
 function pointFallbackId(layer) { return layer.id + '-pts'; }
 
+/**
+ * Applique a une specification de couche MapLibre les bornes de zoom voulues.
+ *
+ * Deux sources se combinent, et la plus restrictive gagne : le seuil calcule du
+ * repli en points (qui ne vaut que si Atlas detient les entites) et les bornes
+ * que le manifeste declare. Prendre le maximum des deux minimums evite qu'une
+ * couche remonte au-dessus de l'echelle ou son producteur la dit lisible.
+ */
+function poserBornesZoom(spec, layer, zFallback = null) {
+    const z = layer?._zoom || {};
+    const mins = [zFallback, z.minzoom].filter((v) => Number.isFinite(v));
+    if (mins.length) spec.minzoom = Math.max(...mins);
+    if (Number.isFinite(z.maxzoom)) spec.maxzoom = z.maxzoom;
+    return spec;
+}
+
 function removeLayerGfx(layer) {
     if (!map) return;
     ['', '-outline', '-label', '-hit', '-pts'].forEach((sfx) => {
@@ -1571,7 +1587,34 @@ function applyLineStyle(layer) {
  * les modeles 3D, cache compris. Un lampadaire et le bati sous lui reposent
  * ainsi a la meme altitude par construction, quelle que soit l'exageration.
  */
+/**
+ * L'altitude unique d'une couche distante, sondee au centre de son emprise.
+ *
+ * Faute d'entites, on ne peut pas poser chaque objet sur le sol qui lui revient.
+ * Le centre de la `bbox` declaree donne un ordre de grandeur juste : sur une
+ * emprise urbaine il vaut mieux que zero de plusieurs dizaines de metres, et
+ * c'est ce qui separe « la couche est mal calee » de « la couche a disparu ».
+ *
+ * @returns {number|null} null si le MNT n'a pas encore repondu — auquel cas on
+ *   ne pose rien plutot que de figer une altitude fausse ; `recalerRelief`
+ *   repassera quand les tuiles seront la.
+ */
+function solConstantDeCouche(layer) {
+    const b = layer?._bboxDeclaree;
+    if (!b) return null;
+    const lng = (b[0][0] + b[1][0]) / 2;
+    const lat = (b[0][1] + b[1][1]) / 2;
+    const z = Models3D.elevRaw(lng, lat);
+    return Number.isFinite(z) ? z : null;
+}
+
 function poserCoucheSurTerrain(layer) {
+    // Rien a poser entite par entite : on retient une altitude de couche, lue
+    // par `extrusionExpressions`.
+    if (layer._distant) {
+        layer._solConstant = solConstantDeCouche(layer);
+        return 0;
+    }
     const t0 = performance.now();
     const n = applyTerrainBase(layer.geojson, (lng, lat) => Models3D.elevRaw(lng, lat), pointsSondes);
     if (!n) return 0;
@@ -1668,25 +1711,25 @@ function applyPolygonStyle(layer) {
         // enfouie. On pose donc chaque entite sur le sol.
         const surTerrain = needsTerrainBase(layer, !!STATE.settings.terrain3D);
         if (surTerrain) poserCoucheSurTerrain(layer);
-        const ext = extrusionExpressions(base, height, surTerrain);
-        map.addLayer({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
+        const ext = extrusionExpressions(base, height, surTerrain, layer._solConstant);
+        map.addLayer(poserBornesZoom({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
             'fill-extrusion-color': layerPaintColor(layer),
             'fill-extrusion-height': ext.height,
             'fill-extrusion-base': ext.base,
             'fill-extrusion-opacity': Number.isFinite(sym.opacity) ? sym.opacity : 0.85,
-        }});
+        } }, layer));
     } else {
         const stroke = layerStrokePaint(layer);
         // Repli en points sous le seuil : les surfaces y seraient sous-pixel.
         const zFallback = layer._pointFallbackZoom;
         const fill = { id: layer.id, type: 'fill', source: layer.id, paint: {
             'fill-color': layerPaintColor(layer), 'fill-opacity': layerPaintOpacity(layer) } };
-        if (zFallback != null) fill.minzoom = zFallback;
+        poserBornesZoom(fill, layer, zFallback);
         map.addLayer(fill);
         if (stroke.width > 0) {
             const outline = { id: layer.id + '-outline', type: 'line', source: layer.id, paint: {
                 'line-color': stroke.color, 'line-width': stroke.width } };
-            if (zFallback != null) outline.minzoom = zFallback;
+            poserBornesZoom(outline, layer, zFallback);
             map.addLayer(outline);
         }
         if (zFallback != null && map.getSource(pointFallbackId(layer))) {
@@ -3853,7 +3896,17 @@ function setupInteraction() {
 
         // Lecture : popup attributs (pas d’inspecteur édition)
         if (CONFIG.viewMode) {
-            showViewFeaturePopup(layer, idx, e.lngLat);
+            showViewFeaturePopup(layer, idx, e.lngLat, f);
+            return;
+        }
+
+        // Une couche distante n'a pas de ligne a editer : ni table Grist
+        // derriere, ni feature source a modifier. Entrer en mode selection
+        // ouvrirait un inspecteur d'edition sur un objet qu'on ne peut pas
+        // enregistrer — et « Enregistrer » qui echoue est pire que son absence.
+        // On montre la fiche, en consultation, comme en lecture.
+        if (layer._distant) {
+            showViewFeaturePopup(layer, idx, e.lngLat, f);
             return;
         }
 
@@ -4039,9 +4092,18 @@ function buildViewPopupHtml(layer, feature, idx) {
     return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>${body}</div>`;
 }
 
-function showViewFeaturePopup(layer, idx, lngLat) {
+/**
+ * La fiche d'un objet, au clic.
+ *
+ * `featureRendue` est celle que MapLibre vient de designer. Sur une couche
+ * locale on lui prefere la feature source, qui porte la geometrie entiere —
+ * MapLibre, lui, rend des geometries decoupees par tuile. Sur une couche
+ * distante il n'y a pas de source : la feature rendue **est** tout ce qu'on
+ * aura, et elle porte les attributs, qui sont ce que la fiche montre.
+ */
+function showViewFeaturePopup(layer, idx, lngLat, featureRendue = null) {
     if (!map || typeof maplibregl === 'undefined') return;
-    const feature = layer.geojson?.features?.[idx];
+    const feature = layer.geojson?.features?.[idx] || featureRendue;
     if (!feature) return;
     closeViewPopup();
     let coords = lngLat;
