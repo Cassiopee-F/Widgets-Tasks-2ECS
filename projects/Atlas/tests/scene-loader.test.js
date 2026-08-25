@@ -514,18 +514,22 @@ describe('une scène produite par un autre producteur', () => {
 
   it('distingue ce qu’Atlas ne sait pas faire de ce que l’amont n’a pas fait', async () => {
     const { layers, echecs } = await loadSceneManifestLayers(refuseTout, scene, null);
-    assert.equal(layers.length, 0, 'aucune des deux origines n’est encore servie');
-    assert.equal(echecs.length, 2);
+    // Le fond de tuiles est monté ; la couche d'atelier, non — et c'est
+    // exactement la distinction que la classe d'origine sert à porter.
+    assert.equal(layers.length, 1, 'seul le service de tuiles est servi');
+    assert.equal(layers[0]._raster, true);
+    assert.equal(echecs.length, 1);
 
     const bati = echecs.find((e) => /Bâtiments/.test(e.nom));
-    const osm = echecs.find((e) => /OpenStreetMap/.test(e.nom));
+    assert.ok(bati, 'la couche d’atelier doit rester un échec déclaré');
 
     // Une couche d'atelier qui arrive jusqu'ici n'a pas été matérialisée :
     // aucune clé n'y changerait rien, c'est une question de topologie.
     assert.match(bati.raison, /atelier non matérialisée|à publier en amont/);
-    // Un service externe, lui, est joignable : l'obstacle est chez nous.
-    assert.match(osm.raison, /pas encore pris en charge par Atlas/);
-    assert.match(osm.origine, /xyz/);
+    // Un service `xyz`, lui, est monte : MapLibre sait lire un gabarit de
+    // tuiles, et aucune donnee ne transite par Atlas.
+    assert.ok(!echecs.some((e) => /OpenStreetMap/.test(e.nom)),
+      'un service xyz ne doit plus etre rapporte comme non pris en charge');
   });
 
   it('lit les origines déclarées, sans retomber sur l’identifiant', () => {

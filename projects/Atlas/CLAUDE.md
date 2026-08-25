@@ -694,6 +694,39 @@ Trois orthographes sont lues (`visibility.minZoom`, `visibility.min_zoom`,
 `min_zoom` de la cascade de tuiles) : n'en lire qu'une serait un pont rompu de
 plus.
 
+### Couches de service externe — `xyz` seulement
+
+Une couche `source.type: "xyz"` devient une source `raster` : MapLibre va
+chercher les images au gabarit d'adresse, **rien ne transite par Atlas**. Elle
+porte `_raster: true`, qui la tient à l'écart de tout ce qui suppose du
+vectoriel — symbologie, contrôles, filtres, inspection : un fond de plan n'a ni
+champ à graduer ni objet à inspecter.
+
+`maxzoom` est **posé d'office à 19** faute de déclaration. Ce n'est pas une
+précaution cosmétique : un service qui ne sert pas au-delà d'un niveau renvoie
+des erreurs en boucle, et la carte **n'atteint alors jamais `idle`** — tout ce
+qui attend cet état reste suspendu (mesuré sur `tile.openstreetmap.org`).
+
+`wms`, `wmts` et `wfs` restent des échecs déclarés. `wfs` n'est d'ailleurs pas
+des tuiles mais du GeoJSON par requête : il relèvera du chemin URL déjà écrit.
+
+> **Chausse-trape héritée de QGIS** : les tuiles XYZ y sont rangées sous le
+> fournisseur `wms` ; seul `type=xyz` dans la datasource les distingue. Sans
+> cette lecture, un fond OSM serait annoncé comme un service WMS.
+
+### Un avertissement MapLibre non élucidé
+
+`Expected value to be of type number, but found null instead`, six fois, au
+montage d'une scène. **Ce qui est établi** : il n'apparaît pas sans scène (ce
+n'est donc pas le style de fond), ni à un remontage de couche, et la carte est
+juste — les classes ont été vérifiées au pixel près.
+
+**Ce qui bloque le diagnostic** : MapLibre évalue les expressions dans un
+*worker*, donc remplacer `console.warn` dans la page ne l'intercepte pas. La
+piste reste l'évaluation d'une expression sur les données. Non bloquant, mais à
+ne pas laisser s'installer : un avertissement qu'on apprend à ignorer occupe la
+place d'un garde-fou.
+
 ### `fitToLayer` cadre aussi sur ce qui est déclaré
 
 « Couche vide » était dit d'une couche distante, **qui ne l'est pas** : ses

@@ -164,6 +164,42 @@ export function bornesZoomDeclarees(ml) {
   };
 }
 
+/**
+ * Une couche de tuiles matricielles (`xyz`).
+ *
+ * Elle n'a ni entites, ni symbologie, ni controles : c'est une image de fond.
+ * Le drapeau `_raster` la distingue partout ou Atlas suppose du vectoriel — un
+ * fond de plan n'a pas de champ a graduer ni d'objet a inspecter.
+ *
+ * **Les bornes de zoom comptent ici plus qu'ailleurs** : un service qui ne sert
+ * pas au-dela d'un niveau donne renvoie des erreurs en boucle si on continue a
+ * lui demander des tuiles, et MapLibre n'atteint alors jamais l'etat `idle` —
+ * tout ce qui l'attend reste suspendu. Faute de declaration, on retient 19,
+ * borne des fonds courants (OpenStreetMap en tete).
+ */
+export function coucheTuilesRaster(ml, origine) {
+  const z = bornesZoomDeclarees(ml);
+  return {
+    id: ml.id || ml.name || 'tuiles',
+    name: ml.name || ml.displayName || ml.id || 'Tuiles',
+    geometryType: 'Raster',
+    geojson: null,
+    controls: [],
+    visible: ml?.visibility?.defaultVisible !== false,
+    opacity: Number.isFinite(ml?.style?.opacity) ? ml.style.opacity : 1,
+    _raster: true,
+    _distant: true,
+    _tiles: [String(origine.valeur)],
+    _tileSize: Number.isFinite(ml?.tile_size) ? ml.tile_size : 256,
+    _attribution: ml.attribution || ml.credits || null,
+    _zoom: { minzoom: z.minzoom, maxzoom: Number.isFinite(z.maxzoom) ? z.maxzoom : 19 },
+    _manifestLayer: ml,
+    _bboxDeclaree: boundsDuManifest(ml),
+    _nFeaturesDeclare: null,
+    _fields: [],
+  };
+}
+
 export function boundsDuManifest(ml) {
   const b = ml?.bbox;
   if (!Array.isArray(b) || b.length < 4) return null;
@@ -338,6 +374,14 @@ export async function loadSceneManifestLayers(docApi, manifest, widgetConfig) {
         origine: `tuiles ${String(origine.valeur).slice(0, 60)}`,
         raison: 'origine reconnue mais pas encore prise en charge (protocole pmtiles absent)',
       });
+      continue;
+    }
+
+    // Tuiles matricielles servies par gabarit d'adresse : c'est le cas le plus
+    // simple, et MapLibre le fait nativement. Aucune donnee ne transite par
+    // Atlas — le navigateur va chercher les images.
+    if (origine.nature === 'service' && origine.service === 'xyz') {
+      atlasLayers.push(coucheTuilesRaster(ml, origine));
       continue;
     }
 

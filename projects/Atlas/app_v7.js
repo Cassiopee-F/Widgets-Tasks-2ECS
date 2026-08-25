@@ -543,6 +543,7 @@ function appliquerFiltreDistant(layer) {
 function syncLayerSourceData(layer) {
     // Une couche distante n'a pas de données à remplacer ici : MapLibre les
     // tient. Son filtrage passe par une expression, pas par un retranchement.
+    if (layer._raster) return;   // pas d'entites : rien a filtrer ni a remplacer
     if (layer._distant) { appliquerFiltreDistant(layer); return; }
     if (!map?.getSource(layer.id)) return;
     const data = sourceData(layer);
@@ -1461,8 +1462,39 @@ function removeLayerGfx(layer) {
     if (map.getSource(pointFallbackId(layer))) map.removeSource(pointFallbackId(layer));
 }
 
+/**
+ * Monte une couche de tuiles matricielles.
+ *
+ * Rien ne transite par Atlas : MapLibre va chercher les images au gabarit
+ * d'adresse. D'ou l'absence de source GeoJSON, de symbologie et de controles —
+ * un fond de plan n'a ni champ a graduer ni objet a inspecter.
+ */
+function addRasterLayerToMap(layer) {
+    removeLayerGfx(layer);
+    if (map.getSource(layer.id)) map.removeSource(layer.id);
+    map.addSource(layer.id, {
+        type: 'raster',
+        tiles: layer._tiles,
+        tileSize: layer._tileSize || 256,
+        // Sans borne haute, un service qui ne sert pas au-dela d'un niveau
+        // renvoie des erreurs en boucle et la carte n'atteint jamais `idle` :
+        // tout ce qui attend cet etat reste suspendu.
+        maxzoom: layer._zoom?.maxzoom ?? 19,
+        ...(layer._attribution ? { attribution: layer._attribution } : {}),
+    });
+    map.addLayer(poserBornesZoom({
+        id: layer.id, type: 'raster', source: layer.id,
+        paint: { 'raster-opacity': Number.isFinite(layer.opacity) ? layer.opacity : 1 },
+    }, layer));
+    return true;
+}
+
 function addLayerToMap(layer) {
     if (!mapStyleUsable()) return false;
+    if (layer._raster) {
+        try { return addRasterLayerToMap(layer); }
+        catch (e) { console.warn('[Atlas] tuiles non montées —', layer.name, e.message); return false; }
+    }
     try {
         indexFeatures(layer);
         removeLayerGfx(layer);
@@ -1503,6 +1535,17 @@ function addLayerToMap(layer) {
 
 function applyLayerStyle(layer) {
     if (!map || !map.getSource(layer.id)) return;
+    // Un fond de tuiles n'a pas d'entites a peindre : sa seule apparence est
+    // son opacite. Le faire passer par la symbologie vectorielle chercherait
+    // des champs qui n'existent pas.
+    if (layer._raster) {
+        if (map.getLayer(layer.id)) {
+            map.setPaintProperty(layer.id, 'raster-opacity',
+                Number.isFinite(layer.opacity) ? layer.opacity : 1);
+        }
+        updateLegend();
+        return;
+    }
     if (layer.source === 'qgis2grist') {
         const sym = initSymbolization(layer).color;
         syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(sym, layer));
