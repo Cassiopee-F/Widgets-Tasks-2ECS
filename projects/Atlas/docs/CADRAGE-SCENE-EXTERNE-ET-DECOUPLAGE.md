@@ -1,7 +1,7 @@
 # Atlas — la scène qui vient d'ailleurs, et les entités qu'on n'a plus
 
-> **État au 25/08/2026 : chantier A fait et éprouvé en navigateur ; B entamé
-> (famille 2) ; C non commencé.** Écrit après la vérification du chemin distant
+> **État au 25/08/2026 : chantiers A et B faits et éprouvés — en navigateur et
+> dans un document Grist réel ; C non commencé.** Écrit après la vérification du chemin distant
 > (banc `tests/manuel/couche-distante.html`), complété le soir même par ce que
 > le branchement a révélé — voir « Ce que le branchement a appris » en fin de §A.
 >
@@ -189,10 +189,11 @@ avant, invisibles parce que l'ordre d'exécution en documentait le contraire :
   est peinte avec les couleurs déclaratives : du Viridis annoncé sous une carte
   verte. Une légende qui ne décrit pas la carte est pire qu'aucune.
 
-**Reste non éprouvé** : la garde du gabarit de popup. L'inspection au clic ne
-fonctionne pas encore sur une couche distante (famille 3 ci-dessous), donc le
-gabarit n'est pas atteignable — la garde est posée d'avance et devra être
-vérifiée quand l'inspection passera par MapLibre.
+~~**Reste non éprouvé** : la garde du gabarit de popup.~~ **Éprouvée le 25/08**
+(`bf99f80`), une fois l'inspection au clic branchée : scène chargée par URL,
+`popup_template` contenant `<img src=x onerror="window.__XSS=1">`, clic sur un
+bâtiment. Le gabarit ressort en texte (`&lt;img …&gt;`), aucune balise n'est
+créée, le script ne s'exécute pas.
 
 ---
 
@@ -264,14 +265,28 @@ dédupliquer, ou elle mentira dans l'autre sens.
 1. ~~**Les comptes** (famille 2)~~ — **fait** (`5580d29`). `layerVisibleCount`
    rend `null` quand personne ne sait ; `formatLayerCount` affiche « ≈400 »
    quand le manifeste déclare sans qu'on ait vérifié, et « — » sinon.
-2. **Les contrôles** (`getUniqueValues`, `detectFieldType`) — sans eux une scène
-   externe est décorative. Les valeurs sont dans `style.declarative.stops`.
-3. **L'inspection au clic** (famille 3, lecture seule) — bascule sur
-   `queryRenderedFeatures`.
-4. **`fitToLayer` et l'index** — par `bbox`, puis dégradé déclaré.
-5. **Le repli en points et le calage relief** — les deux plus coûteux, et les
-   moins urgents : ils ne concernent que les surfaces, et une couche distante
-   volumineuse sera de toute façon tuilée.
+2. ~~**Les contrôles**~~ — **fait** (`0d9c640`). Les choix viennent des `values[]`
+   déclarées, les bornes de `dataMin`/`dataMax`, et le filtrage est **dit à
+   MapLibre** (`expressionFiltreControles`) au lieu de retrancher des entités
+   absentes. Un test compare les deux chemins entité par entité.
+3. ~~**L'inspection au clic**~~ — **fait** (`bf99f80`). La feature que MapLibre
+   rend sert de source quand Atlas n'en a pas. Une couche distante n'entre
+   jamais en mode sélection : il n'y a rien à enregistrer.
+4. ~~**`fitToLayer`**~~ — **fait** (`6ff9969`), par `_bboxDeclaree`.
+5. ~~**Le calage relief**~~ — **fait** (`bf99f80`) : une altitude par couche,
+   sondée au centre de la `bbox`, au lieu du niveau de la mer.
+6. ~~**Le repli en points**~~ — **traité autrement, et c'est la bonne réponse**
+   (`bf99f80`). Le seuil de bascule se déduit de la taille réelle des entités,
+   qu'on n'a pas. Ne pas l'estimer depuis `bbox` et `featureCount` : mesuré sur
+   Sète, `√(aire/n)` donne 165 m par entité là où les bâtiments en font 20 — les
+   entités ne remplissent pas leur emprise, et un seuil faux basculerait au
+   mauvais moment sans rien signaler. Ce sont les **bornes de zoom du manifeste**
+   qui répondent : le producteur sait à quelle échelle sa couche est lisible.
+   Atlas les ignorait depuis toujours.
+
+Reste au titre de B, non traité et non bloquant : **l'index de recherche**
+(`indexFeatures`) et **l'export**, qui produit un fichier vide au lieu de dire
+qu'il n'a rien.
 
 Chaque étape est livrable seule et se vérifie sur la scène de Sète.
 
