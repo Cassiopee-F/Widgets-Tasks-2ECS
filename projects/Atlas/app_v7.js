@@ -62,6 +62,7 @@ import {
   controlBounds,
   buildControlPredicate,
   filteredGeoJSON,
+  expressionFiltreControles,
   filteredUniqueValues,
   fmtControlValue,
   isSelectValueChecked,
@@ -496,7 +497,30 @@ function layerStrokePaint(layer) {
     };
 }
 
+/**
+ * Filtrer une couche qu'Atlas ne détient pas.
+ *
+ * Impossible de retrancher des entités qu'on n'a pas : on décrit à MapLibre ce
+ * qu'il doit garder. L'habillage suit le remplissage — contour, étiquettes,
+ * zone de clic, repli en points —, sinon on verrait le contour d'un bâtiment
+ * que le filtre vient d'écarter, et on pourrait encore cliquer dessus.
+ */
+function appliquerFiltreDistant(layer) {
+    if (!map || !layer?._distant) return;
+    const expr = expressionFiltreControles(layer);
+    for (const sfx of ['', '-outline', '-label', '-hit', '-pts']) {
+        const id = layer.id + sfx;
+        if (!map.getLayer(id)) continue;
+        // `null` retire le filtre : c'est le bon geste quand plus rien n'est actif.
+        try { map.setFilter(id, expr); }
+        catch (e) { console.warn('[Atlas] filtre non appliqué sur', id, '—', e.message); }
+    }
+}
+
 function syncLayerSourceData(layer) {
+    // Une couche distante n'a pas de données à remplacer ici : MapLibre les
+    // tient. Son filtrage passe par une expression, pas par un retranchement.
+    if (layer._distant) { appliquerFiltreDistant(layer); return; }
     if (!map?.getSource(layer.id)) return;
     const data = sourceData(layer);
     map.getSource(layer.id).setData(data);
@@ -2893,9 +2917,18 @@ function renderControlBody(layer, c) {
     ensureControlVariant(c, c.type);
     if (c.type === 'select') {
         const vals = controlUniqueValues(layer, c.field, 30);
+        // Un filtre sans choix ressemble à un filtre déjà appliqué : on croit
+        // que tout est décoché, alors qu'on n'a rien à cocher. Le dire évite de
+        // chercher pourquoi la carte ne réagit pas.
+        if (!vals.length) {
+            return `<div class="range-info" style="margin-top:6px;opacity:.75">`
+                 + `Aucune valeur connue pour « ${escapeHtml(c.field)} »`
+                 + (layer._distant ? ` — la couche est distante et le manifeste n’en déclare pas.` : `.`)
+                 + `</div>`;
+        }
         const inputType = c.variant === 'select_single' ? 'radio' : 'checkbox';
         const nameAttr = `ctl-${layer.id}-${c.field}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="${inputType}" name="${nameAttr}" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></label>`).join('')}</div>`;
+        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="${inputType}" name="${nameAttr}" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count == null ? '' : v.count}</span></label>`).join('')}</div>`;
     }
     const step = c.type === 'time' ? Math.max(86400000, Math.round((c.dataMax - c.dataMin) / 200)) : ((c.dataMax - c.dataMin) / 200 || 1);
     if (c.type === 'time') {

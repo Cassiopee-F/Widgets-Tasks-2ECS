@@ -594,6 +594,36 @@ créer `Maquette_Layers`. Une couche distante n'a pas de `sourceTable`, donc
 `?scene=` — c'est la seconde origine qui rencontre le « sweet spot opt-in ». À
 arbitrer : où rangent leurs préférences des couches qu'Atlas ne détient pas ?
 
+### Contrôles d'une couche distante — le manifeste répond, MapLibre filtre
+
+Deux dérivations lisaient les entités locales, et deux réponses par défaut
+mentaient :
+
+| | Avant | Maintenant |
+|---|---|---|
+| `controlUniqueValues` | `[]` — un filtre sans choix ressemble à un filtre déjà appliqué | les `values[]` du contrôle (`options`), **`count: null`** et jamais zéro |
+| `controlBounds` | `{min:0, max:1}` — un curseur de hauteur de 0 à 1 m | `dataMin`/`dataMax` déclarés ; sinon `_bornesInconnues` |
+
+**`filteredGeoJSON` effaçait la couche.** Sur une couche distante, `geojson` est
+une **adresse** ; filtrer « ce qu'on a » rendait une `FeatureCollection` vide, donc
+supprimait la couche au premier contrôle activé. Un filtre qui supprime tout
+ressemble à un filtre trop strict — on cherche l'erreur dans ses bornes.
+
+Le filtrage de ces couches passe par **`expressionFiltreControles`** : on décrit
+à MapLibre ce qu'il doit garder, au lieu de retrancher des entités qu'on n'a pas.
+L'habillage suit (`-outline`, `-label`, `-hit`, `-pts`), sinon on verrait le
+contour d'un objet écarté, et on pourrait encore cliquer dessus.
+
+> **La règle du couple** : `expressionFiltreControles` et `buildControlPredicate`
+> doivent **classer pareil**. C'est la même scène et les mêmes bornes ; un écart
+> donnerait deux cartes selon l'origine de la donnée, et on l'attribuerait à la
+> donnée. `tests/controles-couche-distante.test.js` compare les deux entité par
+> entité, bornes exactes et valeurs illisibles comprises.
+
+Vérifié à l'écran sur la scène de Sète : le curseur s'ouvre sur 10 → 20,2 m
+(les bornes déclarées, non mesurables ici), et le pousser à 18,98 ne laisse que
+les bâtiments les plus hauts.
+
 ### `fitToLayer` cadre aussi sur ce qui est déclaré
 
 « Couche vide » était dit d'une couche distante, **qui ne l'est pas** : ses

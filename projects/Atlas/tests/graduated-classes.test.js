@@ -5,67 +5,14 @@ import {
   expressionCouleurDeclarative, colorFnFromDeclarative,
   applyGraduatedColorsToFeatures,
 } from '../lib/declarative-style.js';
+// L'evaluateur du sous-ensemble MapLibre est partage : deux copies divergeraient,
+// et c'est justement une divergence qu'on cherche a exclure ici.
+import { evaluer } from './aide-expressions.js';
 
 const VERTS = ['#e5f5e0', '#a1d99b', '#41ab5d', '#238b45', '#005a32'];
 const BLEUS = ['#deebf7', '#9ecae1', '#4292c6', '#2171b5', '#084594'];
 
 /* ---------- bornes ---------- */
-
-/**
- * Le sous-ensemble d'expressions MapLibre que produit `expressionCouleurDeclarative`.
- *
- * Ecrit ici plutot que de tirer MapLibre en dependance de test : le depot n'en
- * a aucune, et l'enjeu n'est pas de reimplementer le moteur mais de verifier
- * qu'une entite tombe dans la bonne classe. Les regles reproduites sont celles
- * de la specification : `coalesce` rend la premiere valeur non nulle,
- * `to-number` essaie chaque argument jusqu'a une conversion reussie.
- */
-function evaluer(expr, props, lie = {}) {
-  if (!Array.isArray(expr)) return expr;
-  const [op, ...args] = expr;
-  if (op === 'let') {
-    const porte = { ...lie };
-    for (let i = 0; i < args.length - 1; i += 2) porte[args[i]] = evaluer(args[i + 1], props, lie);
-    return evaluer(args[args.length - 1], props, porte);
-  }
-  if (op === 'var') return lie[args[0]];
-  if (op === 'get') return props[args[0]] ?? null;
-  if (op === 'coalesce') {
-    for (const a of args) { const v = evaluer(a, props, lie); if (v !== null && v !== undefined) return v; }
-    return null;
-  }
-  if (op === 'to-number') {
-    for (const a of args) {
-      const v = evaluer(a, props, lie);
-      if (v === null || v === undefined || v === false) return 0;
-      if (v === true) return 1;
-      const n = Number(v);
-      if (Number.isFinite(n) && String(v).trim() !== '') return n;
-    }
-    throw new Error('to-number : aucune conversion possible');
-  }
-  if (op === 'step') {
-    const v = evaluer(args[0], props, lie);
-    let sortie = args[1];
-    for (let i = 2; i < args.length; i += 2) { if (v >= args[i]) sortie = args[i + 1]; else break; }
-    return sortie;
-  }
-  if (op === 'case') {
-    for (let i = 0; i < args.length - 1; i += 2) { if (evaluer(args[i], props, lie)) return evaluer(args[i + 1], props, lie); }
-    return evaluer(args[args.length - 1], props, lie);
-  }
-  if (op === '<') return evaluer(args[0], props, lie) < evaluer(args[1], props, lie);
-  if (op === '<=') return evaluer(args[0], props, lie) <= evaluer(args[1], props, lie);
-  if (op === 'match') {
-    const v = evaluer(args[0], props, lie);
-    for (let i = 1; i < args.length - 1; i += 2) {
-      const cles = Array.isArray(args[i]) ? args[i] : [args[i]];
-      if (cles.includes(v)) return args[i + 1];
-    }
-    return args[args.length - 1];
-  }
-  throw new Error(`operateur non couvert par l’evaluateur de test : ${op}`);
-}
 
 test('linéaire : des classes d’égale largeur', () => {
   const b = classBounds(0, 100, 4, 'linear');
