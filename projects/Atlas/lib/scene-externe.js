@@ -132,13 +132,14 @@ export async function chargerSceneExterne(url, deps = {}) {
   try {
     rep = await f(url, { signal: deps.signal });
   } catch (e) {
-    // Une origine sans en-tête CORS échoue ici, avec un message que le
-    // navigateur ne détaille pas — c'est indiscernable d'une panne réseau.
-    // Le dire est le seul service qu'on puisse rendre : sans cette phrase,
-    // l'auteur de la scène cherchera son manifeste, pas son serveur.
+    // Le navigateur ne détaille pas ce qui a échoué : serveur absent, adresse
+    // fausse, ou en-tête CORS manquant rendent tous « Failed to fetch ». Il
+    // faut donc nommer **les deux** pistes — un message qui n'en donne qu'une
+    // envoie chercher le CORS d'un serveur qui ne répond même pas.
     return { manifest: null,
-      echec: `scène injoignable — ${e.message}. Vérifier que le serveur autorise `
-           + `la lecture depuis une autre origine (Access-Control-Allow-Origin).` };
+      echec: `scène injoignable — ${e.message}. Deux causes possibles : le serveur `
+           + `ne répond pas (adresse, réseau), ou il refuse la lecture depuis une `
+           + `autre origine (en-tête Access-Control-Allow-Origin absent).` };
   }
   if (!rep.ok) {
     return { manifest: null, echec: `scène refusée par le serveur : HTTP ${rep.status}` };

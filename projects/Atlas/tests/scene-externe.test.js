@@ -116,10 +116,13 @@ test('chaque échec de chargement se nomme, et aucun ne rend une scène vide', a
   }
 });
 
-test('un échec CORS envoie chercher le serveur, pas le manifeste', async () => {
-  // Le navigateur ne détaille pas un blocage CORS : le message est celui d'une
-  // panne réseau. Sans cette phrase, l'auteur relit son JSON pendant des heures.
+test('un échec réseau nomme les deux causes possibles, pas une seule', async () => {
+  // « Failed to fetch » couvre indistinctement le serveur muet et le CORS
+  // manquant : le navigateur ne les sépare pas. N'en citer qu'une envoie
+  // chercher le CORS d'un serveur qui ne répond même pas — vécu en éprouvant
+  // la promotion, sur un serveur de test tombé.
   const { echec } = await chargerSceneExterne('https://h.fr/s.json',
     { fetch: async () => { throw new TypeError('Failed to fetch'); } });
-  assert.match(echec, /Access-Control-Allow-Origin/);
+  assert.match(echec, /ne répond pas/, 'la piste du serveur muet');
+  assert.match(echec, /Access-Control-Allow-Origin/, 'et celle du refus d’origine');
 });
