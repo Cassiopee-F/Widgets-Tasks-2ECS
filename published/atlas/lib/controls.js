@@ -7,7 +7,7 @@ import {
   parsePropertyNumber,
   resolveFeaturePropertyKey,
   resolveGristFieldName,
-} from './declarative-style.js?v=1.1.3';
+} from './declarative-style.js?v=1.3.0';
 
 export function layerFieldNames(layer) {
   if (layer._fields?.length) {
@@ -34,6 +34,21 @@ export function controlFieldType(layer, field) {
   return null;
 }
 
+/**
+ * Ce que le manifeste déclare pour un champ, quand Atlas ne détient pas les
+ * entités qui le renseignent.
+ *
+ * Le contrat 0.2.2 porte `values[]` sur un contrôle `select` — reçu ici sous
+ * `options`. C'est exactement l'information qu'on dérivait des entités ; elle
+ * était simplement disponible plus tôt, et personne ne la lisait quand la
+ * dérivation était possible.
+ */
+export function optionsDeclarees(layer, field) {
+  const c = (layer?.controls || []).find((x) => x.field === field);
+  const v = c?.options;
+  return Array.isArray(v) && v.length ? v : null;
+}
+
 export function controlUniqueValues(layer, field, max = 40) {
   const propKey = resolveFeaturePropertyKey(layer, field);
   const counts = new Map();
@@ -42,10 +57,21 @@ export function controlUniqueValues(layer, field, max = 40) {
     if (!key) continue;
     counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return Array.from(counts.entries())
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, max);
+  if (counts.size) {
+    return Array.from(counts.entries())
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, max);
+  }
+  // Aucune entité ici : sur une couche distante, ce n'est pas « aucune valeur »
+  // mais « pas de quoi compter ». Rendre une liste vide priverait le contrôle
+  // de ses choix et le rendrait décoratif — une case à cocher sans rien à
+  // cocher ressemble à un filtre déjà appliqué.
+  const declarees = optionsDeclarees(layer, field);
+  if (!declarees) return [];
+  // `count: null` et non zéro : on ne sait pas combien d'entités portent cette
+  // valeur, et zéro laisserait croire qu'il n'y en a aucune.
+  return declarees.slice(0, max).map((value) => ({ value, count: null }));
 }
 
 /** Valeurs distinctes sur les features actuellement visibles (filtres contrôles appliqués). */
@@ -78,7 +104,22 @@ export function controlBounds(layer, type, field) {
     const n = type === 'time' ? Date.parse(s) : Number(s);
     if (!Number.isNaN(n)) { lo = Math.min(lo, n); hi = Math.max(hi, n); }
   }
-  if (lo === Infinity) return { dataMin: 0, dataMax: 1, min: 0, max: 1 };
+  if (lo === Infinity) {
+    // Rien à mesurer ici. Le manifeste, lui, sait peut-être : `dataMin`/`dataMax`
+    // sont les bornes observées à la production, `min`/`max` celles du curseur.
+    const c = (layer?.controls || []).find((x) => x.field === field);
+    const dmin = Number.isFinite(c?.dataMin) ? c.dataMin : c?.min;
+    const dmax = Number.isFinite(c?.dataMax) ? c.dataMax : c?.max;
+    if (Number.isFinite(dmin) && Number.isFinite(dmax) && dmax > dmin) {
+      return { dataMin: dmin, dataMax: dmax,
+               min: Number.isFinite(c?.min) ? c.min : dmin,
+               max: Number.isFinite(c?.max) ? c.max : dmax };
+    }
+    // Ni mesure ni déclaration. 0–1 est un intervalle *plausible* : un curseur
+    // de hauteur irait de 0 à 1 m sans que rien ne signale l'ignorance. Le
+    // drapeau permet à l'interface de le dire plutôt que de le montrer.
+    return { dataMin: 0, dataMax: 1, min: 0, max: 1, _bornesInconnues: true };
+  }
   return { dataMin: lo, dataMax: hi, min: lo, max: hi };
 }
 
@@ -182,10 +223,73 @@ export function buildControlPredicate(layer) {
 export function filteredGeoJSON(layer) {
   const pred = layer._filterPredicate || buildControlPredicate(layer);
   if (!pred || !layer.geojson) return layer.geojson;
+  // Une couche distante porte une **adresse** dans `geojson`, pas des entités.
+  // Filtrer « ce qu'on a » revenait alors à rendre une collection vide, donc à
+  // effacer la couche au premier contrôle activé — un filtre qui supprime tout
+  // ressemble à un filtre trop strict, et on cherche l'erreur dans ses bornes.
+  // Le filtrage de ces couches est dit à MapLibre (`expressionFiltreControles`).
+  if (typeof layer.geojson !== 'object' || !Array.isArray(layer.geojson.features)) {
+    return layer.geojson;
+  }
   return {
     type: 'FeatureCollection',
-    features: (layer.geojson.features || []).filter(pred),
+    features: layer.geojson.features.filter(pred),
   };
+}
+
+/**
+ * Les contrôles actifs, dits à MapLibre au lieu d'être appliqués aux entités.
+ *
+ * Le pendant de `buildControlPredicate` pour les couches qu'Atlas ne détient
+ * pas. Les deux doivent classer pareil : c'est la même scène, la même
+ * symbologie et les mêmes bornes, et un écart donnerait deux cartes selon
+ * l'origine de la donnée.
+ *
+ * @returns {any[]|null} expression MapLibre, ou null si rien n'est à filtrer.
+ */
+export function expressionFiltreControles(layer) {
+  const ctrls = (layer?.controls || []).filter((c) => c.active);
+  if (!ctrls.length) return null;
+  const clauses = [];
+
+  for (const c of ctrls) {
+    const champ = ['get', c.field];
+
+    if (c.type === 'select') {
+      const sel = Array.isArray(c.values) ? c.values.filter((v) => v != null && v !== '') : [];
+      // Pas de sélection = pas de restriction, comme côté prédicat : un select
+      // qu'on vient d'activer sans rien cocher ne doit pas vider la carte.
+      if (!sel.length) continue;
+      // La comparaison est insensible à la casse des deux côtés, comme le fait
+      // `normalizePropertyValue` : un « Résidentiel » déclaré doit retrouver un
+      // « résidentiel » stocké.
+      clauses.push(['in',
+        ['downcase', ['to-string', ['coalesce', champ, '']]],
+        ['literal', sel.map((v) => String(v).toLowerCase())]]);
+      continue;
+    }
+
+    // range et time : bornes numériques. `to-number` échoue sur une valeur non
+    // numérique, d'où le repli sur un repère hors domaine — le même choix, et
+    // pour la même raison, que dans la symbologie graduée.
+    const HORS = -1e38;
+    const val = ['to-number', ['coalesce', champ, '—'], HORS];
+    const min = Number.isFinite(c.min) ? c.min : null;
+    const max = Number.isFinite(c.max) ? c.max : null;
+    if (min == null && max == null) continue;
+
+    if (c.requireValue) {
+      // Sans valeur exploitable, l'entité est écartée. C'est l'inverse de la
+      // tolérance par défaut, et c'est ce qui évite qu'une couche muette
+      // recouvre une thématique (cf. le contrôle `requireValue` du récit).
+      clauses.push(['!=', val, HORS]);
+    }
+    if (min != null) clauses.push(['any', ['==', val, HORS], ['>=', val, min]]);
+    if (max != null) clauses.push(['any', ['==', val, HORS], ['<=', val, max]]);
+  }
+
+  if (!clauses.length) return null;
+  return clauses.length === 1 ? clauses[0] : ['all', ...clauses];
 }
 
 export function fmtControlValue(c, n) {

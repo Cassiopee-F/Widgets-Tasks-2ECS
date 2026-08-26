@@ -370,6 +370,120 @@ export function colorFnFromDeclarative(decl, fallback = '#808080', fieldNames = 
 }
 
 /**
+ * La même symbologie, mais dite à MapLibre au lieu d'être peinte à la main.
+ *
+ * `colorFnFromDeclarative` ci-dessus calcule une couleur **par entité**, en
+ * JavaScript, et l'écrit dans `_fill_color`. Cela suppose de détenir les
+ * entités — ce qui n'est plus vrai d'une couche servie par URL ou par tuiles :
+ * le champ n'existe pas dans les données, et toute la couche prend alors la
+ * couleur de repli, sans que rien ne le signale.
+ *
+ * Une expression, elle, est évaluée par le moteur sur ce qu'il rend, quelle que
+ * soit l'origine — et sans que le contrat ait à déclarer quoi que ce soit de
+ * plus : les bornes sont déjà dans les `stops`.
+ *
+ * @returns {any[]|null} expression MapLibre, ou null si le déclaratif ne permet
+ *   pas d'en construire une — l'appelant retombe alors sur sa couleur de repli.
+ */
+/**
+ * Repere « hors classification ».
+ *
+ * Fini a dessein, donc conserve a l'identique par une serialisation JSON, et
+ * assez bas pour qu'aucune donnee reelle ne l'atteigne : altitudes, hauteurs,
+ * effectifs et ratios vivent tous tres au-dessus.
+ */
+const HORS_CLASSE = -1e38;
+
+export function expressionCouleurDeclarative(decl, fallback = '#808080', fieldNames = null) {
+  if (!decl) return null;
+  if (decl.kind === 'single') return decl.color || fallback;
+
+  let field = decl.field;
+  if (fieldNames?.length) field = resolveGristFieldName(fieldNames, field) || field;
+  if (!field || !decl.stops?.length) return null;
+
+  if (decl.kind === 'categorized') {
+    const expr = ['match', ['get', field]];
+    for (const st of decl.stops) {
+      // Une catégorie peut se désigner par sa valeur brute ou par son libellé —
+      // `registerStopColors` en tient compte, l'expression doit en faire autant.
+      const valeurs = [...new Set([st.value, st.label].filter(
+        (v) => v !== undefined && v !== null && v !== ''))];
+      if (!valeurs.length) continue;
+      // MapLibre refuse un tableau vide et accepte une valeur seule ou plusieurs.
+      expr.push(valeurs.length === 1 ? valeurs[0] : valeurs, st.color || fallback);
+    }
+    // 'match' exige au moins un couple, plus la valeur par défaut.
+    if (expr.length < 4) return null;
+    expr.push(fallback);
+    return expr;
+  }
+
+  if (decl.kind === 'graduated') {
+    const stops = [...decl.stops]
+      .filter((st) => Number.isFinite(Number(st.lower ?? st.upper)))
+      .sort((a, b) => Number(a.lower ?? -Infinity) - Number(b.lower ?? -Infinity));
+    if (!stops.length) return null;
+
+    // Une entite dont l'attribut manque, vaut null ou porte un texte non
+    // numerique ('NULL' est frequent en sortie de base) n'appartient a aucune
+    // classe : elle doit prendre le repli, pas la couleur d'une classe — sans
+    // quoi un batiment sans hauteur se lit comme un batiment bas.
+    //
+    // `coalesce` ecarte l'absence et le null ; le texte de remplacement est
+    // choisi non convertible pour que `to-number` echoue et retombe sur le
+    // repere hors-classe. Ce repere est fini a dessein : `-Infinity` ne survit
+    // pas a JSON.stringify — il s'y ecrit `null`, que `to-number` convertit en
+    // 0. Une expression reenregistree dans les prefs aurait alors reclasse
+    // toutes les entites muettes dans la classe qui contient zero, defaut
+    // invisible jusqu'a la seconde ouverture.
+    const valeur = ['to-number', ['coalesce', ['get', field], '—'], HORS_CLASSE];
+
+    // `case` plutot que `step`, parce que `step` ne sait comparer qu'en `>=`.
+    // Les classes d'une graduation sont **hautes inclusives** — c'est la regle
+    // de QGIS, et celle qu'applique `stops.find()` dans le chemin qui peint
+    // entite par entite. Avec un `step`, une valeur posee exactement sur une
+    // borne partagee (5 entre [0,5] et [5,10], cas courant sur des effectifs)
+    // basculait dans la classe superieure : la meme donnee prenait deux
+    // couleurs selon qu'Atlas detient ses entites ou non.
+    //
+    // Le garde `< lower` devant chaque classe reproduit la seconde moitie du
+    // predicat de `find`. Sur des classes contigues il n'est jamais vrai ; il
+    // ne sert que si la classification laisse un trou, ou sous la premiere
+    // borne — ou l'on sort de la classification, comme dans QGIS.
+    // `let` evalue la valeur **une fois par entite** ; sans lui, chaque
+    // condition refait le `get` et sa conversion — dix fois par entite et par
+    // image sur une classification a cinq classes, pour 42 182 mailles.
+    const v = ['var', 'valeur_graduee'];
+    const expr = ['case'];
+    let defaut = fallback;
+    let hautPrec = null;
+    for (const st of stops) {
+      const bas = Number(st.lower);
+      const haut = Number(st.upper);
+      const couleur = st.color || fallback;
+      // Garde emise seulement quand elle peut etre vraie : a la premiere
+      // classe, ou quand la precedente s'arrete avant celle-ci. Sur des
+      // classes contigues — le cas de toutes les scenes reelles — elle serait
+      // morte, et une condition morte se paie a chaque image.
+      const trou = !Number.isFinite(hautPrec) || bas > hautPrec;
+      if (Number.isFinite(bas) && trou) expr.push(['<', v, bas], fallback);
+      // Une classe sans borne haute absorbe tout au-dessus d'elle : les
+      // suivantes seraient inatteignables, `find` ne les verrait pas non plus.
+      if (!Number.isFinite(haut)) { defaut = couleur; break; }
+      expr.push(['<=', v, haut], couleur);
+      hautPrec = haut;
+    }
+    expr.push(defaut);
+    // 'case' exige au moins une condition, sa sortie, et un defaut.
+    if (expr.length < 4) return null;
+    return ['let', 'valeur_graduee', valeur, expr];
+  }
+
+  return null;
+}
+
+/**
  * Applique StyleDeclarative sur layer.style.symbolization Atlas (crée si absent).
  */
 export function applyDeclarativeToLayer(layer, declarative) {

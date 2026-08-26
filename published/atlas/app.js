@@ -4,6 +4,7 @@
 // Fork propre depuis app_v6.js — v6 reste inchangée.
 // ============================================================
 
+import { urlSceneDepuisParam, chargerSceneExterne } from './lib/scene-externe.js?v=1.3.0';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
@@ -13,20 +14,20 @@ import {
   loadSceneManifestLayers,
   materializeDeferredLayer,
   boundsFromVisibleLayers,
-} from './lib/scene-loader.js?v=1.1.3';
-import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.1.3';
-import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.1.3';
-import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.1.3';
+} from './lib/scene-loader.js?v=1.3.0';
+import { boundsFromGeoJSON } from './lib/grist-rows.js?v=1.3.0';
+import { pointFallbackZoom, centroidCollection, featureCentroid } from './lib/point-fallback.js?v=1.3.0';
+import { isModelLayer, objectInspectorTabs } from './lib/model-layer.js?v=1.3.0';
 import {
   moveSequence, displayOrder, moveLayerInStack, insertionIndex, sortByRank,
   dropIndex, reorderByDrop,
-} from './lib/layer-order.js?v=1.1.3';
-import { edgeScrollStep } from './lib/edge-scroll.js?v=1.1.3';
-import { basemapLayerIds } from './lib/basemap-layers.js?v=1.1.3';
+} from './lib/layer-order.js?v=1.3.0';
+import { edgeScrollStep } from './lib/edge-scroll.js?v=1.3.0';
+import { basemapLayerIds } from './lib/basemap-layers.js?v=1.3.0';
 import {
   applyTerrainBase, clearTerrainBase, extrusionExpressions, needsTerrainBase, pointsSondes,
   paliersDemDifferents, altitudeOrigineStable, ecartAuSol,
-} from './lib/terrain-base.js?v=1.1.3';
+} from './lib/terrain-base.js?v=1.3.0';
 import {
   loadLayerPrefs,
   applyLayerPrefs,
@@ -35,24 +36,25 @@ import {
   saveFeaturesToSource,
   startScenePolling,
   refreshLayerFromTable,
-} from './lib/grist-sync.js?v=1.1.3';
+} from './lib/grist-sync.js?v=1.3.0';
 import {
   syncColorCategoriesFromFeatures,
   applyCategoryColorsToFeatures,
   syncFeatureColorsFromSymbolization,
+  expressionCouleurDeclarative,
   applyDeclarativeToLayer,
   normalizePropertyValue,
   parsePropertyNumber,
   resolveFeaturePropertyKey,
   graduatedStops,
   recolorStops,
-} from './lib/declarative-style.js?v=1.1.3';
+} from './lib/declarative-style.js?v=1.3.0';
 import {
   scanGeoTables,
   detectGeometryColumn,
   tableToGeoJSON,
   isLinkedTableLayer,
-} from './lib/geo-tables.js?v=1.1.3';
+} from './lib/geo-tables.js?v=1.3.0';
 import {
   layerFieldNames,
   controlFieldType,
@@ -60,6 +62,7 @@ import {
   controlBounds,
   buildControlPredicate,
   filteredGeoJSON,
+  expressionFiltreControles,
   filteredUniqueValues,
   fmtControlValue,
   isSelectValueChecked,
@@ -67,21 +70,21 @@ import {
   repairSelectControlFromManifest,
   applyStoryControlsToLayer,
   sanitizeBrokenSelectFilters,
-} from './lib/controls.js?v=1.1.3';
+} from './lib/controls.js?v=1.3.0';
 import {
   captureStoryState,
   saveStoryToGrist,
   loadStoryFromGrist,
   storyToManifestFragment,
-} from './lib/story.js?v=1.1.3';
+} from './lib/story.js?v=1.3.0';
 import {
   syncLayerDeclarative,
   declarativeFromAtlasLayer,
-} from './lib/manifest-binding.js?v=1.1.3';
+} from './lib/manifest-binding.js?v=1.3.0';
 import {
   cameraStorageKey as viewportCameraKey,
   shouldAutoFitInitialBounds,
-} from './lib/viewport.js?v=1.1.3';
+} from './lib/viewport.js?v=1.3.0';
 import {
   parseAtlasMode,
   resolveAccess,
@@ -91,16 +94,16 @@ import {
   shouldEnableLight3d,
   parseNo3dParam,
   probeCanWriteDoc,
-} from './lib/view-mode.js?v=1.1.3';
+} from './lib/view-mode.js?v=1.3.0';
 import {
   createDefaultViewerControls,
   getViewerControl,
   setViewerExposed as setViewerExposedFn,
-} from './lib/viewer-controls.js?v=1.1.3';
+} from './lib/viewer-controls.js?v=1.3.0';
 import {
   loadScenePrefs,
   saveScenePrefs,
-} from './lib/scene-prefs.js?v=1.1.3';
+} from './lib/scene-prefs.js?v=1.3.0';
 
 const $ = (id) => document.getElementById(id);
 const deg2rad = (d) => (d * Math.PI) / 180;
@@ -141,6 +144,13 @@ const CONFIG = {
     defaultPitch: 55,
     defaultBearing: -18,
     grist: { ready: false },
+    /**
+     * La scène chargée par `?scene=`, ou null.
+     *
+     * Sa seule présence coupe l'accès au document : c'est la règle, et elle
+     * n'a qu'un endroit (cf. docs/CADRAGE-SCENE-EXTERNE-ET-DECOUPLAGE.md §A).
+     */
+    sceneExterne: null,
     /** 'scene-manifest' | 'maquette' | null */
     docMode: null,
     // Un cycle recharge et reconvertit chaque table visible : à 5 s, une scène
@@ -412,7 +422,20 @@ function getNumericRange(layer, field) {
     if (!count) return { min: 0, max: 100, count: 0 };
     return { min, max, count };
 }
+/**
+ * Types Grist qui portent un nombre.
+ *
+ * `gType` vient du manifeste (`fields[].gType`) : c'est ce que la colonne EST,
+ * pas ce que ses valeurs ont l'air d'etre. Il fait donc autorite sur l'echantillon
+ * — et il repond meme quand il n'y a aucune entite a echantillonner.
+ */
+const G_TYPES_NUMERIQUES = new Set(['Numeric', 'Int', 'Integer', 'Any']);
+
 function detectFieldType(layer, field) {
+    const declare = (layer?._fields || []).find((f) => f.name === field || f.label === field);
+    if (declare?.gType && declare.gType !== 'Any') {
+        return G_TYPES_NUMERIQUES.has(declare.gType) ? 'numeric' : 'text';
+    }
     const propKey = resolveFeaturePropertyKey(layer, field);
     let num = 0, total = 0;
     (layer.geojson?.features || []).slice(0, 200).forEach((f) => {
@@ -420,7 +443,17 @@ function detectFieldType(layer, field) {
         if (v == null) return; total++;
         if (Number.isFinite(parsePropertyNumber(v))) num++;
     });
-    if (!total) return 'text';
+    if (!total) {
+        // Aucune entite ici. « text » serait un verdict, alors qu'on n'a rien
+        // regarde — et il ferait disparaitre le champ des choix d'une
+        // symbologie graduee. Le style declaratif, lui, dit sur quel champ il
+        // gradue : c'est une mesure, donc un nombre.
+        const decl = layer?._declarative;
+        if (decl?.kind === 'graduated' && (decl.field === field)) return 'numeric';
+        const ctl = (layer?.controls || []).find((c) => c.field === field);
+        if (ctl && (ctl.type === 'range' || ctl.type === 'time')) return 'numeric';
+        return 'text';
+    }
     return num / total > 0.7 ? 'numeric' : 'text';
 }
 
@@ -446,7 +479,16 @@ function layerPaintColor(layer) {
     if (layer.source === 'qgis2grist' || layer._declarative) {
         const sym = initSymbolization(layer).color;
         const fb = sym.value || sym.defaultColor || layer.color || '#808080';
-        return ['coalesce', ['get', '_fill_color'], fb];
+        // `_fill_color` garde la priorité : c'est ce qu'écrit la symbolisation
+        // choisie dans l'interface, et l'utilisateur prime sur le manifest.
+        // Derrière, l'expression déclarative plutôt qu'une couleur unique — sans
+        // elle, une couche dont on ne détient pas les entités (URL, tuiles)
+        // n'aurait aucun `_fill_color` et se peindrait d'un seul ton, sans que
+        // rien ne le signale.
+        const declaratif = expressionCouleurDeclarative(
+            layer._declarative, fb, layer._fields || null
+        );
+        return ['coalesce', ['get', '_fill_color'], declaratif || fb];
     }
     return colorExpression(layer, layer.color);
 }
@@ -478,7 +520,31 @@ function layerStrokePaint(layer) {
     };
 }
 
+/**
+ * Filtrer une couche qu'Atlas ne détient pas.
+ *
+ * Impossible de retrancher des entités qu'on n'a pas : on décrit à MapLibre ce
+ * qu'il doit garder. L'habillage suit le remplissage — contour, étiquettes,
+ * zone de clic, repli en points —, sinon on verrait le contour d'un bâtiment
+ * que le filtre vient d'écarter, et on pourrait encore cliquer dessus.
+ */
+function appliquerFiltreDistant(layer) {
+    if (!map || !layer?._distant) return;
+    const expr = expressionFiltreControles(layer);
+    for (const sfx of ['', '-outline', '-label', '-hit', '-pts']) {
+        const id = layer.id + sfx;
+        if (!map.getLayer(id)) continue;
+        // `null` retire le filtre : c'est le bon geste quand plus rien n'est actif.
+        try { map.setFilter(id, expr); }
+        catch (e) { console.warn('[Atlas] filtre non appliqué sur', id, '—', e.message); }
+    }
+}
+
 function syncLayerSourceData(layer) {
+    // Une couche distante n'a pas de données à remplacer ici : MapLibre les
+    // tient. Son filtrage passe par une expression, pas par un retranchement.
+    if (layer._raster) return;   // pas d'entites : rien a filtrer ni a remplacer
+    if (layer._distant) { appliquerFiltreDistant(layer); return; }
     if (!map?.getSource(layer.id)) return;
     const data = sourceData(layer);
     map.getSource(layer.id).setData(data);
@@ -498,6 +564,15 @@ function getLayerFields(layer) {
     (layer.geojson?.features || []).slice(0, 200).forEach((f) => {
         if (f.properties) Object.keys(f.properties).forEach((k) => { if (!k.startsWith('_')) keys.add(k); });
     });
+    if (!keys.size) {
+        // Pas d'entites a inspecter : la scene nomme quand meme les champs
+        // dont elle se sert — celui de la symbologie, ceux des controles. Une
+        // liste vide laisserait l'inspecteur proposer « — Champ — » et rien
+        // d'autre, donc rendrait la couche insymbolisable.
+        const decl = layer?._declarative;
+        if (decl?.field) keys.add(decl.field);
+        for (const c of (layer?.controls || [])) if (c?.field) keys.add(c.field);
+    }
     return Array.from(keys).sort().map((k) => ({ id: k, type: detectFieldType(layer, k) }));
 }
 function paletteColor(name, i, total) {
@@ -1361,6 +1436,22 @@ function sourceData(layer) { return filteredGeoJSON(layer); }
 /** Id de la source/couche de repli en points (cf. lib/point-fallback.js). */
 function pointFallbackId(layer) { return layer.id + '-pts'; }
 
+/**
+ * Applique a une specification de couche MapLibre les bornes de zoom voulues.
+ *
+ * Deux sources se combinent, et la plus restrictive gagne : le seuil calcule du
+ * repli en points (qui ne vaut que si Atlas detient les entites) et les bornes
+ * que le manifeste declare. Prendre le maximum des deux minimums evite qu'une
+ * couche remonte au-dessus de l'echelle ou son producteur la dit lisible.
+ */
+function poserBornesZoom(spec, layer, zFallback = null) {
+    const z = layer?._zoom || {};
+    const mins = [zFallback, z.minzoom].filter((v) => Number.isFinite(v));
+    if (mins.length) spec.minzoom = Math.max(...mins);
+    if (Number.isFinite(z.maxzoom)) spec.maxzoom = z.maxzoom;
+    return spec;
+}
+
 function removeLayerGfx(layer) {
     if (!map) return;
     ['', '-outline', '-label', '-hit', '-pts'].forEach((sfx) => {
@@ -1371,8 +1462,39 @@ function removeLayerGfx(layer) {
     if (map.getSource(pointFallbackId(layer))) map.removeSource(pointFallbackId(layer));
 }
 
+/**
+ * Monte une couche de tuiles matricielles.
+ *
+ * Rien ne transite par Atlas : MapLibre va chercher les images au gabarit
+ * d'adresse. D'ou l'absence de source GeoJSON, de symbologie et de controles —
+ * un fond de plan n'a ni champ a graduer ni objet a inspecter.
+ */
+function addRasterLayerToMap(layer) {
+    removeLayerGfx(layer);
+    if (map.getSource(layer.id)) map.removeSource(layer.id);
+    map.addSource(layer.id, {
+        type: 'raster',
+        tiles: layer._tiles,
+        tileSize: layer._tileSize || 256,
+        // Sans borne haute, un service qui ne sert pas au-dela d'un niveau
+        // renvoie des erreurs en boucle et la carte n'atteint jamais `idle` :
+        // tout ce qui attend cet etat reste suspendu.
+        maxzoom: layer._zoom?.maxzoom ?? 19,
+        ...(layer._attribution ? { attribution: layer._attribution } : {}),
+    });
+    map.addLayer(poserBornesZoom({
+        id: layer.id, type: 'raster', source: layer.id,
+        paint: { 'raster-opacity': Number.isFinite(layer.opacity) ? layer.opacity : 1 },
+    }, layer));
+    return true;
+}
+
 function addLayerToMap(layer) {
     if (!mapStyleUsable()) return false;
+    if (layer._raster) {
+        try { return addRasterLayerToMap(layer); }
+        catch (e) { console.warn('[Atlas] tuiles non montées —', layer.name, e.message); return false; }
+    }
     try {
         indexFeatures(layer);
         removeLayerGfx(layer);
@@ -1413,6 +1535,17 @@ function addLayerToMap(layer) {
 
 function applyLayerStyle(layer) {
     if (!map || !map.getSource(layer.id)) return;
+    // Un fond de tuiles n'a pas d'entites a peindre : sa seule apparence est
+    // son opacite. Le faire passer par la symbologie vectorielle chercherait
+    // des champs qui n'existent pas.
+    if (layer._raster) {
+        if (map.getLayer(layer.id)) {
+            map.setPaintProperty(layer.id, 'raster-opacity',
+                Number.isFinite(layer.opacity) ? layer.opacity : 1);
+        }
+        updateLegend();
+        return;
+    }
     if (layer.source === 'qgis2grist') {
         const sym = initSymbolization(layer).color;
         syncFeatureColorsFromSymbolization(layer, sequentialPaletteForSym(sym, layer));
@@ -1497,7 +1630,34 @@ function applyLineStyle(layer) {
  * les modeles 3D, cache compris. Un lampadaire et le bati sous lui reposent
  * ainsi a la meme altitude par construction, quelle que soit l'exageration.
  */
+/**
+ * L'altitude unique d'une couche distante, sondee au centre de son emprise.
+ *
+ * Faute d'entites, on ne peut pas poser chaque objet sur le sol qui lui revient.
+ * Le centre de la `bbox` declaree donne un ordre de grandeur juste : sur une
+ * emprise urbaine il vaut mieux que zero de plusieurs dizaines de metres, et
+ * c'est ce qui separe « la couche est mal calee » de « la couche a disparu ».
+ *
+ * @returns {number|null} null si le MNT n'a pas encore repondu — auquel cas on
+ *   ne pose rien plutot que de figer une altitude fausse ; `recalerRelief`
+ *   repassera quand les tuiles seront la.
+ */
+function solConstantDeCouche(layer) {
+    const b = layer?._bboxDeclaree;
+    if (!b) return null;
+    const lng = (b[0][0] + b[1][0]) / 2;
+    const lat = (b[0][1] + b[1][1]) / 2;
+    const z = Models3D.elevRaw(lng, lat);
+    return Number.isFinite(z) ? z : null;
+}
+
 function poserCoucheSurTerrain(layer) {
+    // Rien a poser entite par entite : on retient une altitude de couche, lue
+    // par `extrusionExpressions`.
+    if (layer._distant) {
+        layer._solConstant = solConstantDeCouche(layer);
+        return 0;
+    }
     const t0 = performance.now();
     const n = applyTerrainBase(layer.geojson, (lng, lat) => Models3D.elevRaw(lng, lat), pointsSondes);
     if (!n) return 0;
@@ -1594,25 +1754,25 @@ function applyPolygonStyle(layer) {
         // enfouie. On pose donc chaque entite sur le sol.
         const surTerrain = needsTerrainBase(layer, !!STATE.settings.terrain3D);
         if (surTerrain) poserCoucheSurTerrain(layer);
-        const ext = extrusionExpressions(base, height, surTerrain);
-        map.addLayer({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
+        const ext = extrusionExpressions(base, height, surTerrain, layer._solConstant);
+        map.addLayer(poserBornesZoom({ id: layer.id, type: 'fill-extrusion', source: layer.id, paint: {
             'fill-extrusion-color': layerPaintColor(layer),
             'fill-extrusion-height': ext.height,
             'fill-extrusion-base': ext.base,
             'fill-extrusion-opacity': Number.isFinite(sym.opacity) ? sym.opacity : 0.85,
-        }});
+        } }, layer));
     } else {
         const stroke = layerStrokePaint(layer);
         // Repli en points sous le seuil : les surfaces y seraient sous-pixel.
         const zFallback = layer._pointFallbackZoom;
         const fill = { id: layer.id, type: 'fill', source: layer.id, paint: {
             'fill-color': layerPaintColor(layer), 'fill-opacity': layerPaintOpacity(layer) } };
-        if (zFallback != null) fill.minzoom = zFallback;
+        poserBornesZoom(fill, layer, zFallback);
         map.addLayer(fill);
         if (stroke.width > 0) {
             const outline = { id: layer.id + '-outline', type: 'line', source: layer.id, paint: {
                 'line-color': stroke.color, 'line-width': stroke.width } };
-            if (zFallback != null) outline.minzoom = zFallback;
+            poserBornesZoom(outline, layer, zFallback);
             map.addLayer(outline);
         }
         if (zFallback != null && map.getSource(pointFallbackId(layer))) {
@@ -1899,16 +2059,33 @@ function syncAllLayersToMap() {
 
 /** Attend que MapLibre soit prêt à peindre avant de monter les sources GeoJSON. */
 let _mapSyncTimer = null;
-let _mapSyncAfter = null;
+/**
+ * Les rappels à jouer quand le style redevient utilisable — **une file, pas un
+ * slot**.
+ *
+ * Deux appelants peuvent attendre en même temps : `onStyleReady` qui cadre
+ * depuis les entités locales, et `mountLoadedLayers` qui cadre depuis ce que le
+ * manifeste déclare. Avec une variable unique, le second effaçait le premier
+ * sans rien dire. Dans un document Grist l'ordre était favorable — l'ouverture
+ * du document est lente, le style a le temps d'être prêt — et le défaut ne se
+ * voyait pas ; une scène chargée par URL arrive avant le style, et c'est le
+ * cadrage du manifeste qui se perdait. La carte s'ouvrait alors sur la position
+ * par défaut, ce qui ressemble à un choix.
+ */
+let _mapSyncAfter = [];
 function scheduleMapLayersSync(afterSync) {
     if (!map) return;
-    if (typeof afterSync === 'function') _mapSyncAfter = afterSync;
+    if (typeof afterSync === 'function') _mapSyncAfter.push(afterSync);
     const run = () => {
         clearTimeout(_mapSyncTimer);
         syncAllLayersToMap();
-        const cb = _mapSyncAfter;
-        _mapSyncAfter = null;
-        if (typeof cb === 'function') cb();
+        const files = _mapSyncAfter;
+        _mapSyncAfter = [];
+        // Un rappel qui lève ne doit pas emporter les suivants : ils viennent
+        // d'appelants sans rapport entre eux.
+        for (const cb of files) {
+            try { cb(); } catch (e) { console.warn('[Atlas] rappel de montage :', e); }
+        }
         // 2e passe : premier idle parfois trop tôt (style OSM / globe / pitch)
         _mapSyncTimer = setTimeout(() => {
             if (!mapStyleUsable()) return;
@@ -2050,8 +2227,36 @@ async function persistStory(immediate = false) {
     });
 }
 
+/**
+ * Le nombre d'entités d'une couche — **`null` quand on ne le sait pas**.
+ *
+ * `|| 0` rendait zéro dans deux situations que rien ne distinguait ensuite :
+ * une couche réellement vide, et une couche dont Atlas ne détient pas les
+ * entités. Or zéro est un nombre parfaitement plausible : « 0 obj. » se lit
+ * comme un renseignement, pas comme une ignorance, et on cherche alors pourquoi
+ * la donnée est vide au lieu de comprendre qu'elle est ailleurs.
+ */
 function layerVisibleCount(layer) {
-    return filteredGeoJSON(layer)?.features?.length || 0;
+    const n = filteredGeoJSON(layer)?.features?.length;
+    if (Number.isFinite(n) && n > 0) return n;
+    // Rien en local : soit la couche est distante et le manifeste sait peut-être
+    // compter à sa place, soit elle est vraiment vide et zéro est la réponse.
+    if (layer?._distant) return Number.isFinite(layer._nFeaturesDeclare) ? layer._nFeaturesDeclare : null;
+    return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Le compte tel qu'il s'affiche.
+ *
+ * Un compte déclaré par le manifeste et non vérifié s'annonce comme tel — le
+ * « ≈ » dit qu'on rapporte au lieu de constater. Un compte inconnu ne s'affiche
+ * pas du tout : mieux vaut un blanc qu'un chiffre faux.
+ */
+function formatLayerCount(layer) {
+    const n = layerVisibleCount(layer);
+    if (n == null) return '—';
+    const approx = layer?._distant && !filteredGeoJSON(layer)?.features?.length;
+    return (approx ? '≈' : '') + n;
 }
 
 /**
@@ -2399,7 +2604,7 @@ function renderLayersPanel(mode) {
                     <span class="layer-swatch" style="background:${l.color}"></span>
                     <div class="layer-info">
                         <div class="layer-name">${l.name}</div>
-                        <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
+                        <div class="layer-meta"><span>${formatLayerCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${linked ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
                     </div>
                     ${linked ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">${icTrait(IC.rafraichir)}</button>` : ''}
                     <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">${icTrait(IC.cible)}</button>
@@ -2430,7 +2635,7 @@ function renderLayersPanelLecture() {
                 <span class="layer-swatch" style="background:${l.color}"></span>
                 <div class="layer-info">
                     <div class="layer-name">${l.name}</div>
-                    <div class="layer-meta"><span>${layerVisibleCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
+                    <div class="layer-meta"><span>${formatLayerCount(l)} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}</div>
                 </div>
                 <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer">${icTrait(IC.cible)}</button>
             </div>`;
@@ -2569,19 +2774,29 @@ function dockPillId(layer, field) {
 function listDockPills() {
     const pills = [];
     const vcs = STATE.viewerControls || createDefaultViewerControls();
-    const edit = !CONFIG.viewMode;
 
-    if (edit || getViewerControl(vcs, 'sun')?.exposed) {
+    // L'interrupteur gouverne la pastille, en edition comme en lecture.
+    //
+    // Il ne le faisait qu'en lecture : en edition les trois pastilles
+    // d'environnement s'affichaient quoi qu'il arrive, et le panneau annoncait
+    // « desactive » pendant que la carte montrait le contraire. Un reglage qui
+    // ne fait rien de visible est pire qu'un reglage absent — on doute de ce
+    // qu'on vient de faire.
+    //
+    // L'auteur ne perd aucun acces : le soleil, la vue et les fonds gardent
+    // leur module dans le rail lateral. La pastille dit ce que le LECTEUR
+    // verra ; c'est bien ce que le libelle promet sous chaque interrupteur.
+    if (getViewerControl(vcs, 'sun')?.exposed) {
         pills.push({ id: 'sun', kind: 'sun', icon: '☀', label: 'Soleil' });
     }
     // Icônes du dock : s'en tenir aux emoji, avec leur sélecteur de variante
     // (U+FE0F). Un glyphe symbolique rare — ici `▦` U+25A6 — n'existe pas dans
     // les polices système courantes, et un emoji sans sélecteur bascule en
     // rendu texte : dans les deux cas la pastille s'affiche vide, sans erreur.
-    if (edit || getViewerControl(vcs, 'view3d')?.exposed) {
+    if (getViewerControl(vcs, 'view3d')?.exposed) {
         pills.push({ id: 'view3d', kind: 'env', icon: '🏙️', label: '2D / 3D' });
     }
-    if (edit || getViewerControl(vcs, 'basemap')?.exposed) {
+    if (getViewerControl(vcs, 'basemap')?.exposed) {
         pills.push({ id: 'basemap', kind: 'env', icon: '🗺️', label: 'Fonds' });
     }
     for (const { layer, c } of collectPublishedControls()) {
@@ -2820,9 +3035,18 @@ function renderControlBody(layer, c) {
     ensureControlVariant(c, c.type);
     if (c.type === 'select') {
         const vals = controlUniqueValues(layer, c.field, 30);
+        // Un filtre sans choix ressemble à un filtre déjà appliqué : on croit
+        // que tout est décoché, alors qu'on n'a rien à cocher. Le dire évite de
+        // chercher pourquoi la carte ne réagit pas.
+        if (!vals.length) {
+            return `<div class="range-info" style="margin-top:6px;opacity:.75">`
+                 + `Aucune valeur connue pour « ${escapeHtml(c.field)} »`
+                 + (layer._distant ? ` — la couche est distante et le manifeste n’en déclare pas.` : `.`)
+                 + `</div>`;
+        }
         const inputType = c.variant === 'select_single' ? 'radio' : 'checkbox';
         const nameAttr = `ctl-${layer.id}-${c.field}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="${inputType}" name="${nameAttr}" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></label>`).join('')}</div>`;
+        return `<div class="cats" style="margin-top:6px">${vals.map((v) => `<label class="cat-row" style="cursor:pointer"><input type="${inputType}" name="${nameAttr}" ${isSelectValueChecked(c, v.value) ? 'checked' : ''} onchange="A.toggleControlValue('${layer.id}','${esc(c.field)}','${esc(v.value)}')"><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count == null ? '' : v.count}</span></label>`).join('')}</div>`;
     }
     const step = c.type === 'time' ? Math.max(86400000, Math.round((c.dataMax - c.dataMin) / 200)) : ((c.dataMax - c.dataMin) / 200 || 1);
     if (c.type === 'time') {
@@ -3146,7 +3370,7 @@ function isLegendFocused(layerId, field, value) {
 
 function buildLayerLegendHtml(layer) {
     const sym = initSymbolization(layer).color;
-    const total = layerVisibleCount(layer);
+    const total = formatLayerCount(layer);
     const lid = escLegend(layer.id);
     const clickable = CONFIG.viewMode ? ' legend-clickable' : '';
 
@@ -3167,8 +3391,15 @@ function buildLayerLegendHtml(layer) {
     }
 
     if (sym.mode === 'graduated' && sym.field) {
-        const ramp = COLOR_PALETTES[sym.colorRamp || sym.palette || 'Viridis'] || COLOR_PALETTES.Viridis;
-        const grad = `linear-gradient(90deg, ${ramp[0]}, ${ramp[ramp.length - 1]})`;
+        // Les couleurs du style déclaratif priment sur la rampe nommée — c'est
+        // déjà la règle pour peindre la carte (cf. applyLayerStyle). La légende
+        // s'en écartait : elle annonçait un dégradé Viridis sous une carte
+        // verte. Une légende qui ne décrit pas la carte est pire qu'aucune.
+        const stopsDecl = (layer._declarative?.kind === 'graduated' ? layer._declarative.stops : null) || [];
+        const ramp = stopsDecl.length
+            ? stopsDecl.map((st) => st.color).filter(Boolean)
+            : (COLOR_PALETTES[sym.colorRamp || sym.palette || 'Viridis'] || COLOR_PALETTES.Viridis);
+        const grad = `linear-gradient(90deg, ${ramp.join(', ')})`;
         const focused = isLegendFocused(layer.id, null, null) ? ' legend-focused' : '';
         return `<div class="legend-group"><div class="legend-row${clickable}${focused}" data-legend="layer" data-layer-id="${lid}"><span class="swatch legend-grad" style="background:${grad}"></span><span class="nm">${escLegend(layer.name)}</span><span class="ct">${total}</span></div></div>`;
     }
@@ -3328,7 +3559,7 @@ function renderSymbologyInspector(layer) {
     $('insp-head').innerHTML = `
         <div class="insp-eyebrow"><span class="layer-swatch" style="background:${layer.color}"></span>Symboliser${is3D ? ' · <span style="color:var(--accent2)">3D</span>' : ''}</div>
         <div class="insp-title">${layer.name}</div>
-        <div class="insp-sub">${layer.geojson?.features?.length || 0} objets · ${layer.geometryType}</div>
+        <div class="insp-sub">${formatLayerCount(layer)} objets · ${layer.geometryType}</div>
         ${modelChip}
         ${isPoint ? `<button class="btn btn-soft btn-full" style="margin-top:8px" onclick="A.editLayerObjects('${layer.id}')">✏️ Éditer les objets un par un</button>` : ''}`;
     $('insp-tabs').innerHTML = tabs.map((t) => `<button class="insp-tab ${inspSymTab === t ? 'active' : ''}" onclick="A.setSymTab('${t}')">${t}</button>`).join('');
@@ -3397,9 +3628,32 @@ function categoriesPreview(layer, c) {
         return `<div class="cat-row"><span class="cat-swatch" style="background:${col}" onclick="A.pickCatColor('${layer.id}','${String(v.value).replace(/'/g, "\\'")}', this)"></span><span class="cat-value" title="${v.value}">${v.value}</span><span class="cat-count">${v.count}</span></div>`;
     }).join('')}${vals.length > 30 ? `<div class="range-info" style="margin-top:6px">+ ${vals.length - 30} autres</div>` : ''}</div>`;
 }
+/** Bornes qu'un contrôle du manifeste déclare pour un champ, s'il y en a un. */
+function bornesDeclarees(layer, field) {
+    const c = (layer?.controls || []).find((x) => x.field === field);
+    const lo = Number.isFinite(c?.dataMin) ? c.dataMin : c?.min;
+    const hi = Number.isFinite(c?.dataMax) ? c.dataMax : c?.max;
+    return (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) ? { min: lo, max: hi } : null;
+}
+
 function rangeInfo(layer, field) {
     const r = getNumericRange(layer, field);
-    if (!r.count) return '<div class="range-info">⚠️ Pas de valeurs numériques</div>';
+    if (!r.count) {
+        // « Pas de valeurs numériques » est un constat, et il est faux ici : on
+        // n'a rien pu regarder. Le manifeste, lui, declare peut-etre les bornes
+        // observees a la production — c'est ce qui permet de graduer une couche
+        // qu'on ne detient pas.
+        const b = bornesDeclarees(layer, field);
+        if (b) {
+            return `<div class="range-info" style="margin-top:6px">Valeurs déclarées : `
+                 + `<strong>${b.min}</strong> → <strong>${b.max}</strong></div>`;
+        }
+        if (layer?._distant) {
+            return '<div class="range-info">Valeurs inconnues — la couche est distante '
+                 + 'et le manifeste ne déclare pas de bornes pour ce champ.</div>';
+        }
+        return '<div class="range-info">⚠️ Pas de valeurs numériques</div>';
+    }
     return `<div class="range-info" style="margin-top:6px">Valeurs : <strong>${r.min.toFixed(1)}</strong> → <strong>${r.max.toFixed(1)}</strong> (${r.count} obj.)</div>`;
 }
 
@@ -3685,7 +3939,17 @@ function setupInteraction() {
 
         // Lecture : popup attributs (pas d’inspecteur édition)
         if (CONFIG.viewMode) {
-            showViewFeaturePopup(layer, idx, e.lngLat);
+            showViewFeaturePopup(layer, idx, e.lngLat, f);
+            return;
+        }
+
+        // Une couche distante n'a pas de ligne a editer : ni table Grist
+        // derriere, ni feature source a modifier. Entrer en mode selection
+        // ouvrirait un inspecteur d'edition sur un objet qu'on ne peut pas
+        // enregistrer — et « Enregistrer » qui echoue est pire que son absence.
+        // On montre la fiche, en consultation, comme en lecture.
+        if (layer._distant) {
+            showViewFeaturePopup(layer, idx, e.lngLat, f);
             return;
         }
 
@@ -3824,6 +4088,18 @@ function buildViewPopupHtml(layer, feature, idx) {
     const title = formatPopupValue(props.name || props._label || props.label)
         || layer.name || `Objet #${(idx ?? 0) + 1}`;
 
+    // Le gabarit est du HTML posé tel quel — c'est voulu, et sans danger quand
+    // il vient d'une table du document : l'y mettre demandait déjà le droit
+    // d'écrire. Venu d'une adresse, il s'exécuterait dans une iframe qui tient
+    // les droits de la personne sur son document. En scène externe, le gabarit
+    // est donc rendu **comme du texte** : sa mise en forme est perdue, ses
+    // valeurs restent.
+    if (typeof template === 'string' && template.trim() && CONFIG.sceneExterne) {
+        const texte = template.replace(/\{([^}]+)\}/g,
+            (_, key) => formatPopupValue(props[key.trim()]) ?? '');
+        return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>`
+             + `<div class="atlas-popup-row">${escapeHtml(texte)}</div></div>`;
+    }
     if (typeof template === 'string' && template.trim()) {
         let html = template;
         html = html.replace(/\{([^}]+)\}/g, (_, key) => escapeHtml(formatPopupValue(props[key.trim()])));
@@ -3859,9 +4135,18 @@ function buildViewPopupHtml(layer, feature, idx) {
     return `<div class="atlas-popup"><div class="atlas-popup-title">${escapeHtml(title)}</div>${body}</div>`;
 }
 
-function showViewFeaturePopup(layer, idx, lngLat) {
+/**
+ * La fiche d'un objet, au clic.
+ *
+ * `featureRendue` est celle que MapLibre vient de designer. Sur une couche
+ * locale on lui prefere la feature source, qui porte la geometrie entiere —
+ * MapLibre, lui, rend des geometries decoupees par tuile. Sur une couche
+ * distante il n'y a pas de source : la feature rendue **est** tout ce qu'on
+ * aura, et elle porte les attributs, qui sont ce que la fiche montre.
+ */
+function showViewFeaturePopup(layer, idx, lngLat, featureRendue = null) {
     if (!map || typeof maplibregl === 'undefined') return;
-    const feature = layer.geojson?.features?.[idx];
+    const feature = layer.geojson?.features?.[idx] || featureRendue;
     if (!feature) return;
     closeViewPopup();
     let coords = lngLat;
@@ -4064,6 +4349,14 @@ function finalizeNewLayer(layer) {
     else openModule('couches');
     saveLayerToGrist(layer, true);
 }
+/**
+ * Cadrer sur une couche — depuis ses entités, ou depuis ce qu'elle déclare.
+ *
+ * Une couche distante n'a pas ses entités ici : MapLibre les a, Atlas non. Son
+ * emprise vient alors du manifeste (`bbox`), qui est justement là pour ça.
+ *
+ * @returns {boolean} vrai si le cadrage a eu lieu.
+ */
 function fitToLayer(layer) {
     const bounds = new maplibregl.LngLatBounds();
     let any = false;
@@ -4072,7 +4365,15 @@ function fitToLayer(layer) {
         const coords = g.type === 'Point' ? [g.coordinates] : g.coordinates.flat(g.type.includes('Multi') ? 2 : 1);
         coords.forEach((c) => { if (Array.isArray(c) && typeof c[0] === 'number') { bounds.extend(c); any = true; } });
     });
-    if (any) map.fitBounds(bounds, { padding: 80, maxZoom: 18, duration: 800 });
+    if (any) {
+        map.fitBounds(bounds, { padding: 80, maxZoom: 18, duration: 800 });
+        return true;
+    }
+    if (layer._bboxDeclaree) {
+        map.fitBounds(layer._bboxDeclaree, { padding: 80, maxZoom: 18, duration: 800 });
+        return true;
+    }
+    return false;
 }
 
 function wireDrop() {
@@ -4289,7 +4590,7 @@ let Feuille = null;              // charge a la demande : le bureau n'en a pas b
 let feuillePosition = 'fermee';  // 'fermee' | 'demi' | 'pleine'
 
 async function chargerFeuille() {
-    if (!Feuille) Feuille = await import('./lib/feuille-mobile.js?v=1.1.3');
+    if (!Feuille) Feuille = await import('./lib/feuille-mobile.js?v=1.3.0');
     return Feuille;
 }
 
@@ -4406,10 +4707,10 @@ async function cablerMenuPrincipal() {
     const marque = document.querySelector('.brand');
     if (!marque) return;
     let hote;
-    try { hote = await import('./lib/hote-ui.js?v=1.1.3'); } catch (_) { return; }
+    try { hote = await import('./lib/hote-ui.js?v=1.3.0'); } catch (_) { return; }
     let caps;
     try {
-        const dc = await import('./lib/data-client.js?v=1.1.3');
+        const dc = await import('./lib/data-client.js?v=1.3.0');
         caps = dc.capacites();
     } catch (_) { return; }
     // Widget : rien au-dessus de la scene. Navigateur sans compte : le menu
@@ -4510,6 +4811,15 @@ function wireMobileNav() {
 }
 
 async function initGrist() {
+    // Une scène venue d'une adresse n'est pas de confiance : n'importe qui peut
+    // fabriquer l'URL et la faire ouvrir, alors qu'une scène lue dans le
+    // document a forcément été posée par quelqu'un qui pouvait y écrire.
+    // Atlas ne lui donne donc pas le document — `grist.ready()` n'est jamais
+    // appelé, `docApi` n'existe pas, et rien ne s'écrit nulle part.
+    if (CONFIG.sceneExterne) {
+        console.info('[Atlas] scène externe — le document n’est pas ouvert');
+        return;
+    }
     if (typeof grist === 'undefined') { console.log('Grist indisponible — mode standalone'); return; }
     const search = typeof location !== 'undefined' ? location.search : '';
     // Les droits transmis par Grist font autorité ; ?mode= ne peut que restreindre.
@@ -4593,8 +4903,15 @@ async function initGristTables() {
 function mountLoadedLayers(bounds) {
     updateRailBadge();
     if (!map) return;
+    // Le cadrage se pose **tout de suite**, hors de la file d'attente du style.
+    // `fitBounds` n'a besoin que de la carte, pas de ses tuiles ; et surtout,
+    // celui qui monte les couches connaît les bornes du manifeste, alors que le
+    // rappel d'`onStyleReady` ne sait que les calculer depuis les entités
+    // locales — qu'une couche distante n'a pas. Les laisser tous deux dans la
+    // file les mettrait en concurrence : le premier servi poserait
+    // `_initialViewportApplied` et l'autre n'aurait plus la main.
+    applyInitialViewport(bounds || computeLayersBounds());
     scheduleMapLayersSync(() => {
-        applyInitialViewport(bounds || computeLayersBounds());
         const remount = () => {
             if (!mapStyleUsable()) return;
             syncAllLayersToMap();
@@ -4626,9 +4943,13 @@ async function loadFromSceneManifest() {
         _sceneManifest = manifest;
         _widgetConfig = await loadQgisWidgetConfig(grist.docApi);
         const prefs = await loadLayerPrefs(grist.docApi);
-        const { layers, projectName, bounds: rawBounds } = await loadSceneManifestLayers(
+        const { layers, projectName, bounds: rawBounds, echecs } = await loadSceneManifestLayers(
             grist.docApi, manifest, _widgetConfig
         );
+        // Une scene amputee doit le dire. Elle s'affichait jusqu'ici comme une
+        // scene complete : rien ne distinguait une couche en echec d'une couche
+        // qu'on avait choisi de ne pas mettre.
+        signalerCouchesManquantes(echecs);
         for (const layer of layers) {
             applyLayerPrefs(layer, prefs);
             if (layer.visible !== false && layer._deferredLoad) {
@@ -4667,6 +4988,57 @@ async function loadFromSceneManifest() {
     } catch (e) {
         console.warn('loadFromSceneManifest:', e);
         showToast('Scene Manifest : ' + e.message, 'error');
+    }
+}
+
+/**
+ * Monter une scène venue d'une adresse.
+ *
+ * Le jumeau de `loadFromSceneManifest`, moins tout ce qui touche au document :
+ * ni préférences, ni récit enregistré, ni sondage. La différence tient au
+ * premier argument passé au chargeur — `null` au lieu de `docApi` —, et c'est
+ * cette absence qui fait tomber les couches `source.table` dans les échecs
+ * déclarés, avec le message qui envoie les publier.
+ */
+async function monterSceneExterne(manifest) {
+    try {
+        const { layers, projectName, bounds: rawBounds, echecs } =
+            await loadSceneManifestLayers(null, manifest, null);
+        signalerCouchesManquantes(echecs);
+
+        STATE.layers.push(...layers);
+        // Pas de préférences enregistrées ici : l'ordre est celui que le
+        // manifeste déclare, et il n'y a rien d'autre pour le contredire.
+        STATE.layers = sortByRank(STATE.layers, Object.fromEntries(
+            STATE.layers.filter((l) => Number.isFinite(l._rank)).map((l) => [l.sourceTable || l.id, l._rank])
+        ));
+        layers.forEach((layer) => {
+            (layer.controls || []).forEach((c) => repairSelectControlFromManifest(layer, c));
+            sanitizeBrokenSelectFilters(layer);
+            prepareLayerFilters(layer);
+        });
+        if (projectName) {
+            STATE.projectName = projectName;
+            const el = $('project-name');
+            if (el) el.textContent = projectName;
+        }
+        mountLoadedLayers(boundsFromVisibleLayers(layers) || rawBounds);
+
+        if (!layers.length) {
+            showToast('Scène chargée, mais aucune couche affichable', 'warning');
+        } else {
+            showToast(`Scène externe · ${layers.length} couche(s)`, 'success');
+        }
+
+        // Pas de validation contre le schéma ici, et c'est délibéré : elle
+        // écrirait dans la console de qui *regarde* la scène, alors que le
+        // besoin est chez qui l'*écrit*. Celui-là dispose déjà de l'outil —
+        // `node scripts/valider-schema.js <schema> <scene>` — et du schéma
+        // publié à une adresse stable. Les échecs par couche, eux, sont
+        // déclarés ci-dessus : c'est ce qui manquait vraiment.
+    } catch (e) {
+        console.warn('monterSceneExterne:', e);
+        showToast('Scène externe : ' + e.message, 'error');
     }
 }
 
@@ -4847,11 +5219,25 @@ function loadProject() {
 }
 function exportProject() {
     if (!STATE.layers.length) { showToast('Aucune couche à exporter', 'warning'); return; }
-    const combined = { type: 'FeatureCollection', features: STATE.layers.flatMap((l) => l.geojson?.features || []) };
+    // Une couche distante — ou de tuiles — n'a rien à exporter : ses entités
+    // sont ailleurs. Un fichier vide est un export **réussi** jusqu'à ce qu'on
+    // l'ouvre ; mieux vaut ne rien produire et dire pourquoi.
+    const exportables = STATE.layers.filter((l) => l.geojson?.features?.length);
+    const absentes = STATE.layers.filter((l) => !l.geojson?.features?.length);
+    if (!exportables.length) {
+        showToast(absentes.some((l) => l._distant)
+            ? 'Rien à exporter : Atlas ne détient pas ces couches, seulement leurs adresses'
+            : 'Rien à exporter : aucune couche ne porte d’entités', 'warning');
+        return;
+    }
+    const combined = { type: 'FeatureCollection', features: exportables.flatMap((l) => l.geojson.features) };
     const blob = new Blob([JSON.stringify(combined, null, 2)], { type: 'application/geo+json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'atlas_export.geojson'; a.click(); URL.revokeObjectURL(url);
-    showToast('Export GeoJSON', 'success');
+    // Un export partiel qui se tait ressemble à un export complet.
+    showToast(absentes.length
+        ? `Export GeoJSON — ${exportables.length} couche(s) ; ${absentes.length} non détenue(s), absente(s) du fichier`
+        : 'Export GeoJSON', absentes.length ? 'warning' : 'success');
 }
 
 // ============================================================
@@ -5369,13 +5755,28 @@ const A = {
     zoomLayer(id, e) {
         if (e) e.stopPropagation();
         const l = STATE.layers.find((x) => x.id === id);
-        if (!l?.geojson?.features?.length) { showToast('Couche vide', 'warning'); return; }
+        // « Couche vide » était dit d'une couche distante, qui ne l'est pas :
+        // ses entités sont ailleurs, pas absentes. Le message envoyait chercher
+        // une donnée manquante au lieu d'une emprise non déclarée. On ne décide
+        // qu'après avoir essayé — `fitToLayer` sait aussi cadrer sur la `bbox`
+        // du manifeste.
+        if (!l) return;
+        if (!l.geojson?.features?.length && !l._distant) {
+            showToast('Couche vide', 'warning');
+            return;
+        }
         if (l.visible === false) {
             l.visible = true;
             syncLayerToMapState(l);
         }
-        fitToLayer(l);
-        showToast(`Zoom sur « ${l.name} »`, 'info');
+        // Annoncer un zoom qui n'a pas eu lieu serait pire que se taire : on
+        // chercherait ce qui empêche de voir la couche là où elle n'est pas.
+        if (fitToLayer(l)) {
+            showToast(`Zoom sur « ${l.name} »`, 'info');
+        } else {
+            showToast(`« ${l.name} » : pas d'emprise connue — le manifeste ne déclare pas de bbox`,
+                'warning');
+        }
     },
     deleteLayer(id, e) {
         e.stopPropagation();
@@ -5912,6 +6313,7 @@ async function init() {
     initMap();
     probeLocalModels();
     await initGrist();
+    if (CONFIG.sceneExterne) await monterSceneExterne(CONFIG.sceneExterne);
     applyViewModeChrome();
     updateMobileLayout();
     // Autosave : standalone uniquement — pas en doc Grist (Scene Manifest charge déjà les couches)
@@ -5944,10 +6346,34 @@ async function init() {
  * eprouve reste rigoureusement inchange.
  */
 async function demarrer() {
+    // La scène externe se décide avant tout le reste : elle change le régime
+    // d'Atlas, pas seulement ce qu'il affiche. Ni accueil (il n'y a rien à
+    // demander, la scène est nommée) ni document (elle n'est pas de confiance).
+    const { url: urlScene, refus } = urlSceneDepuisParam(
+        typeof location !== 'undefined' ? location.search : '');
+    if (refus) {
+        // Un refus muet enverrait chercher un bug d'Atlas là où il y a une
+        // adresse mal formée. Il s'affiche, et la page s'ouvre quand même.
+        console.warn('[Atlas]', refus);
+        setTimeout(() => showToast(refus, 'error'), 0);
+    }
+    if (urlScene) {
+        const { manifest, echec } = await chargerSceneExterne(urlScene);
+        if (echec) {
+            console.error('[Atlas] scène externe :', echec);
+            // Rendre la main plutôt que laisser une page morte : Atlas s'ouvre
+            // vide, mais il dit pourquoi — et il reste utilisable.
+            setTimeout(() => showToast(echec, 'error'), 0);
+        } else {
+            CONFIG.sceneExterne = manifest;
+            CONFIG.viewMode = true;   // rien à écrire : il n'y a pas de document
+            return init();
+        }
+    }
     try {
-        const { capacites } = await import('./lib/data-client.js?v=1.1.3');
+        const { capacites } = await import('./lib/data-client.js?v=1.3.0');
         if (capacites().mode === 'grist') return init();
-        const { accueillir } = await import('./lib/hote-ui.js?v=1.1.3');
+        const { accueillir } = await import('./lib/hote-ui.js?v=1.3.0');
         const pret = await accueillir();
         if (!pret) return;          // l'accueil garde l'ecran : rien a demarrer
     } catch (e) {
@@ -5960,3 +6386,27 @@ async function demarrer() {
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);
 else demarrer();
+
+/**
+ * Dire ce qui n'a pas pu être chargé.
+ *
+ * Le silence était le vrai défaut : une couche en échec disparaissait comme une
+ * couche volontairement absente, et seul un `console.warn` en gardait trace —
+ * c'est-à-dire personne, sur le terrain comme ailleurs. On préfère un message
+ * qui nomme la couche et l'origine attendue : c'est ce qui permet de distinguer
+ * « je ne sais pas lire cette origine » de « cette table n'existe pas ».
+ */
+function signalerCouchesManquantes(echecs) {
+    if (!echecs || !echecs.length) return;
+    for (const e of echecs) console.warn('[Atlas] couche non chargée —', e.nom, '·', e.origine, '·', e.raison);
+
+    const n = echecs.length;
+    const titre = n === 1
+        ? `Couche non chargée : ${echecs[0].nom}`
+        : `${n} couches non chargées`;
+    // Le détail au-delà de deux noms encombrerait plus qu'il n'informerait ; la
+    // console porte la liste complète.
+    const detail = echecs.slice(0, 2).map((e) => `${e.nom} (${e.origine})`).join(' · ')
+        + (n > 2 ? ` … et ${n - 2} autre${n - 2 > 1 ? 's' : ''}` : '');
+    showToast(`${titre} — ${detail}`, 'warning');
+}
