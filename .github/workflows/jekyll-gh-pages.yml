@@ -39,7 +39,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # Indiquez ici le chemin de votre sous-dossier
-          path: './projects'
+          path: './projects/tasks_app'
 
   # Deployment job
   deploy:
