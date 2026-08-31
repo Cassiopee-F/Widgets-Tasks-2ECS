@@ -40,6 +40,13 @@ jobs:
         with:
           # Indiquez ici le chemin de votre sous-dossier
           path: './projects/tasks_app'
+          
+      - name: Upload artifact 6
+        uses: actions/upload-pages-artifact@v6
+        with:
+          # Indiquez ici le chemin de votre sous-dossier
+          path: './projects/whiteboard'
+
 
   # Deployment job
   deploy:
